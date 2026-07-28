@@ -5,6 +5,8 @@ const nextConfig: NextConfig = {
     remotePatterns: [
       { protocol: "https", hostname: "image.tmdb.org" },
       { protocol: "https", hostname: "themoviedb.org" },
+      { protocol: "https", hostname: "artworks.thetvdb.com" },
+      { protocol: "https", hostname: "static.tvmaze.com" },
     ],
   },
 }

@@ -3,10 +3,10 @@ import { Suspense } from "react"
 
 export default function SearchPage() {
   return (
-    <div className="p-6">
-      <Suspense fallback={<p className="text-muted">Loading...</p>}>
+    <main className="min-h-screen bg-background pt-20 pb-16">
+      <Suspense fallback={<div className="p-8 text-center text-sm text-gray-400">Loading search...</div>}>
         <SearchResults />
       </Suspense>
-    </div>
+    </main>
   )
 }

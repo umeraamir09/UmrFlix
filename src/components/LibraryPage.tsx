@@ -8,12 +8,55 @@ import { useBatchAvailability } from "@/lib/use-availability"
 import { RefreshCw } from "lucide-react"
 import { Button } from "@/components/ui/button"
 
+interface MediaImage {
+  coverType: string
+  url: string
+  remoteUrl?: string
+}
+
+interface RadarrItem {
+  tmdbId: number
+  title: string
+  year: number
+  hasFile: boolean
+  images: MediaImage[]
+}
+
+interface SonarrItem {
+  tvdbId: number
+  title: string
+  year: number
+  images: MediaImage[]
+}
+
 const fetcher = (url: string) => fetch(url).then((r) => r.json())
 const tmdbIdFetcher = async (tvdbId: number): Promise<number> => {
   const res = await fetch(`/api/tmdb-id?tvdbId=${tvdbId}`)
   if (!res.ok) return tvdbId
   const data = await res.json()
   return data.tmdbId ?? tvdbId
+}
+
+function getPosterUrl(images?: MediaImage[], serviceType: "radarr" | "sonarr" = "radarr"): string | null {
+  if (!images || !Array.isArray(images)) return null
+  const poster = images.find((i) => i.coverType === "poster")
+  if (!poster) return null
+
+  if (poster.remoteUrl) {
+    return poster.remoteUrl
+  }
+
+  if (poster.url) {
+    if (poster.url.startsWith("http://") || poster.url.startsWith("https://")) {
+      return poster.url
+    }
+    if (poster.url.startsWith("/MediaCover/")) {
+      return `/api/${serviceType}${poster.url}`
+    }
+    return poster.url
+  }
+
+  return null
 }
 
 export function LibraryPage() {
@@ -26,8 +69,8 @@ export function LibraryPage() {
     fetcher
   )
 
-  const movieItems: { tmdbId: number; title: string; year: number; hasFile: boolean; images: { coverType: string; url: string }[] }[] = movies ?? []
-  const seriesItems: { tvdbId: number; title: string; year: number; images: { coverType: string; url: string }[] }[] = series ?? []
+  const movieItems: RadarrItem[] = movies ?? []
+  const seriesItems: SonarrItem[] = series ?? []
 
   const [tvTmdbIds, setTvTmdbIds] = useState<Record<number, number>>({})
 
@@ -69,7 +112,7 @@ export function LibraryPage() {
         <div className="grid grid-cols-2 gap-6 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-5 2xl:grid-cols-6">
           {Array.from({ length: 12 }).map((_, i) => (
             <div key={i} className="space-y-2">
-              <Skeleton className="aspect-[2/3] w-full rounded-lg" />
+              <Skeleton className="aspect-[2/3] w-full rounded-none" />
               <Skeleton className="h-4 w-3/4" />
             </div>
           ))}
@@ -91,8 +134,8 @@ export function LibraryPage() {
     )
   }
 
-  const downloadedMovies = movieItems.filter((m: { hasFile: boolean }) => m.hasFile)
-  const requestedMovies = movieItems.filter((m: { hasFile: boolean }) => !m.hasFile)
+  const downloadedMovies = movieItems.filter((m) => m.hasFile)
+  const requestedMovies = movieItems.filter((m) => !m.hasFile)
 
   return (
     <div className="p-6">
@@ -116,13 +159,13 @@ export function LibraryPage() {
               <div>
                 <h3 className="mb-3 text-sm text-muted">Downloaded</h3>
                 <div className="grid grid-cols-2 gap-6 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-5 2xl:grid-cols-6">
-                  {downloadedMovies.map((m: { tmdbId: number; title: string; year: number; images: { coverType: string; url: string }[] }) => (
+                  {downloadedMovies.map((m) => (
                     <MovieCard
                       key={m.tmdbId}
                       item={{
                         id: m.tmdbId,
                         title: m.title,
-                        poster_path: m.images?.find((i) => i.coverType === "poster")?.url?.replace("http://", "https://") ?? null,
+                        poster_path: getPosterUrl(m.images, "radarr"),
                         release_date: String(m.year),
                       }}
                       type="movie"
@@ -136,13 +179,13 @@ export function LibraryPage() {
               <div>
                 <h3 className="mb-3 text-sm text-muted">Requested</h3>
                 <div className="grid grid-cols-2 gap-6 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-5 2xl:grid-cols-6">
-                  {requestedMovies.map((m: { tmdbId: number; title: string; year: number; images: { coverType: string; url: string }[] }) => (
+                  {requestedMovies.map((m) => (
                     <MovieCard
                       key={m.tmdbId}
                       item={{
                         id: m.tmdbId,
                         title: m.title,
-                        poster_path: m.images?.find((i) => i.coverType === "poster")?.url?.replace("http://", "https://") ?? null,
+                        poster_path: getPosterUrl(m.images, "radarr"),
                         release_date: String(m.year),
                       }}
                       type="movie"
@@ -162,7 +205,7 @@ export function LibraryPage() {
           <p className="text-muted">No TV shows in your library yet.</p>
         ) : (
           <div className="grid grid-cols-2 gap-6 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-5 2xl:grid-cols-6">
-            {seriesItems.map((s: { tvdbId: number; title: string; year: number; images: { coverType: string; url: string }[] }) => {
+            {seriesItems.map((s) => {
               const resolvedId = tvTmdbIds[s.tvdbId] ?? s.tvdbId
               return (
                 <MovieCard
@@ -170,7 +213,7 @@ export function LibraryPage() {
                   item={{
                     id: resolvedId,
                     name: s.title,
-                    poster_path: s.images?.find((i) => i.coverType === "poster")?.url?.replace("http://", "https://") ?? null,
+                    poster_path: getPosterUrl(s.images, "sonarr"),
                     first_air_date: String(s.year),
                   }}
                   type="tv"

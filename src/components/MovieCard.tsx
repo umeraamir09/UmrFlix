@@ -4,7 +4,8 @@ import Link from "next/link"
 import Image from "next/image"
 import { getImageUrl, formatYear, formatRating } from "@/lib/utils"
 import { AvailabilityBadge } from "@/components/AvailabilityBadge"
-import { Star, Play, Bookmark, Plus } from "lucide-react"
+import { Star, Bookmark } from "lucide-react"
+import { IconPlay, IconDownloadNav, IconAdd } from "@/components/ui/icons"
 import type { AvailabilityResult } from "@/app/api/availability/route"
 
 export type MovieCardItem = {
@@ -17,6 +18,26 @@ export type MovieCardItem = {
   vote_average?: number
   overview?: string
   media_type?: string
+  // Smart badges
+  badge?: string | { type: "new" | "airing" | "popular" | "top10" | "liked"; label: string }
+  airingLabel?: string // e.g., "New Episode Friday"
+}
+
+function Badge({ label, variant }: { label: string; variant?: "new" | "airing" | "popular" | "top10" | "liked" }) {
+  const colors = {
+    new: "bg-green-600 text-white",
+    airing: "bg-blue-600 text-white",
+    popular: "bg-orange-500 text-white",
+    top10: "bg-red-600 text-white",
+    liked: "bg-amber-500 text-white",
+  }
+  const colorClass = colors[variant || "new"]
+  
+  return (
+    <span className={`${colorClass} text-[10px] font-bold px-1.5 py-0.5 rounded-sm uppercase tracking-wide`}>
+      {label}
+    </span>
+  )
 }
 
 export function MovieCard({
@@ -37,20 +58,34 @@ export function MovieCard({
   return (
     <Link href={href} className="group relative block w-full flex-shrink-0">
       {/* Poster Image Container */}
-      <div className="relative aspect-[2/3] w-full overflow-hidden rounded-none bg-[#1a1c23] shadow-md">
+      <div className="relative aspect-[2/3] w-full overflow-hidden rounded-none bg-card shadow-md">
         <Image
           src={posterUrl}
           alt={title}
           fill
           sizes="(max-width: 640px) 50vw, (max-width: 1024px) 25vw, 16vw"
           className="object-cover"
+          unoptimized
         />
 
         {/* Top Badges (Visible when not hovering) */}
-        <div className="absolute inset-x-2 top-2 z-10 flex items-center justify-between gap-1 pointer-events-none group-hover:opacity-0 transition-opacity">
-
-
-          {availabilityState?.status === "in_library" && <AvailabilityBadge state={availabilityState} />}
+        <div className="absolute inset-x-2 top-2 z-10 flex items-center justify-end gap-1 pointer-events-none group-hover:opacity-0 transition-opacity">
+          {/* Availability Badge */}
+          {availabilityState?.status === "in_library" && (
+            <AvailabilityBadge state={availabilityState} />
+          )}
+          
+          {/* Airing Badge (TVMaze) */}
+          {item.airingLabel && (
+            <Badge label={item.airingLabel} variant="airing" />
+          )}
+          
+          {/* Smart Badges */}
+          {typeof item.badge === "string" ? (
+            <Badge label={item.badge} variant="new" />
+          ) : item.badge ? (
+            <Badge label={item.badge.label} variant={item.badge.type} />
+          ) : null}
         </div>
       </div>
 
@@ -66,7 +101,7 @@ export function MovieCard({
       </div>
 
       {/* Crunchyroll-Style Full Hover Overlay (Expands over full card height) */}
-      <div className="absolute inset-0 z-20 bg-[#141519]/95 p-3 sm:p-3.5 flex flex-col justify-between opacity-0 group-hover:opacity-100 transition-opacity duration-200 border border-[#282c37] shadow-2xl pointer-events-none group-hover:pointer-events-auto">
+      <div className="absolute inset-0 z-20 bg-surface/95 p-3 sm:p-3.5 flex flex-col justify-between opacity-0 group-hover:opacity-100 transition-opacity duration-200 border border-border shadow-2xl pointer-events-none group-hover:pointer-events-auto">
         <div className="space-y-1.5 overflow-hidden">
           {/* Title */}
           <h3 className="text-sm sm:text-lg font-bold text-white leading-tight line-clamp-2">
@@ -95,13 +130,13 @@ export function MovieCard({
         {/* Bottom Action Bar (Crunchyroll Orange/Accent Icons) */}
         <div className="flex items-center gap-3 pt-2">
           <div className="text-accent hover:scale-110 transition-transform cursor-pointer" title="Watch Now">
-            <Play className="size-5 fill-accent text-accent" />
+            <IconPlay className="size-5 fill-accent text-accent" />
           </div>
           <div className="text-accent hover:scale-110 transition-transform cursor-pointer" title="Bookmark">
-            <Bookmark className="size-5" />
+            <IconDownloadNav className="size-5" />
           </div>
           <div className="text-accent hover:scale-110 transition-transform cursor-pointer" title="Add to Library">
-            <Plus className="size-5" />
+            <IconAdd className="size-5" />
           </div>
         </div>
       </div>

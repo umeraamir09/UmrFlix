@@ -1,6 +1,6 @@
 "use client"
 
-import { useRef } from "react"
+import { useRef, useState, useEffect, useCallback } from "react"
 import useSWR from "swr"
 import { MovieCard, MovieCardItem } from "@/components/MovieCard"
 import { useBatchAvailability } from "@/lib/use-availability"
@@ -22,6 +22,8 @@ export function MovieRow({
   customItems?: MovieCardItem[]
 }) {
   const scrollRef = useRef<HTMLDivElement>(null)
+  const [canScrollLeft, setCanScrollLeft] = useState(false)
+  const [canScrollRight, setCanScrollRight] = useState(true)
 
   const defaultEndpoint = `/api/tmdb/trending/${type}/week`
   const targetEndpoint = endpoint || defaultEndpoint
@@ -40,6 +42,26 @@ export function MovieRow({
 
   const { availabilityMap } = useBatchAvailability(availabilityRefs)
 
+  const checkScroll = useCallback(() => {
+    if (scrollRef.current) {
+      const { scrollLeft, scrollWidth, clientWidth } = scrollRef.current
+      setCanScrollLeft(scrollLeft > 10)
+      setCanScrollRight(scrollLeft + clientWidth < scrollWidth - 10)
+    }
+  }, [])
+
+  useEffect(() => {
+    const el = scrollRef.current
+    if (!el) return
+    checkScroll()
+    el.addEventListener("scroll", checkScroll, { passive: true })
+    window.addEventListener("resize", checkScroll)
+    return () => {
+      el.removeEventListener("scroll", checkScroll)
+      window.removeEventListener("resize", checkScroll)
+    }
+  }, [checkScroll, items])
+
   const scroll = (direction: "left" | "right") => {
     if (scrollRef.current) {
       const scrollAmount = scrollRef.current.clientWidth * 0.75
@@ -52,7 +74,7 @@ export function MovieRow({
 
   return (
     <section className="relative my-8 space-y-3 group/row">
-      {/* Header & Subtitle */}
+      {/* Header & Subtitle (Stays aligned with left container padding) */}
       <div className="flex items-end justify-between px-1">
         <div>
           <h2 className="text-xl sm:text-2xl font-black uppercase tracking-tight text-white flex items-center gap-2">
@@ -64,29 +86,42 @@ export function MovieRow({
         </div>
       </div>
 
-      {/* Row Carousel Container */}
-      <div className="relative">
-        {/* Navigation Buttons */}
-        <button
-          onClick={() => scroll("left")}
-          className="absolute -left-3 top-1/2 z-20 -translate-y-1/2 rounded-full bg-[#141519]/90 border border-[#282c37] p-2 text-white shadow-xl opacity-0 transition-opacity hover:bg-accent hover:border-accent group-hover/row:opacity-100 hidden sm:block"
-          aria-label="Scroll left"
+      {/* Row Carousel Breakout Container (Extends horizontally off right edge of viewport) */}
+      <div className="relative w-[calc(100%+(100vw-100%)/2)] overflow-visible">
+        {/* Left Navigation Button */}
+        <div
+          className={`absolute left-0 top-0 bottom-0 z-30 pointer-events-none flex items-center justify-start pl-1 sm:pl-2 transition-opacity duration-300 ${
+            canScrollLeft ? "opacity-100" : "opacity-0"
+          }`}
         >
-          <ChevronLeft className="size-5" />
-        </button>
+          <button
+            onClick={() => scroll("left")}
+            className="pointer-events-auto rounded-none bg-surface/90 hover:bg-accent border border-border hover:border-accent p-2.5 sm:p-3 text-white shadow-2xl transition-all duration-200 hover:scale-110 active:scale-95 group-hover/row:opacity-100 hidden sm:block focus:outline-none"
+            aria-label="Scroll left"
+          >
+            <ChevronLeft className="size-5 sm:size-6 stroke-[2.5]" />
+          </button>
+        </div>
 
-        <button
-          onClick={() => scroll("right")}
-          className="absolute -right-3 top-1/2 z-20 -translate-y-1/2 rounded-full bg-[#141519]/90 border border-[#282c37] p-2 text-white shadow-xl opacity-0 transition-opacity hover:bg-accent hover:border-accent group-hover/row:opacity-100 hidden sm:block"
-          aria-label="Scroll right"
+        {/* Right Navigation Button */}
+        <div
+          className={`absolute right-0 top-0 bottom-0 z-30 pointer-events-none flex items-center justify-end pr-2 sm:pr-4 transition-opacity duration-300 ${
+            canScrollRight ? "opacity-100" : "opacity-0"
+          }`}
         >
-          <ChevronRight className="size-5" />
-        </button>
+          <button
+            onClick={() => scroll("right")}
+            className="pointer-events-auto rounded-none bg-surface/90 hover:bg-accent border border-border hover:border-accent p-2.5 sm:p-3 text-white shadow-2xl transition-all duration-200 hover:scale-110 active:scale-95 group-hover/row:opacity-100 hidden sm:block focus:outline-none"
+            aria-label="Scroll right"
+          >
+            <ChevronRight className="size-5 sm:size-6 stroke-[2.5]" />
+          </button>
+        </div>
 
-        {/* Scrollable Items */}
+        {/* Scrollable Cards Track */}
         <div
           ref={scrollRef}
-          className="grid grid-flow-col auto-cols-[190px] sm:auto-cols-[240px] md:auto-cols-[285px] gap-6 overflow-x-auto no-scrollbar py-2 px-1"
+          className="grid grid-flow-col auto-cols-[175px] sm:auto-cols-[220px] md:auto-cols-[255px] lg:auto-cols-[275px] gap-4 sm:gap-5 md:gap-6 overflow-x-auto no-scrollbar py-3 px-1 scroll-smooth pr-12 sm:pr-16 md:pr-24"
         >
           {isLoading
             ? Array.from({ length: 8 }).map((_, i) => (
@@ -107,3 +142,4 @@ export function MovieRow({
     </section>
   )
 }
+

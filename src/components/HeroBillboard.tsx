@@ -3,7 +3,8 @@
 import { useState, useEffect, useCallback } from "react"
 import Image from "next/image"
 import Link from "next/link"
-import { Play, Bookmark, ChevronLeft, ChevronRight, Info, Check } from "lucide-react"
+import { ChevronLeft, ChevronRight, Info, Check } from "lucide-react"
+import { IconPlay, IconDownloadNav } from "@/components/ui/icons"
 
 export interface BillboardItem {
   id: number
@@ -60,8 +61,8 @@ export function HeroBillboard({ items }: { items: BillboardItem[] }) {
   const title = activeItem.title || "Featured Title"
 
   return (
-    <div className="relative w-full h-[75vh] min-h-[600px] sm:h-[80vh] sm:min-h-[680px] md:h-[85vh] md:min-h-[750px] overflow-hidden bg-[#0a0b0d] group">
-      {/* Background Image with Swiping Animation */}
+    <div className="relative w-full h-[75vh] min-h-[600px] sm:h-[80vh] sm:min-h-[680px] md:h-[85vh] md:min-h-[750px] overflow-hidden bg-background group">
+      {/* Background Image with Swiping & Scale Animation */}
       <div className="absolute inset-0 overflow-hidden">
         <Image
           key={`${currentIndex}-${direction}`}
@@ -74,34 +75,38 @@ export function HeroBillboard({ items }: { items: BillboardItem[] }) {
           }`}
           unoptimized
         />
-        {/* Dark vignettes matching Crunchyroll */}
-        <div className="absolute inset-0 bg-gradient-to-t from-[#000000] via-[#000000]/50 to-transparent" />
-        <div className="absolute inset-0 bg-gradient-to-r from-[#000000] via-[#000000]/80 to-transparent w-full md:w-3/4" />
-        <div className="absolute inset-0 bg-gradient-to-b from-[#000000]/80 via-transparent to-transparent h-24" />
+        {/* Dark Vignette Gradients */}
+        <div className="absolute inset-0 bg-gradient-to-t from-background via-background/50 to-transparent" />
+        <div className="absolute inset-0 bg-gradient-to-r from-background via-background/80 to-transparent w-full md:w-3/4" />
+        <div className="absolute inset-0 bg-gradient-to-b from-background/80 via-transparent to-transparent h-24" />
       </div>
 
       {/* Hero Content Container with Swiping Text Animation */}
-      <div className="relative z-10 mx-auto flex h-full max-w-[1600px] items-center px-4 sm:px-6 md:px-8 pb-24 sm:pb-32 md:pb-40">
+      <div className="relative z-10 mx-auto flex h-full max-w-[1600px] items-center px-4 sm:px-6 md:px-8 pb-32 sm:pb-44 md:pb-52">
         <div
           key={`${currentIndex}-${direction}`}
           className={`max-w-2xl space-y-4 pt-12 ${
             direction === "next" ? "animate-slide-in-right" : "animate-slide-in-left"
           }`}
         >
+          <div className="flex items-center gap-2 text-xs font-black uppercase tracking-widest text-accent">
+            <span className="bg-accent/20 px-2 py-0.5 border border-accent/40">TRENDING NOW</span>
+            <span className="text-gray-400 font-medium">• SUB | DUB</span>
+          </div>
 
           {/* Title Logo Image or Fallback Title Text */}
           {activeItem.logo_path ? (
-            <div className="relative h-24 sm:h-32 md:h-40 w-72 sm:w-96 md:w-[480px] my-2 drop-shadow-2xl">
+            <div className="relative h-20 sm:h-28 md:h-36 w-64 sm:w-80 md:w-[440px] my-2 drop-shadow-2xl">
               <Image
                 src={activeItem.logo_path}
                 alt={title}
                 fill
-                className="object-contain object-left drop-shadow-md"
+                className="object-contain object-left drop-shadow-xl"
                 unoptimized
               />
             </div>
           ) : (
-            <h1 className="text-3xl font-black uppercase tracking-tight text-white sm:text-5xl md:text-6xl drop-shadow-lg line-clamp-2">
+            <h1 className="text-3xl sm:text-5xl md:text-6xl font-black uppercase tracking-tight text-white leading-tight drop-shadow-lg">
               {title}
             </h1>
           )}
@@ -115,15 +120,15 @@ export function HeroBillboard({ items }: { items: BillboardItem[] }) {
           <div className="flex flex-wrap items-center gap-3 pt-2">
             <Link
               href={`/${activeItem.media_type}/${activeItem.id}`}
-              className="flex items-center gap-2 bg-accent px-6 py-3 text-xs sm:text-sm font-bold uppercase tracking-wider text-white shadow-xl hover:bg-accent-hover transition-all active:scale-95"
+              className="flex items-center gap-2 rounded-none bg-accent px-6 py-3 text-xs sm:text-sm font-bold uppercase tracking-wider text-white shadow-xl hover:bg-accent-hover transition-all active:scale-95"
             >
-              <Play className="size-4 fill-white" />
+              <IconPlay className="size-4 fill-white" />
               {activeItem.inLibrary ? "WATCH NOW" : "EXPLORE & REQUEST"}
             </Link>
 
             <button
               onClick={() => setIsBookmarked(!isBookmarked)}
-              className={`flex items-center gap-2 border px-4 py-3 text-xs sm:text-sm font-bold uppercase tracking-wider transition-all active:scale-95 ${
+              className={`flex items-center gap-2 rounded-none border px-4 py-3 text-xs sm:text-sm font-bold uppercase tracking-wider transition-all active:scale-95 ${
                 isBookmarked
                   ? "border-accent bg-accent/20 text-accent"
                   : "border-gray-400 bg-black/40 text-white hover:border-white hover:bg-black/60"
@@ -136,7 +141,7 @@ export function HeroBillboard({ items }: { items: BillboardItem[] }) {
                 </>
               ) : (
                 <>
-                  <Bookmark className="size-4" />
+                  <IconDownloadNav className="size-4" />
                   ADD TO WATCHLIST
                 </>
               )}
@@ -145,31 +150,31 @@ export function HeroBillboard({ items }: { items: BillboardItem[] }) {
         </div>
       </div>
 
-      {/* Slider Controls */}
+      {/* Slider Prev / Next Arrows */}
       {items.length > 1 && (
         <>
           <button
             onClick={prevSlide}
-            className="absolute left-4 top-1/2 -translate-y-1/2 rounded-full bg-black/50 p-2 text-white opacity-0 transition-opacity hover:bg-accent group-hover:opacity-100 z-30"
+            className="absolute left-4 top-1/2 -translate-y-1/2 rounded-none bg-black/50 p-2.5 text-white opacity-0 transition-opacity hover:bg-accent group-hover:opacity-100 z-30"
             aria-label="Previous Slide"
           >
             <ChevronLeft className="size-6" />
           </button>
           <button
             onClick={nextSlide}
-            className="absolute right-4 top-1/2 -translate-y-1/2 rounded-full bg-black/50 p-2 text-white opacity-0 transition-opacity hover:bg-accent group-hover:opacity-100 z-30"
+            className="absolute right-4 top-1/2 -translate-y-1/2 rounded-none bg-black/50 p-2.5 text-white opacity-0 transition-opacity hover:bg-accent group-hover:opacity-100 z-30"
             aria-label="Next Slide"
           >
             <ChevronRight className="size-6" />
           </button>
 
-          {/* Crunchyroll Bottom Slide Indicators */}
+          {/* Bottom Slide Indicators (positioned above the overlapping row) */}
           <div className="absolute bottom-32 sm:bottom-40 md:bottom-48 left-1/2 -translate-x-1/2 z-30 flex items-center gap-2">
             {items.map((_, idx) => (
               <button
                 key={idx}
                 onClick={() => handleIndicatorClick(idx)}
-                className={`h-1.5 rounded-full transition-all ${
+                className={`h-1.5 rounded-none transition-all ${
                   idx === currentIndex
                     ? "w-8 bg-accent"
                     : "w-2 bg-gray-600 hover:bg-gray-400"

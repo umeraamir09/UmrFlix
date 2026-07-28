@@ -26,7 +26,7 @@ export function ResumeModal({
 }) {
   return (
     <div className="absolute inset-0 z-40 flex items-center justify-center bg-black/70 backdrop-blur-sm">
-      <div className="mx-4 w-full max-w-sm rounded-xl border border-[#282c37] bg-[#141519] p-6 shadow-2xl">
+      <div className="mx-4 w-full max-w-sm rounded-none border border-border bg-surface p-6 shadow-2xl">
         <div className="mb-1 flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-accent">
           <History className="size-4" />
           Continue Watching
@@ -40,14 +40,14 @@ export function ResumeModal({
         <div className="mt-5 flex flex-col gap-2">
           <button
             onClick={onResume}
-            className="flex w-full items-center justify-center gap-2 rounded-md bg-accent px-4 py-2.5 text-sm font-bold uppercase tracking-wider text-white transition-colors hover:bg-accent-hover"
+            className="flex w-full items-center justify-center gap-2 rounded-none bg-accent px-4 py-2.5 text-sm font-bold uppercase tracking-wider text-white transition-colors hover:bg-accent-hover"
           >
             <Play className="size-4 fill-white" />
             Resume {formatTimecode(positionSeconds)}
           </button>
           <button
             onClick={onStartFromBeginning}
-            className="flex w-full items-center justify-center gap-2 rounded-md border border-[#282c37] bg-[#1a1c23] px-4 py-2.5 text-sm font-bold uppercase tracking-wider text-gray-200 transition-colors hover:border-gray-500 hover:text-white"
+            className="flex w-full items-center justify-center gap-2 rounded-none border border-border bg-card px-4 py-2.5 text-sm font-bold uppercase tracking-wider text-gray-200 transition-colors hover:border-gray-500 hover:text-white"
           >
             Start from Beginning
           </button>
@@ -115,7 +115,7 @@ export function NextEpisodeOverlay({
           Up Next
         </span>
         {next.imageUrl && (
-          <span className="relative block aspect-video w-72 overflow-hidden rounded-lg border border-[#282c37] shadow-2xl">
+          <span className="relative block aspect-video w-72 overflow-hidden rounded-none border border-border shadow-2xl">
             <Image
               src={next.imageUrl}
               alt={next.title}
@@ -139,14 +139,14 @@ export function NextEpisodeOverlay({
         <div className="mt-1 flex items-center gap-3">
           <button
             onClick={onPlayNow}
-            className="flex items-center gap-2 rounded-md bg-accent px-6 py-2.5 text-sm font-bold uppercase tracking-wider text-white transition-colors hover:bg-accent-hover"
+            className="flex items-center gap-2 rounded-none bg-accent px-6 py-2.5 text-sm font-bold uppercase tracking-wider text-white transition-colors hover:bg-accent-hover"
           >
             <Play className="size-4 fill-white" />
             Play Now
           </button>
           <button
             onClick={onCancel}
-            className="flex items-center gap-2 rounded-md border border-[#282c37] bg-[#1a1c23]/80 px-6 py-2.5 text-sm font-bold uppercase tracking-wider text-gray-200 transition-colors hover:border-gray-500 hover:text-white"
+            className="flex items-center gap-2 rounded-none border border-border bg-card/80 px-6 py-2.5 text-sm font-bold uppercase tracking-wider text-gray-200 transition-colors hover:border-gray-500 hover:text-white"
           >
             <X className="size-4" />
             Cancel
@@ -169,17 +169,17 @@ export function CreditsNextEpisodePill({
   onDismiss: () => void
 }) {
   return (
-    <div className="absolute bottom-28 right-6 z-30 flex items-center gap-3 rounded-lg border border-[#282c37] bg-black/85 p-3 backdrop-blur">
+    <div className="absolute bottom-28 right-6 z-30 flex items-center gap-3 rounded-none border border-border bg-black/85 p-3 backdrop-blur">
       <button
         onClick={onPlayNow}
-        className="flex items-center gap-2 rounded-md bg-accent px-4 py-2 text-xs font-bold uppercase tracking-wider text-white transition-colors hover:bg-accent-hover"
+        className="flex items-center gap-2 rounded-none bg-accent px-4 py-2 text-xs font-bold uppercase tracking-wider text-white transition-colors hover:bg-accent-hover"
       >
         <Play className="size-3.5 fill-white" />
         Up Next — {next.label}
       </button>
       <button
         onClick={onDismiss}
-        className="rounded-md p-1.5 text-gray-400 transition-colors hover:bg-white/10 hover:text-white"
+        className="rounded-none p-1.5 text-gray-400 transition-colors hover:bg-white/10 hover:text-white"
         aria-label="Dismiss"
       >
         <X className="size-4" />
@@ -207,12 +207,12 @@ export function PlayerError({
   onRetry: () => void
 }) {
   return (
-    <div className="absolute inset-0 z-30 flex flex-col items-center justify-center gap-4 bg-[#0a0b0d] p-6">
+    <div className="absolute inset-0 z-30 flex flex-col items-center justify-center gap-4 bg-background p-6">
       <TriangleAlert className="size-10 text-accent" />
       <p className="max-w-md text-center text-sm text-gray-300">{message}</p>
       <button
         onClick={onRetry}
-        className="rounded-md bg-accent px-5 py-2 text-sm font-bold uppercase tracking-wider text-white transition-colors hover:bg-accent-hover"
+        className="rounded-none bg-accent px-5 py-2 text-sm font-bold uppercase tracking-wider text-white transition-colors hover:bg-accent-hover"
       >
         Retry
       </button>

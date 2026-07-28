@@ -2,7 +2,8 @@
 
 import Link from "next/link"
 import Image from "next/image"
-import { Play, MoreVertical } from "lucide-react"
+import { IconPlay } from "@/components/ui/icons"
+import { MoreVertical } from "lucide-react"
 
 export interface ContinueWatchingItem {
   id: number
@@ -28,7 +29,7 @@ export function ContinueWatchingCard({ item }: { item: ContinueWatchingItem }) {
   return (
     <Link href={href} className="group block w-full flex-shrink-0">
       {/* 16:9 Widescreen Image Container */}
-      <div className="relative aspect-video w-full overflow-hidden rounded-md bg-[#1a1c23] border border-[#282c37]/60 shadow-md group-hover:border-accent transition-all duration-300">
+      <div className="relative aspect-video w-full overflow-hidden rounded-none bg-card border border-border/60 shadow-md group-hover:border-accent transition-all duration-300">
         <Image
           src={backdropUrl}
           alt={item.title}
@@ -40,15 +41,15 @@ export function ContinueWatchingCard({ item }: { item: ContinueWatchingItem }) {
 
         {/* Time Remaining Badge (Crunchyroll Style) */}
         {item.timeLeft && (
-          <div className="absolute top-2 right-2 z-10 rounded bg-black/80 px-2 py-0.5 text-[10px] font-bold text-white backdrop-blur">
+          <div className="absolute top-2 right-2 z-10 rounded-none bg-black/80 px-2 py-0.5 text-[10px] font-bold text-white backdrop-blur">
             {item.timeLeft}
           </div>
         )}
 
         {/* Play Overlay Button */}
         <div className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
-          <div className="flex size-10 items-center justify-center rounded-full bg-accent text-white shadow-lg transition-transform duration-200 group-hover:scale-110">
-            <Play className="size-5 fill-white ml-0.5" />
+          <div className="flex size-10 items-center justify-center rounded-none bg-accent text-white shadow-lg transition-transform duration-200 group-hover:scale-110">
+            <IconPlay className="size-5 fill-white ml-0.5" />
           </div>
         </div>
 

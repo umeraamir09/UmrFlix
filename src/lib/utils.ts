@@ -5,9 +5,33 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
 }
 
-export function getImageUrl(path: string | null | undefined, size: "w92" | "w154" | "w185" | "w342" | "w500" | "w780" | "original" = "w500"): string {
+export function getImageUrl(
+  path: string | null | undefined,
+  size: "w92" | "w154" | "w185" | "w342" | "w500" | "w780" | "original" = "w500"
+): string {
   if (!path) return "/placeholder-poster.svg"
-  return `https://image.tmdb.org/t/p/${size}${path}`
+
+  // Handle full HTTP / HTTPS URLs
+  if (path.startsWith("http://") || path.startsWith("https://")) {
+    if (path.includes("image.tmdb.org/t/p/")) {
+      return path.replace(/\/t\/p\/[^/]+/, `/t/p/${size}`)
+    }
+    return path
+  }
+
+  // Handle local proxy routes or placeholder images
+  if (path.startsWith("/api/") || path.startsWith("/placeholder")) {
+    return path
+  }
+
+  // Handle raw MediaCover paths if passed directly
+  if (path.startsWith("/MediaCover/")) {
+    return `/api/radarr${path}`
+  }
+
+  // Standard relative TMDB path
+  const cleanPath = path.startsWith("/") ? path : `/${path}`
+  return `https://image.tmdb.org/t/p/${size}${cleanPath}`
 }
 
 export function formatRating(vote: number): string {

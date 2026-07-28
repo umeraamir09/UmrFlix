@@ -1,23 +1,41 @@
 "use client"
 
+import { use, useState } from "react"
 import useSWR from "swr"
+import Image from "next/image"
 import { getImageUrl, formatRating, formatDate, formatRuntime } from "@/lib/utils"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Badge } from "@/components/ui/badge"
 import { RequestButton } from "@/components/RequestButton"
 import { CinemaPlayer } from "@/components/player/CinemaPlayer"
+import { MovieRow } from "@/components/MovieRow"
 import { useAvailability } from "@/lib/use-availability"
-import { Star, Clock, Calendar } from "lucide-react"
-import { use } from "react"
+import { Star, Clock, Calendar, Bookmark, Check, Film, User, Globe, DollarSign, Award } from "lucide-react"
+import type { TmdbMovieDetail } from "@/lib/tmdb"
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json())
 
+function formatNumber(num?: number): string {
+  if (!num) return ""
+  if (num >= 1_000_000_000) return `${(num / 1_000_000_000).toFixed(1)}B`
+  if (num >= 1_000_000) return `${(num / 1_000_000).toFixed(1)}M`
+  if (num >= 1_000) return `${(num / 1_000).toFixed(1)}K`
+  return num.toString()
+}
+
+function formatCurrency(amount?: number): string | null {
+  if (!amount || amount <= 0) return null
+  return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(amount)
+}
+
 export function MovieDetail({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params)
-  const { data, error, isLoading } = useSWR(
-    id ? `/api/tmdb/movie/${id}` : null,
+  const { data, error, isLoading } = useSWR<TmdbMovieDetail>(
+    id ? `/api/tmdb/movie/${id}?append_to_response=credits,videos,images,recommendations,similar&include_image_language=en,null` : null,
     fetcher
   )
+
+  const [isBookmarked, setIsBookmarked] = useState(false)
 
   const movieId = data?.id
   const { availability, refresh } = useAvailability(
@@ -26,93 +44,333 @@ export function MovieDetail({ params }: { params: Promise<{ id: string }> }) {
 
   if (isLoading) {
     return (
-      <div className="p-6">
-        <Skeleton className="aspect-video w-full rounded-lg" />
-        <Skeleton className="mt-4 h-8 w-2/3" />
-        <Skeleton className="mt-2 h-4 w-1/3" />
-        <Skeleton className="mt-4 h-24 w-full" />
+      <div className="mx-auto max-w-[1600px] p-6 space-y-6">
+        <Skeleton className="aspect-[21/9] w-full rounded-none" />
+        <Skeleton className="h-10 w-1/3" />
+        <Skeleton className="h-6 w-1/4" />
+        <Skeleton className="h-24 w-2/3" />
       </div>
     )
   }
 
   if (error || !data) {
-    return <div className="p-6 text-muted">Failed to load movie details.</div>
+    return (
+      <div className="p-12 text-center text-muted">
+        <p className="text-lg font-bold text-white">Failed to load movie details.</p>
+        <p className="text-sm text-gray-500 mt-1">Please try again later or check your network connection.</p>
+      </div>
+    )
   }
 
   const movie = data
 
+  // Extract logo URL if available
+  const logoItem = movie.images?.logos?.find((l) => l.iso_639_1 === "en") || movie.images?.logos?.[0]
+  const logoUrl = logoItem?.file_path ? getImageUrl(logoItem.file_path, "w500") : null
+
+  // Directors & Writers
+  const directors = movie.credits?.crew?.filter((c) => c.job === "Director") || []
+  const writers = movie.credits?.crew?.filter((c) => c.job === "Writer" || c.job === "Screenplay") || []
+  const cast = movie.credits?.cast?.slice(0, 10) || []
+
+  // Spoken languages
+  const spokenLanguages = movie.spoken_languages?.map((l) => l.english_name || l.name).join(", ") || "English"
+
+  // Recommendations / Similar movies
+  const relatedMovies = movie.recommendations?.results?.length
+    ? movie.recommendations.results
+    : movie.similar?.results || []
+
   return (
-    <div>
-      <div className="relative h-[50vh] min-h-[400px] w-full">
-        {movie.backdrop_path && (
+    <div className="min-h-screen bg-background text-foreground pb-16">
+      {/* ── Hero Backdrop & Title Section ── */}
+      <div className="relative h-[65vh] min-h-[500px] max-h-[750px] w-full overflow-hidden bg-background">
+        {movie.backdrop_path ? (
           <img
             src={getImageUrl(movie.backdrop_path, "original")}
-            alt=""
-            className="size-full object-cover"
+            alt={movie.title}
+            className="size-full object-cover object-center"
           />
+        ) : (
+          <div className="size-full bg-surface" />
         )}
-        <div className="absolute inset-0 bg-gradient-to-t from-background via-background/50 to-transparent" />
-      </div>
-      <div className="relative -mt-48 px-6 pb-8">
-        <div className="flex flex-col gap-6 md:flex-row">
-          <div className="w-48 flex-shrink-0">
-            <img
-              src={getImageUrl(movie.poster_path)}
-              alt={movie.title}
-              className="w-full rounded-lg shadow-xl"
-            />
-          </div>
-          <div className="flex flex-col justify-end space-y-4">
-            <div>
-              <h1 className="text-3xl font-bold">{movie.title}</h1>
-              <div className="mt-2 flex flex-wrap items-center gap-3 text-sm text-muted">
-                <span className="flex items-center gap-1">
-                  <Star className="size-4 fill-warning text-warning" />
-                  {formatRating(movie.vote_average)}
-                </span>
-                <span className="flex items-center gap-1">
-                  <Calendar className="size-4" />
-                  {formatDate(movie.release_date)}
-                </span>
-                {movie.runtime > 0 && (
-                  <span className="flex items-center gap-1">
-                    <Clock className="size-4" />
-                    {formatRuntime(movie.runtime)}
-                  </span>
-                )}
-              </div>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              {movie.genres?.map((g: { id: number; name: string }) => (
-                <Badge key={g.id} variant="default">{g.name}</Badge>
-              ))}
-            </div>
-            <p className="max-w-2xl text-sm leading-relaxed text-muted">
-              {movie.overview}
-            </p>
-            <div className="flex gap-3">
-              <RequestButton
-                type="movie"
-                tmdbId={movie.id}
-                title={movie.title}
-                year={movie.release_date ? new Date(movie.release_date).getFullYear() : undefined}
-                availability={availability}
-                onStatusChange={refresh}
+        {/* Gradient overlays */}
+        <div className="absolute inset-0 bg-gradient-to-t from-background via-background/60 to-transparent" />
+        <div className="absolute inset-0 bg-gradient-to-r from-background via-background/80 to-transparent w-full md:w-3/4" />
+        <div className="absolute inset-0 bg-gradient-to-b from-background/70 via-transparent to-transparent h-24" />
+
+        {/* Hero Banner Content */}
+        <div className="absolute bottom-8 left-0 right-0 z-10 mx-auto max-w-[1600px] px-4 sm:px-6 md:px-8">
+          <div className="flex flex-col md:flex-row gap-6 items-start md:items-end">
+            {/* Poster */}
+            <div className="w-36 sm:w-44 md:w-52 shrink-0 overflow-hidden rounded-none border border-border shadow-2xl hidden sm:block">
+              <img
+                src={getImageUrl(movie.poster_path, "w500")}
+                alt={movie.title}
+                className="w-full h-auto object-cover"
               />
             </div>
 
-            {availability?.status === "in_library" && availability.jellyfinItemId && (
-              <div className="mt-4 w-full max-w-4xl">
-                <CinemaPlayer
-                  itemId={availability.jellyfinItemId}
+            {/* Title / Logo / Metadata Details */}
+            <div className="space-y-4 max-w-3xl">
+              <div className="flex items-center gap-2 text-xs font-black uppercase tracking-widest text-accent">
+                <span className="bg-accent/20 px-2 py-0.5 border border-accent/40">MOVIE</span>
+                <span className="text-gray-400 font-medium">• SUB | DUB</span>
+              </div>
+
+              {/* Logo image or text title */}
+              {logoUrl ? (
+                <div className="relative h-20 sm:h-28 md:h-32 w-64 sm:w-80 md:w-[420px] drop-shadow-2xl my-2">
+                  <img
+                    src={logoUrl}
+                    alt={movie.title}
+                    className="max-h-full max-w-full object-contain object-left drop-shadow-xl"
+                  />
+                </div>
+              ) : (
+                <h1 className="text-3xl sm:text-4xl md:text-5xl font-black uppercase tracking-tight text-white leading-tight drop-shadow-lg">
+                  {movie.title}
+                </h1>
+              )}
+
+              {/* Tagline */}
+              {movie.tagline && (
+                <p className="text-sm italic text-gray-300 font-medium">{`"${movie.tagline}"`}</p>
+              )}
+
+              {/* Metadata Badges */}
+              <div className="flex flex-wrap items-center gap-3 text-xs font-semibold text-gray-300">
+                {movie.vote_average > 0 && (
+                  <span className="flex items-center gap-1 bg-surface/90 border border-border px-2.5 py-1 text-white font-bold">
+                    <Star className="size-4 fill-warning text-warning" />
+                    {formatRating(movie.vote_average)}
+                    {movie.vote_count > 0 && (
+                      <span className="text-gray-400 font-normal text-[11px]">
+                        ({formatNumber(movie.vote_count)})
+                      </span>
+                    )}
+                  </span>
+                )}
+                {movie.release_date && (
+                  <span className="flex items-center gap-1.5 bg-surface/90 border border-border px-2.5 py-1">
+                    <Calendar className="size-3.5 text-accent" />
+                    {formatDate(movie.release_date)}
+                  </span>
+                )}
+                {movie.runtime > 0 && (
+                  <span className="flex items-center gap-1.5 bg-surface/90 border border-border px-2.5 py-1">
+                    <Clock className="size-3.5 text-accent" />
+                    {formatRuntime(movie.runtime)}
+                  </span>
+                )}
+                {movie.status && (
+                  <span className="bg-surface/90 border border-border px-2.5 py-1 uppercase text-[10px] tracking-wider font-extrabold text-gray-400">
+                    {movie.status}
+                  </span>
+                )}
+              </div>
+
+              {/* Genres */}
+              <div className="flex flex-wrap gap-2 pt-1">
+                {movie.genres?.map((g) => (
+                  <Badge key={g.id} variant="default" className="rounded-none bg-surface hover:bg-card border border-border text-xs px-2.5 py-0.5">
+                    {g.name}
+                  </Badge>
+                ))}
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex flex-wrap items-center gap-3 pt-2">
+                <RequestButton
+                  type="movie"
+                  tmdbId={movie.id}
                   title={movie.title}
-                  poster={getImageUrl(movie.backdrop_path, "original")}
-                  autoPlay
+                  year={movie.release_date ? new Date(movie.release_date).getFullYear() : undefined}
+                  availability={availability}
+                  onStatusChange={refresh}
                 />
+
+                <button
+                  onClick={() => setIsBookmarked(!isBookmarked)}
+                  className={`flex items-center gap-2 rounded-none border px-4 py-3 text-xs font-bold uppercase tracking-wider transition-all active:scale-95 ${
+                    isBookmarked
+                      ? "border-accent bg-accent/20 text-accent"
+                      : "border-gray-500 bg-black/40 text-white hover:border-white hover:bg-black/60"
+                  }`}
+                >
+                  {isBookmarked ? (
+                    <>
+                      <Check className="size-4 text-accent" />
+                      IN WATCHLIST
+                    </>
+                  ) : (
+                    <>
+                      <Bookmark className="size-4" />
+                      ADD TO WATCHLIST
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* ── Main Detail Section ── */}
+      <div className="mx-auto max-w-[1600px] px-4 sm:px-6 md:px-8 mt-8 space-y-12">
+        {/* Cinema Player integration when item is available */}
+        {availability?.status === "in_library" && availability.jellyfinItemId && (
+          <div className="w-full border border-accent bg-black p-2 shadow-2xl">
+            <h2 className="text-sm font-black uppercase tracking-wider text-accent mb-2 px-2 flex items-center gap-2">
+              <Film className="size-4" /> CINEMA PLAYER
+            </h2>
+            <CinemaPlayer
+              itemId={availability.jellyfinItemId}
+              title={movie.title}
+              poster={getImageUrl(movie.backdrop_path, "original")}
+              autoPlay
+            />
+          </div>
+        )}
+
+        {/* Overview & Metadata Grid */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          {/* Main Story Overview (Left 2 Columns) */}
+          <div className="lg:col-span-2 space-y-6">
+            <div className="space-y-3 bg-surface p-6 border border-border">
+              <h2 className="text-lg font-black uppercase tracking-wider text-white border-b border-border pb-3 flex items-center gap-2">
+                <Film className="size-5 text-accent" /> STORY SYNOPSIS
+              </h2>
+              <p className="text-sm sm:text-base leading-relaxed text-gray-300">
+                {movie.overview || "No overview available for this movie."}
+              </p>
+            </div>
+
+            {/* Cast Grid */}
+            {cast.length > 0 && (
+              <div className="space-y-4 bg-surface p-6 border border-border">
+                <h2 className="text-lg font-black uppercase tracking-wider text-white border-b border-border pb-3 flex items-center gap-2">
+                  <User className="size-5 text-accent" /> TOP CAST
+                </h2>
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-4">
+                  {cast.map((actor) => (
+                    <div key={actor.id} className="space-y-2 bg-card p-2 border border-border/60 text-center group">
+                      <div className="relative aspect-square w-full overflow-hidden bg-surface">
+                        {actor.profile_path ? (
+                          <img
+                            src={getImageUrl(actor.profile_path, "w185")}
+                            alt={actor.name}
+                            className="size-full object-cover transition-transform duration-300 group-hover:scale-105"
+                          />
+                        ) : (
+                          <div className="size-full flex items-center justify-center text-gray-600">
+                            <User className="size-8" />
+                          </div>
+                        )}
+                      </div>
+                      <div>
+                        <p className="text-xs font-bold text-white line-clamp-1 group-hover:text-accent transition-colors">
+                          {actor.name}
+                        </p>
+                        <p className="text-[10px] text-gray-400 line-clamp-1">{actor.character}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
           </div>
+
+          {/* Right Sidebar Metadata Details */}
+          <div className="space-y-6">
+            <div className="bg-surface p-6 border border-border space-y-4">
+              <h2 className="text-lg font-black uppercase tracking-wider text-white border-b border-border pb-3 flex items-center gap-2">
+                <Award className="size-5 text-accent" /> MOVIE DETAILS
+              </h2>
+
+              <dl className="space-y-3.5 text-xs">
+                {directors.length > 0 && (
+                  <div>
+                    <dt className="font-bold text-gray-400 uppercase tracking-wider">Director</dt>
+                    <dd className="text-sm font-semibold text-white mt-0.5">
+                      {directors.map((d) => d.name).join(", ")}
+                    </dd>
+                  </div>
+                )}
+
+                {writers.length > 0 && (
+                  <div>
+                    <dt className="font-bold text-gray-400 uppercase tracking-wider">Writers</dt>
+                    <dd className="text-sm font-medium text-gray-200 mt-0.5">
+                      {writers.map((w) => w.name).join(", ")}
+                    </dd>
+                  </div>
+                )}
+
+                <div>
+                  <dt className="font-bold text-gray-400 uppercase tracking-wider flex items-center gap-1.5">
+                    <Globe className="size-3.5 text-accent" /> Spoken Languages
+                  </dt>
+                  <dd className="text-sm font-medium text-gray-200 mt-0.5">{spokenLanguages}</dd>
+                </div>
+
+                {movie.production_companies && movie.production_companies.length > 0 && (
+                  <div>
+                    <dt className="font-bold text-gray-400 uppercase tracking-wider">Studios</dt>
+                    <dd className="text-sm font-medium text-gray-200 mt-0.5">
+                      {movie.production_companies.map((p) => p.name).join(", ")}
+                    </dd>
+                  </div>
+                )}
+
+                {formatCurrency(movie.budget) && (
+                  <div>
+                    <dt className="font-bold text-gray-400 uppercase tracking-wider flex items-center gap-1">
+                      <DollarSign className="size-3.5 text-success" /> Budget
+                    </dt>
+                    <dd className="text-sm font-medium text-gray-200 mt-0.5">
+                      {formatCurrency(movie.budget)}
+                    </dd>
+                  </div>
+                )}
+
+                {formatCurrency(movie.revenue) && (
+                  <div>
+                    <dt className="font-bold text-gray-400 uppercase tracking-wider flex items-center gap-1">
+                      <DollarSign className="size-3.5 text-success" /> Box Office Revenue
+                    </dt>
+                    <dd className="text-sm font-medium text-gray-200 mt-0.5">
+                      {formatCurrency(movie.revenue)}
+                    </dd>
+                  </div>
+                )}
+              </dl>
+            </div>
+          </div>
         </div>
+
+        {/* ── More Like This Section ── */}
+        {relatedMovies.length > 0 && (
+          <div className="pt-8">
+            <MovieRow
+              title="MORE LIKE THIS"
+              subtitle="Movies you might also enjoy based on this title"
+              type="movie"
+              customItems={relatedMovies.map((m) => ({
+                id: m.id,
+                title: m.title,
+                poster_path: m.poster_path,
+                backdrop_path: m.backdrop_path,
+                overview: m.overview,
+                release_date: m.release_date,
+                vote_average: m.vote_average,
+                vote_count: m.vote_count,
+                popularity: m.popularity,
+                genre_ids: m.genre_ids,
+              }))}
+            />
+          </div>
+        )}
       </div>
     </div>
   )

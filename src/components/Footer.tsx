@@ -5,7 +5,7 @@ import Link from "next/link"
 
 export function Footer() {
   return (
-    <footer className="mt-20 border-t border-[#282c37] bg-[#0a0b0d] text-gray-400">
+    <footer className="mt-20 border-t border-border bg-background text-gray-400">
       <div className="mx-auto max-w-[1600px] px-4 py-12 sm:px-6 md:px-8">
         <div className="grid grid-cols-1 gap-8 md:grid-cols-12">
           {/* Logo & Info */}
@@ -55,7 +55,7 @@ export function Footer() {
           </div>
         </div>
 
-        <div className="mt-12 border-t border-[#282c37] pt-6 flex flex-col sm:flex-row items-center justify-between text-[11px] text-gray-500 gap-4">
+        <div className="mt-12 border-t border-border pt-6 flex flex-col sm:flex-row items-center justify-between text-[11px] text-gray-500 gap-4">
           <p>© {new Date().getFullYear()} UmrFlix. All rights reserved.</p>
           <div className="flex items-center gap-4">
             <Link href="/" className="hover:text-accent">Terms of Service</Link>

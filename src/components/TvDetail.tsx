@@ -1,23 +1,35 @@
 "use client"
 
-import { use } from "react"
+import { use, useState } from "react"
 import useSWR from "swr"
 import { getImageUrl, formatRating, formatDate } from "@/lib/utils"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Badge } from "@/components/ui/badge"
 import { RequestButton } from "@/components/RequestButton"
 import { SeasonBrowser } from "@/components/SeasonBrowser"
+import { MovieRow } from "@/components/MovieRow"
 import { useAvailability } from "@/lib/use-availability"
-import { Star, Calendar } from "lucide-react"
+import { Star, Calendar, Bookmark, Check, Tv, User, Globe, ShieldAlert, Award } from "lucide-react"
+import type { TmdbTvDetail } from "@/lib/tmdb"
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json())
 
+function formatNumber(num?: number): string {
+  if (!num) return ""
+  if (num >= 1_000_000_000) return `${(num / 1_000_000_000).toFixed(1)}B`
+  if (num >= 1_000_000) return `${(num / 1_000_000).toFixed(1)}M`
+  if (num >= 1_000) return `${(num / 1_000).toFixed(1)}K`
+  return num.toString()
+}
+
 export function TvDetail({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params)
-  const { data, error, isLoading } = useSWR(
-    id ? `/api/tmdb/tv/${id}` : null,
+  const { data, error, isLoading } = useSWR<TmdbTvDetail>(
+    id ? `/api/tmdb/tv/${id}?append_to_response=credits,videos,images,recommendations,similar,external_ids,content_ratings&include_image_language=en,null` : null,
     fetcher
   )
+
+  const [isBookmarked, setIsBookmarked] = useState(false)
 
   const showId = data?.id
   const { availability, refresh } = useAvailability(
@@ -26,91 +38,328 @@ export function TvDetail({ params }: { params: Promise<{ id: string }> }) {
 
   if (isLoading) {
     return (
-      <div className="p-6">
-        <Skeleton className="aspect-video w-full rounded-lg" />
-        <Skeleton className="mt-4 h-8 w-2/3" />
-        <Skeleton className="mt-2 h-4 w-1/3" />
-        <Skeleton className="mt-4 h-24 w-full" />
+      <div className="mx-auto max-w-[1600px] p-6 space-y-6">
+        <Skeleton className="aspect-[21/9] w-full rounded-none" />
+        <Skeleton className="h-10 w-1/3" />
+        <Skeleton className="h-6 w-1/4" />
+        <Skeleton className="h-24 w-2/3" />
       </div>
     )
   }
 
   if (error || !data) {
-    return <div className="p-6 text-muted">Failed to load TV show details.</div>
+    return (
+      <div className="p-12 text-center text-muted">
+        <p className="text-lg font-bold text-white">Failed to load TV show details.</p>
+        <p className="text-sm text-gray-500 mt-1">Please try again later or check your network connection.</p>
+      </div>
+    )
   }
 
   const show = data
   const tvdbId = show.external_ids?.tvdb_id ?? undefined
 
+  // Extract logo URL if available
+  const logoItem = show.images?.logos?.find((l) => l.iso_639_1 === "en") || show.images?.logos?.[0]
+  const logoUrl = logoItem?.file_path ? getImageUrl(logoItem.file_path, "w500") : null
+
+  // Creators & Cast
+  const creators = show.created_by || []
+  const cast = show.credits?.cast?.slice(0, 10) || []
+  const contentRating = show.content_ratings?.results?.find((r) => r.iso_3166_1 === "US")?.rating || "TV-14"
+
+  // Spoken languages
+  const spokenLanguages = show.spoken_languages?.map((l) => l.english_name || l.name).join(", ") || "Japanese, English"
+
+  // Recommendations / Similar shows
+  const relatedShows = show.recommendations?.results?.length
+    ? show.recommendations.results
+    : show.similar?.results || []
+
   return (
-    <div>
-      <div className="relative h-[50vh] min-h-[400px] w-full">
-        {show.backdrop_path && (
+    <div className="min-h-screen bg-background text-foreground pb-16">
+      {/* ── Hero Backdrop & Title Section ── */}
+      <div className="relative h-[65vh] min-h-[500px] max-h-[750px] w-full overflow-hidden bg-background">
+        {show.backdrop_path ? (
           <img
             src={getImageUrl(show.backdrop_path, "original")}
-            alt=""
-            className="size-full object-cover"
+            alt={show.name}
+            className="size-full object-cover object-center"
           />
+        ) : (
+          <div className="size-full bg-surface" />
         )}
-        <div className="absolute inset-0 bg-gradient-to-t from-background via-background/50 to-transparent" />
-      </div>
-      <div className="relative -mt-48 px-6 pb-8">
-        <div className="flex flex-col gap-6 md:flex-row">
-          <div className="w-48 flex-shrink-0">
-            <img
-              src={getImageUrl(show.poster_path)}
-              alt={show.name}
-              className="w-full rounded-lg shadow-xl"
-            />
-          </div>
-          <div className="flex flex-col justify-end space-y-4">
-            <div>
-              <h1 className="text-3xl font-bold">{show.name}</h1>
-              <div className="mt-2 flex flex-wrap items-center gap-3 text-sm text-muted">
-                <span className="flex items-center gap-1">
-                  <Star className="size-4 fill-warning text-warning" />
-                  {formatRating(show.vote_average)}
-                </span>
-                <span className="flex items-center gap-1">
-                  <Calendar className="size-4" />
-                  {formatDate(show.first_air_date)}
-                </span>
-                {show.seasons && (
-                  <span>{show.seasons.length} Seasons</span>
-                )}
-              </div>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              {show.genres?.map((g: { id: number; name: string }) => (
-                <Badge key={g.id} variant="default">{g.name}</Badge>
-              ))}
-            </div>
-            <p className="max-w-2xl text-sm leading-relaxed text-muted">
-              {show.overview}
-            </p>
-            <div className="flex gap-3">
-              <RequestButton
-                type="tv"
-                tmdbId={show.id}
-                title={show.name}
-                year={show.first_air_date ? new Date(show.first_air_date).getFullYear() : undefined}
-                tvdbId={tvdbId}
-                availability={availability}
-                onStatusChange={refresh}
+        {/* Gradient overlays */}
+        <div className="absolute inset-0 bg-gradient-to-t from-background via-background/60 to-transparent" />
+        <div className="absolute inset-0 bg-gradient-to-r from-background via-background/80 to-transparent w-full md:w-3/4" />
+        <div className="absolute inset-0 bg-gradient-to-b from-background/70 via-transparent to-transparent h-24" />
+
+        {/* Hero Banner Content */}
+        <div className="absolute bottom-8 left-0 right-0 z-10 mx-auto max-w-[1600px] px-4 sm:px-6 md:px-8">
+          <div className="flex flex-col md:flex-row gap-6 items-start md:items-end">
+            {/* Poster */}
+            <div className="w-36 sm:w-44 md:w-52 shrink-0 overflow-hidden rounded-none border border-border shadow-2xl hidden sm:block">
+              <img
+                src={getImageUrl(show.poster_path, "w500")}
+                alt={show.name}
+                className="w-full h-auto object-cover"
               />
             </div>
 
-            {availability?.status === "in_library" && availability.jellyfinItemId && (
-              <div className="mt-4 w-full">
-                <SeasonBrowser
-                  seriesId={availability.jellyfinItemId}
+            {/* Title / Logo / Metadata Details */}
+            <div className="space-y-4 max-w-3xl">
+              <div className="flex items-center gap-2 text-xs font-black uppercase tracking-widest text-accent">
+                <span className="bg-accent/20 px-2 py-0.5 border border-accent/40">SERIES</span>
+                <span className="text-gray-400 font-medium">• SUB | DUB</span>
+              </div>
+
+              {/* Logo image or text title */}
+              {logoUrl ? (
+                <div className="relative h-20 sm:h-28 md:h-32 w-64 sm:w-80 md:w-[420px] drop-shadow-2xl my-2">
+                  <img
+                    src={logoUrl}
+                    alt={show.name}
+                    className="max-h-full max-w-full object-contain object-left drop-shadow-xl"
+                  />
+                </div>
+              ) : (
+                <h1 className="text-3xl sm:text-4xl md:text-5xl font-black uppercase tracking-tight text-white leading-tight drop-shadow-lg">
+                  {show.name}
+                </h1>
+              )}
+
+              {/* Tagline */}
+              {show.tagline && (
+                <p className="text-sm italic text-gray-300 font-medium">{`"${show.tagline}"`}</p>
+              )}
+
+              {/* Metadata Badges */}
+              <div className="flex flex-wrap items-center gap-3 text-xs font-semibold text-gray-300">
+                {show.vote_average > 0 && (
+                  <span className="flex items-center gap-1 bg-surface/90 border border-border px-2.5 py-1 text-white font-bold">
+                    <Star className="size-4 fill-warning text-warning" />
+                    {formatRating(show.vote_average)}
+                    {show.vote_count > 0 && (
+                      <span className="text-gray-400 font-normal text-[11px]">
+                        ({formatNumber(show.vote_count)})
+                      </span>
+                    )}
+                  </span>
+                )}
+                {show.first_air_date && (
+                  <span className="flex items-center gap-1.5 bg-surface/90 border border-border px-2.5 py-1">
+                    <Calendar className="size-3.5 text-accent" />
+                    {formatDate(show.first_air_date)}
+                  </span>
+                )}
+                {show.seasons && (
+                  <span className="flex items-center gap-1.5 bg-surface/90 border border-border px-2.5 py-1">
+                    <Tv className="size-3.5 text-accent" />
+                    {show.seasons.length} Seasons
+                  </span>
+                )}
+                <span className="bg-surface/90 border border-border px-2.5 py-1 uppercase text-[10px] tracking-wider font-extrabold text-accent">
+                  {contentRating}
+                </span>
+                {show.status && (
+                  <span className="bg-surface/90 border border-border px-2.5 py-1 uppercase text-[10px] tracking-wider font-extrabold text-gray-400">
+                    {show.status}
+                  </span>
+                )}
+              </div>
+
+              {/* Genres */}
+              <div className="flex flex-wrap gap-2 pt-1">
+                {show.genres?.map((g) => (
+                  <Badge key={g.id} variant="default" className="rounded-none bg-surface hover:bg-card border border-border text-xs px-2.5 py-0.5">
+                    {g.name}
+                  </Badge>
+                ))}
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex flex-wrap items-center gap-3 pt-2">
+                <RequestButton
+                  type="tv"
+                  tmdbId={show.id}
+                  title={show.name}
+                  year={show.first_air_date ? new Date(show.first_air_date).getFullYear() : undefined}
                   tvdbId={tvdbId}
-                  showName={show.name}
+                  availability={availability}
+                  onStatusChange={refresh}
                 />
+
+                <button
+                  onClick={() => setIsBookmarked(!isBookmarked)}
+                  className={`flex items-center gap-2 rounded-none border px-4 py-3 text-xs font-bold uppercase tracking-wider transition-all active:scale-95 ${
+                    isBookmarked
+                      ? "border-accent bg-accent/20 text-accent"
+                      : "border-gray-500 bg-black/40 text-white hover:border-white hover:bg-black/60"
+                  }`}
+                >
+                  {isBookmarked ? (
+                    <>
+                      <Check className="size-4 text-accent" />
+                      IN WATCHLIST
+                    </>
+                  ) : (
+                    <>
+                      <Bookmark className="size-4" />
+                      ADD TO WATCHLIST
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* ── Main Detail Section ── */}
+      <div className="mx-auto max-w-[1600px] px-4 sm:px-6 md:px-8 mt-8 space-y-12">
+        {/* Overview & Metadata Grid */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          {/* Main Story Overview (Left 2 Columns) */}
+          <div className="lg:col-span-2 space-y-6">
+            <div className="space-y-3 bg-surface p-6 border border-border">
+              <h2 className="text-lg font-black uppercase tracking-wider text-white border-b border-border pb-3 flex items-center gap-2">
+                <Tv className="size-5 text-accent" /> SHOW SYNOPSIS
+              </h2>
+              <p className="text-sm sm:text-base leading-relaxed text-gray-300">
+                {show.overview || "No overview available for this show."}
+              </p>
+            </div>
+
+            {/* Cast Grid */}
+            {cast.length > 0 && (
+              <div className="space-y-4 bg-surface p-6 border border-border">
+                <h2 className="text-lg font-black uppercase tracking-wider text-white border-b border-border pb-3 flex items-center gap-2">
+                  <User className="size-5 text-accent" /> TOP CAST
+                </h2>
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-4">
+                  {cast.map((actor) => (
+                    <div key={actor.id} className="space-y-2 bg-card p-2 border border-border/60 text-center group">
+                      <div className="relative aspect-square w-full overflow-hidden bg-surface">
+                        {actor.profile_path ? (
+                          <img
+                            src={getImageUrl(actor.profile_path, "w185")}
+                            alt={actor.name}
+                            className="size-full object-cover transition-transform duration-300 group-hover:scale-105"
+                          />
+                        ) : (
+                          <div className="size-full flex items-center justify-center text-gray-600">
+                            <User className="size-8" />
+                          </div>
+                        )}
+                      </div>
+                      <div>
+                        <p className="text-xs font-bold text-white line-clamp-1 group-hover:text-accent transition-colors">
+                          {actor.name}
+                        </p>
+                        <p className="text-[10px] text-gray-400 line-clamp-1">{actor.character}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
           </div>
+
+          {/* Right Sidebar Metadata Details */}
+          <div className="space-y-6">
+            <div className="bg-surface p-6 border border-border space-y-4">
+              <h2 className="text-lg font-black uppercase tracking-wider text-white border-b border-border pb-3 flex items-center gap-2">
+                <Award className="size-5 text-accent" /> SHOW DETAILS
+              </h2>
+
+              <dl className="space-y-3.5 text-xs">
+                {creators.length > 0 && (
+                  <div>
+                    <dt className="font-bold text-gray-400 uppercase tracking-wider">Created By</dt>
+                    <dd className="text-sm font-semibold text-white mt-0.5">
+                      {creators.map((c) => c.name).join(", ")}
+                    </dd>
+                  </div>
+                )}
+
+                <div>
+                  <dt className="font-bold text-gray-400 uppercase tracking-wider flex items-center gap-1.5">
+                    <Globe className="size-3.5 text-accent" /> Spoken Languages
+                  </dt>
+                  <dd className="text-sm font-medium text-gray-200 mt-0.5">{spokenLanguages}</dd>
+                </div>
+
+                <div>
+                  <dt className="font-bold text-gray-400 uppercase tracking-wider flex items-center gap-1.5">
+                    <ShieldAlert className="size-3.5 text-warning" /> Content Advisory
+                  </dt>
+                  <dd className="text-sm font-medium text-gray-200 mt-0.5">
+                    {contentRating} • Violence, Suggested Dialogue
+                  </dd>
+                </div>
+
+                {show.networks && show.networks.length > 0 && (
+                  <div>
+                    <dt className="font-bold text-gray-400 uppercase tracking-wider">Networks / Platforms</dt>
+                    <dd className="text-sm font-medium text-gray-200 mt-0.5">
+                      {show.networks.map((n) => n.name).join(", ")}
+                    </dd>
+                  </div>
+                )}
+
+                {show.number_of_episodes != null && (
+                  <div>
+                    <dt className="font-bold text-gray-400 uppercase tracking-wider">Total Episodes</dt>
+                    <dd className="text-sm font-medium text-gray-200 mt-0.5">
+                      {show.number_of_episodes} Episodes ({show.number_of_seasons || show.seasons?.length} Seasons)
+                    </dd>
+                  </div>
+                )}
+              </dl>
+            </div>
+          </div>
         </div>
+
+        {/* ── Season & Episode Previews Section ── */}
+        <div className="pt-4 border-t border-border">
+          <div className="flex items-center justify-between">
+            <h2 className="text-xl sm:text-2xl font-black uppercase tracking-tight text-white flex items-center gap-2">
+              <Tv className="size-6 text-accent" /> EPISODES & SEASONS
+            </h2>
+          </div>
+
+          <SeasonBrowser
+            tmdbId={show.id}
+            showName={show.name}
+            tmdbSeasons={show.seasons}
+            seriesId={availability?.jellyfinItemId}
+            tvdbId={tvdbId}
+          />
+        </div>
+
+        {/* ── More Like This Section ── */}
+        {relatedShows.length > 0 && (
+          <div className="pt-8">
+            <MovieRow
+              title="MORE LIKE THIS"
+              subtitle="TV Series & Anime you might also enjoy based on this title"
+              type="tv"
+              customItems={relatedShows.map((s) => ({
+                id: s.id,
+                title: s.name,
+                name: s.name,
+                poster_path: s.poster_path,
+                backdrop_path: s.backdrop_path,
+                overview: s.overview,
+                release_date: s.first_air_date,
+                vote_average: s.vote_average,
+                vote_count: s.vote_count,
+                popularity: s.popularity,
+                genre_ids: s.genre_ids,
+              }))}
+            />
+          </div>
+        )}
       </div>
     </div>
   )

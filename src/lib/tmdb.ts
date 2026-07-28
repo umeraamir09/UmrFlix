@@ -1,9 +1,8 @@
 import { env } from "./env"
 
-const BASE = env("TMDB_API_BASE")
-const KEY = env("TMDB_API_KEY")
-
 export async function tmdbFetch<T>(path: string, params?: Record<string, string>): Promise<T> {
+  const BASE = env("TMDB_API_BASE") || "https://api.themoviedb.org/3"
+  const KEY = env("TMDB_API_KEY")
   const url = new URL(`${BASE}${path}`)
   url.searchParams.set("api_key", KEY)
   url.searchParams.set("language", "en-US")
@@ -27,6 +26,8 @@ export type TmdbMovie = {
   overview: string
   release_date: string
   vote_average: number
+  vote_count: number
+  popularity: number
   genre_ids: number[]
   media_type?: string
 }
@@ -39,6 +40,8 @@ export type TmdbTvShow = {
   overview: string
   first_air_date: string
   vote_average: number
+  vote_count: number
+  popularity: number
   genre_ids: number[]
   media_type?: string
 }
@@ -50,21 +53,91 @@ export type TmdbPaginated<T> = {
   total_results: number
 }
 
+export type TmdbCastMember = {
+  id: number
+  name: string
+  character: string
+  profile_path: string | null
+}
+
+export type TmdbCrewMember = {
+  id: number
+  name: string
+  job: string
+  department: string
+  profile_path: string | null
+}
+
 export type TmdbMovieDetail = TmdbMovie & {
   genres: { id: number; name: string }[]
-  credits: { cast: { id: number; name: string; character: string; profile_path: string | null }[] }
+  credits: {
+    cast: TmdbCastMember[]
+    crew: TmdbCrewMember[]
+  }
   videos: { results: { key: string; site: string; type: string }[] }
+  images?: { logos?: { file_path: string; iso_639_1: string }[] }
+  recommendations?: TmdbPaginated<TmdbMovie>
+  similar?: TmdbPaginated<TmdbMovie>
   runtime: number
   status: string
+  tagline?: string
+  budget?: number
+  revenue?: number
+  spoken_languages?: { english_name: string; name: string }[]
+  production_companies?: { id: number; name: string; logo_path: string | null }[]
+}
+
+export type TmdbTvSeasonSummary = {
+  id: number
+  season_number: number
+  episode_count: number
+  name: string
+  poster_path: string | null
+  overview: string
 }
 
 export type TmdbTvDetail = TmdbTvShow & {
   genres: { id: number; name: string }[]
-  credits: { cast: { id: number; name: string; character: string; profile_path: string | null }[] }
+  credits: {
+    cast: TmdbCastMember[]
+    crew: TmdbCrewMember[]
+  }
+  created_by?: { id: number; name: string; profile_path: string | null }[]
   videos: { results: { key: string; site: string; type: string }[] }
+  images?: { logos?: { file_path: string; iso_639_1: string }[] }
+  recommendations?: TmdbPaginated<TmdbTvShow>
+  similar?: TmdbPaginated<TmdbTvShow>
   external_ids: { tvdb_id: number | null; imdb_id: string | null }
-  seasons: { id: number; season_number: number; episode_count: number; name: string }[]
+  seasons: TmdbTvSeasonSummary[]
   status: string
+  tagline?: string
+  number_of_episodes?: number
+  number_of_seasons?: number
+  spoken_languages?: { english_name: string; name: string }[]
+  networks?: { id: number; name: string; logo_path: string | null }[]
+  content_ratings?: { results: { iso_3166_1: string; rating: string }[] }
+}
+
+export type TmdbEpisode = {
+  id: number
+  name: string
+  overview: string
+  episode_number: number
+  season_number: number
+  air_date: string | null
+  runtime: number | null
+  still_path: string | null
+  vote_average: number
+  vote_count: number
+}
+
+export type TmdbSeasonDetail = {
+  id: number
+  name: string
+  overview: string
+  season_number: number
+  poster_path: string | null
+  episodes: TmdbEpisode[]
 }
 
 export function trending(type: "movie" | "tv", time: "day" | "week" = "week") {
@@ -82,11 +155,21 @@ export function searchTv(query: string, page = 1) {
 }
 
 export function movieDetail(id: number) {
-  return tmdbFetch<TmdbMovieDetail>(`/movie/${id}`, { append_to_response: "credits,videos" })
+  return tmdbFetch<TmdbMovieDetail>(`/movie/${id}`, {
+    append_to_response: "credits,videos,images,recommendations,similar",
+    include_image_language: "en,null",
+  })
 }
 
 export function tvDetail(id: number) {
-  return tmdbFetch<TmdbTvDetail>(`/tv/${id}`, { append_to_response: "credits,videos,external_ids" })
+  return tmdbFetch<TmdbTvDetail>(`/tv/${id}`, {
+    append_to_response: "credits,videos,images,recommendations,similar,external_ids,content_ratings",
+    include_image_language: "en,null",
+  })
+}
+
+export function tvSeasonDetail(id: number, seasonNumber: number) {
+  return tmdbFetch<TmdbSeasonDetail>(`/tv/${id}/season/${seasonNumber}`)
 }
 
 export function discoverMovies(params?: Record<string, string>) {
@@ -112,3 +195,4 @@ export async function getItemLogo(type: "movie" | "tv", id: number): Promise<str
   }
   return null
 }
+

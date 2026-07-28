@@ -23,120 +23,19 @@ import {
 } from "@/lib/playback-types"
 import type { SubtitleShadowStyle, SubtitleStyle } from "./SubtitleOverlay"
 
-// ── Custom Large SVG Icons matching reference screenshot ──
-
-function IconSkipBack10({ className = "size-9 sm:size-10" }: { className?: string }) {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2.2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      className={className}
-    >
-      <path d="M3.5 13a9 9 0 1 0 2.6-6.4L3.5 9" />
-      <path d="M3.5 4.5v4.5h4.5" />
-      <text
-        x="13"
-        y="16"
-        textAnchor="middle"
-        fill="currentColor"
-        stroke="none"
-        fontSize="7.5"
-        fontWeight="800"
-        fontFamily="system-ui, -apple-system, sans-serif"
-      >
-        10
-      </text>
-    </svg>
-  )
-}
-
-function IconSkipForward10({ className = "size-9 sm:size-10" }: { className?: string }) {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2.2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      className={className}
-    >
-      <path d="M20.5 13a9 9 0 1 1-2.6-6.4L20.5 9" />
-      <path d="M20.5 4.5v4.5h-4.5" />
-      <text
-        x="11"
-        y="16"
-        textAnchor="middle"
-        fill="currentColor"
-        stroke="none"
-        fontSize="7.5"
-        fontWeight="800"
-        fontFamily="system-ui, -apple-system, sans-serif"
-      >
-        10
-      </text>
-    </svg>
-  )
-}
-
-function IconCaptions({ className = "size-9 sm:size-10" }: { className?: string }) {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2.2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      className={className}
-    >
-      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-      <line x1="7" y1="8.5" x2="17" y2="8.5" />
-      <line x1="7" y1="12.5" x2="14" y2="12.5" />
-    </svg>
-  )
-}
-
-function IconSpeedometer({ className = "size-9 sm:size-10" }: { className?: string }) {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2.2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      className={className}
-    >
-      <circle cx="12" cy="12" r="9" />
-      <path d="M12 12l4.5-4.5" />
-      <circle cx="12" cy="12" r="1.5" fill="currentColor" stroke="none" />
-    </svg>
-  )
-}
-
-function IconFullscreen({ className = "size-9 sm:size-10" }: { className?: string }) {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2.5"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      className={className}
-    >
-      <path d="M4 9V4h5" />
-      <path d="M20 9V4h-5" />
-      <path d="M4 15v5h5" />
-      <path d="M20 15v5h-5" />
-    </svg>
-  )
-}
+import {
+  IconPlay,
+  IconPause,
+  IconSkipBackward,
+  IconSkipForward,
+  IconSubtitles,
+  IconSpeed,
+  IconLockClosed,
+  IconLockOpen,
+  IconMirror,
+  IconInfo,
+  IconFullscreen,
+} from "@/components/ui/icons"
 
 // ── Seek bar with buffered display, chapter ticks, hover tooltip & scrubbing ──
 
@@ -202,7 +101,7 @@ function SeekBar({
         />
         {/* played */}
         <div
-          className="absolute inset-y-0 left-0 rounded-full bg-[#e50914]"
+          className="absolute inset-y-0 left-0 rounded-full bg-accent"
           style={{ width: `${playedPct}%` }}
         />
         {/* chapter ticks */}
@@ -219,7 +118,7 @@ function SeekBar({
 
       {/* red circular dot handle */}
       <div
-        className="pointer-events-none absolute size-4 sm:size-4.5 rounded-full bg-[#e50914] shadow-md transition-transform duration-100 group-hover/seek:scale-125"
+        className="pointer-events-none absolute size-4 sm:size-4.5 rounded-full bg-accent shadow-md transition-transform duration-100 group-hover/seek:scale-125"
         style={{ left: `calc(${playedPct}% - 8px)` }}
       />
 
@@ -256,7 +155,7 @@ function MenuRow({
     >
       <span className={selected ? "font-bold text-white" : "text-gray-200"}>{label}</span>
       {selected ? (
-        <Check className="size-5 shrink-0 text-[#e50914]" />
+        <Check className="size-5 shrink-0 text-accent" />
       ) : value ? (
         <span className="shrink-0 text-sm text-gray-400 font-normal">{value}</span>
       ) : null}
@@ -375,7 +274,7 @@ function AudioSubtitlesMenu({
                 onClick={() => onSubStyleChange({ ...subStyle, size: opt.id })}
                 className={`flex-1 rounded-lg px-3 py-2.5 text-sm font-semibold transition-colors ${
                   subStyle.size === opt.id
-                    ? "bg-[#e50914] text-white"
+                    ? "bg-accent text-white"
                     : "bg-white/10 text-gray-200 hover:bg-white/15"
                 }`}
               >
@@ -401,7 +300,7 @@ function AudioSubtitlesMenu({
                 onClick={() => onSubStyleChange({ ...subStyle, color: opt.id })}
                 className={`flex-1 rounded-lg px-2 py-2.5 text-sm font-semibold transition-colors ${
                   subStyle.color === opt.id
-                    ? "bg-[#e50914] text-white"
+                    ? "bg-accent text-white"
                     : "bg-white/10 text-gray-200 hover:bg-white/15"
                 }`}
               >
@@ -428,7 +327,7 @@ function AudioSubtitlesMenu({
               onChange={(e) =>
                 onSubStyleChange({ ...subStyle, bgOpacity: Number(e.target.value) / 100 })
               }
-              className="w-full accent-[#e50914] h-2"
+              className="w-full accent-accent h-2"
             />
           </div>
 
@@ -454,7 +353,7 @@ function AudioSubtitlesMenu({
                 }
                 className={`rounded-lg px-2 py-2 text-center text-xs font-semibold transition-colors ${
                   (subStyle.shadowStyle ?? "uniform") === opt.id
-                    ? "bg-[#e50914] text-white"
+                    ? "bg-accent text-white"
                     : "bg-white/10 text-gray-200 hover:bg-white/15"
                 }`}
               >
@@ -705,9 +604,9 @@ export function PlayerControls({
               aria-label={playing ? "Pause" : "Play"}
             >
               {playing ? (
-                <Pause className="size-9 sm:size-10 fill-white text-white" />
+                <IconPause className="size-9 sm:size-10 fill-white text-white" />
               ) : (
-                <Play className="size-9 sm:size-10 fill-white text-white" />
+                <IconPlay className="size-9 sm:size-10 fill-white text-white" />
               )}
             </button>
 
@@ -716,7 +615,7 @@ export function PlayerControls({
               className="flex items-center justify-center p-1 text-white transition-transform hover:scale-110 active:scale-95"
               aria-label="Skip back 10 seconds"
             >
-              <IconSkipBack10 className="size-9 sm:size-10 text-white" />
+              <IconSkipBackward className="size-9 sm:size-10 text-white" />
             </button>
 
             <button
@@ -724,7 +623,7 @@ export function PlayerControls({
               className="flex items-center justify-center p-1 text-white transition-transform hover:scale-110 active:scale-95"
               aria-label="Skip forward 10 seconds"
             >
-              <IconSkipForward10 className="size-9 sm:size-10 text-white" />
+              <IconSkipForward className="size-9 sm:size-10 text-white" />
             </button>
 
             {/* Volume */}
@@ -746,7 +645,7 @@ export function PlayerControls({
                 max={100}
                 value={muted ? 0 : Math.round(volume * 100)}
                 onChange={(e) => onVolumeChange(Number(e.target.value) / 100)}
-                className="w-0 opacity-0 transition-all duration-200 accent-[#e50914] group-hover/vol:ml-2.5 group-hover/vol:w-20 sm:group-hover/vol:w-24 group-hover/vol:opacity-100"
+                className="w-0 opacity-0 transition-all duration-200 accent-accent h-2 group-hover/vol:ml-2.5 group-hover/vol:w-20 sm:group-hover/vol:w-24 group-hover/vol:opacity-100"
                 aria-label="Volume"
               />
             </div>
@@ -769,11 +668,11 @@ export function PlayerControls({
                   setSpeedOpen(false)
                 }}
                 className={`flex items-center justify-center p-1 text-white transition-transform hover:scale-110 active:scale-95 ${
-                  audioSubsOpen ? "text-[#e50914]" : ""
+                  audioSubsOpen ? "text-accent" : ""
                 }`}
                 aria-label="Audio and Subtitles"
               >
-                <IconCaptions className="size-9 sm:size-10" />
+                <IconSubtitles className="size-9 sm:size-10" />
               </button>
               {audioSubsOpen && (
                 <AudioSubtitlesMenu
@@ -797,11 +696,11 @@ export function PlayerControls({
                   setAudioSubsOpen(false)
                 }}
                 className={`flex items-center justify-center p-1 text-white transition-transform hover:scale-110 active:scale-95 ${
-                  speedOpen ? "text-[#e50914]" : ""
+                  speedOpen ? "text-accent" : ""
                 }`}
                 aria-label="Playback Speed and Quality"
               >
-                <IconSpeedometer className="size-9 sm:size-10" />
+                <IconSpeed className="size-9 sm:size-10" />
               </button>
               {speedOpen && (
                 <SpeedQualityMenu
