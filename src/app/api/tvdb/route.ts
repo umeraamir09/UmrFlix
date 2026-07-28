@@ -1,0 +1,44 @@
+import { NextRequest, NextResponse } from "next/server"
+import { getTmdbToTvdbMapping, setTmdbToTvdbMapping } from "@/lib/cache"
+import { env } from "@/lib/env"
+
+const TMDB_BASE = env("TMDB_API_BASE")
+const TMDB_KEY = env("TMDB_API_KEY")
+const TIMEOUT = 5_000
+
+export async function GET(request: NextRequest) {
+  const tmdbId = request.nextUrl.searchParams.get("tmdbId")
+  if (!tmdbId) {
+    return NextResponse.json({ error: "tmdbId is required" }, { status: 400 })
+  }
+
+  const id = Number(tmdbId)
+  if (isNaN(id)) {
+    return NextResponse.json({ error: "tmdbId must be a number" }, { status: 400 })
+  }
+
+  const cached = getTmdbToTvdbMapping(id)
+  if (cached !== undefined) {
+    return NextResponse.json({ tmdbId: id, tvdbId: cached, cached: true })
+  }
+
+  const controller = new AbortController()
+  const timeoutId = setTimeout(() => controller.abort(), TIMEOUT)
+  try {
+    const url = `${TMDB_BASE}/tv/${id}/external_ids?api_key=${TMDB_KEY}`
+    const res = await fetch(url, { signal: controller.signal })
+    if (!res.ok) {
+      return NextResponse.json({ tmdbId: id, tvdbId: null, error: "TMDB lookup failed" }, { status: 502 })
+    }
+    const data = await res.json()
+    const tvdbId: number | null = data.tvdb_id ?? null
+    if (tvdbId !== null) {
+      setTmdbToTvdbMapping(id, tvdbId)
+    }
+    return NextResponse.json({ tmdbId: id, tvdbId, cached: false })
+  } catch (e) {
+    return NextResponse.json({ tmdbId: id, tvdbId: null, error: "TMDB lookup failed" }, { status: 502 })
+  } finally {
+    clearTimeout(timeoutId)
+  }
+}
