@@ -152,7 +152,7 @@ export function Navbar() {
               className={`h-full flex items-center px-4 text-sm font-medium transition-colors ${
                 pathname === "/library"
                   ? "bg-[#141519] text-white"
-                  : "text-[#b5b5b5] hover:bg-[#151515] hover:text-white"
+                  : "text-[#b5b5b5] hover:bg-[#151515 ] hover:text-white"
               }`}
             >
               My Library
