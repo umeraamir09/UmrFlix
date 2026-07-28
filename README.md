@@ -1,4 +1,4 @@
-![Logo](.\public\logo_header.png)
+![Logo](https://i.ibb.co/sv5kzBjW/logo-header.png)
 
 A Netflix-style media client that unifies **TMDB** catalog browsing, **Radarr** / **Sonarr** request management, and **Jellyfin** playback into one seamless interface.
 
