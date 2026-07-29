@@ -5,6 +5,7 @@ import Image from "next/image"
 import Link from "next/link"
 import { ChevronLeft, ChevronRight, Info, Check } from "lucide-react"
 import { IconPlay, IconDownloadNav } from "@/components/ui/icons"
+import { BookmarkButton } from "@/components/BookmarkButton"
 
 export interface BillboardItem {
   id: number
@@ -132,26 +133,10 @@ export function HeroBillboard({ items }: { items: BillboardItem[] }) {
               {activeItem.inLibrary ? "WATCH NOW" : "EXPLORE & REQUEST"}
             </Link>
 
-            <button
-              onClick={() => setIsBookmarked(!isBookmarked)}
-              className={`flex items-center gap-2 rounded-none border px-4 py-3 text-xs sm:text-sm font-bold uppercase tracking-wider transition-all active:scale-95 ${
-                isBookmarked
-                  ? "border-accent bg-accent/20 text-accent"
-                  : "border-gray-400 bg-black/40 text-white hover:border-white hover:bg-black/60"
-              }`}
-            >
-              {isBookmarked ? (
-                <>
-                  <Check className="size-4 text-accent" />
-                  IN WATCHLIST
-                </>
-              ) : (
-                <>
-                  <IconDownloadNav className="size-4" />
-                  ADD TO WATCHLIST
-                </>
-              )}
-            </button>
+            <BookmarkButton
+              itemId={activeItem.jellyfinItemId || String(activeItem.id)}
+              title={activeItem.title}
+            />
           </div>
         </div>
       </div>

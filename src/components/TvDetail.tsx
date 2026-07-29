@@ -6,6 +6,7 @@ import { getImageUrl, formatRating, formatDate } from "@/lib/utils"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Badge } from "@/components/ui/badge"
 import { RequestButton } from "@/components/RequestButton"
+import { BookmarkButton } from "@/components/BookmarkButton"
 import { SeasonBrowser } from "@/components/SeasonBrowser"
 import { MovieRow } from "@/components/MovieRow"
 import { CastCarousel } from "@/components/CastCarousel"
@@ -191,25 +192,10 @@ export function TvDetail({ params }: { params: Promise<{ id: string }> }) {
                   onStatusChange={refresh}
                 />
 
-                <button
-                  onClick={() => setIsBookmarked(!isBookmarked)}
-                  className={`flex items-center gap-2 rounded-none border px-4 py-2.5 text-xs font-bold uppercase tracking-wider transition-all active:scale-95 ${isBookmarked
-                      ? "border-accent bg-accent/20 text-accent"
-                      : "border-gray-500 bg-black/40 text-white hover:border-white hover:bg-black/60"
-                    }`}
-                >
-                  {isBookmarked ? (
-                    <>
-                      <Check className="size-4 text-accent" />
-                      IN WATCHLIST
-                    </>
-                  ) : (
-                    <>
-                      <Bookmark className="size-4" />
-                      ADD TO WATCHLIST
-                    </>
-                  )}
-                </button>
+                <BookmarkButton
+                  itemId={availability?.jellyfinItemId || String(show.id)}
+                  title={show.name}
+                />
               </div>
             </div>
           </div>
