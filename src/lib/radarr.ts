@@ -61,6 +61,12 @@ export type RootFolder = {
   id: number
   path: string
   accessible: boolean
+  freeSpace?: number
+}
+
+export type Tag = {
+  id: number
+  label: string
 }
 
 export function getMovies(): Promise<RadarrMovie[]> {
@@ -77,12 +83,19 @@ export function addMovie(payload: {
   year: number
   qualityProfileId: number
   rootFolderPath: string
-  monitored: boolean
-  addOptions: { searchForMovie: boolean }
+  monitored?: boolean
+  minimumAvailability?: string
+  tags?: number[]
+  addOptions?: { searchForMovie?: boolean }
 }): Promise<RadarrMovie> {
   return radarrFetch("/movie", {
     method: "POST",
-    body: JSON.stringify(payload),
+    body: JSON.stringify({
+      monitored: true,
+      minimumAvailability: "announced",
+      ...payload,
+      addOptions: { searchForMovie: true, ...payload.addOptions },
+    }),
   })
 }
 
@@ -97,3 +110,20 @@ export function getQualityProfiles(): Promise<QualityProfile[]> {
 export function getRootFolders(): Promise<RootFolder[]> {
   return radarrFetch("/rootfolder")
 }
+
+export function getTags(): Promise<Tag[]> {
+  return radarrFetch("/tag")
+}
+
+export type DiskSpaceItem = {
+  path: string
+  label?: string
+  freeSpace: number
+  totalSpace: number
+}
+
+export function getDiskSpace(): Promise<DiskSpaceItem[]> {
+  return radarrFetch("/diskspace")
+}
+
+

@@ -14,6 +14,7 @@ export function RequestButton({
   title,
   year,
   tvdbId,
+  seasonsCount,
   availability,
   onStatusChange,
 }: {
@@ -22,6 +23,7 @@ export function RequestButton({
   title: string
   year?: number
   tvdbId?: number
+  seasonsCount?: number
   availability: AvailabilityResult | null
   onStatusChange?: () => void
 }) {
@@ -86,6 +88,7 @@ export function RequestButton({
           type={type}
           year={year}
           tvdbId={tvdbId}
+          seasonsCount={seasonsCount}
           onClose={() => setShowModal(false)}
           onSuccess={handleSuccess}
         />

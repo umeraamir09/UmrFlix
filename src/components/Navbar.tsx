@@ -8,6 +8,8 @@ import { SearchBar } from "@/components/SearchBar"
 import { ChevronDown, Menu } from "lucide-react"
 import { IconSearch, IconClose, IconDownloadNav } from "@/components/ui/icons"
 import { UserProfileMenu } from "@/components/UserProfileMenu"
+import { NotificationBell } from "@/components/NotificationBell"
+import { useEventStream } from "@/lib/use-event-stream"
 
 const NAV_LINKS = [
   { href: "/popular", label: "Popular" },
@@ -29,11 +31,14 @@ const CATEGORIES = [
 ]
 
 export function Navbar() {
+  useEventStream()
+
   const pathname = usePathname()
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [categoriesOpen, setCategoriesOpen] = useState(false)
   const [searchOpen, setSearchOpen] = useState(false)
   const searchContainerRef = useRef<HTMLDivElement>(null)
+
 
   // Close search menu on route change
   const [prevPathname, setPrevPathname] = useState(pathname)
@@ -184,6 +189,11 @@ export function Navbar() {
           >
             <IconDownloadNav className="size-5" />
           </Link>
+
+          {/* Notification Bell */}
+          <div className="h-full flex items-center">
+            <NotificationBell />
+          </div>
 
           {/* User Profile & Settings Menu */}
           <div className="px-2 flex items-center h-full">

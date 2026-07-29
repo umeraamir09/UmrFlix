@@ -9,6 +9,7 @@
  */
 
 import type * as myList from "../myList.js";
+import type * as requests from "../requests.js";
 
 import type {
   ApiFromModules,
@@ -18,6 +19,7 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   myList: typeof myList;
+  requests: typeof requests;
 }>;
 
 /**
