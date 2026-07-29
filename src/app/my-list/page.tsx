@@ -3,8 +3,7 @@
 import { useState } from "react"
 import useSWR from "swr"
 import Link from "next/link"
-import Image from "next/image"
-import { Bookmark, Film, Tv, Search, Trash2, Play, CheckCircle2 } from "lucide-react"
+import { Bookmark, Film, Tv, Search, Play, CheckCircle2 } from "lucide-react"
 import { Skeleton } from "@/components/ui/skeleton"
 import { BookmarkButton } from "@/components/BookmarkButton"
 
@@ -25,7 +24,7 @@ type FavoriteItem = {
 const fetcher = (url: string) => fetch(url).then((res) => res.json())
 
 export default function MyListPage() {
-  const { data, error, isLoading, mutate } = useSWR<{ items: FavoriteItem[] }>(
+  const { data, error, isLoading } = useSWR<{ items: FavoriteItem[] }>(
     "/api/jellyfin/favorites",
     fetcher
   )
@@ -51,18 +50,18 @@ export default function MyListPage() {
   })
 
   return (
-    <div className="min-h-screen bg-[#0a0b0d] text-white pt-24 pb-16 px-4 sm:px-6 md:px-8 max-w-[1600px] mx-auto space-y-8">
+    <div className="min-h-screen bg-background text-foreground pt-24 pb-16 px-4 sm:px-6 md:px-8 max-w-[1600px] mx-auto space-y-8">
       {/* Header Banner */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-white/10 pb-6">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-border pb-6">
         <div>
           <div className="flex items-center gap-3">
-            <div className="p-2.5 rounded-xl bg-brand-red/15 border border-brand-red/30 text-brand-red">
-              <Bookmark className="w-6 h-6 fill-brand-red" />
+            <div className="p-2.5 rounded-none bg-accent/20 border border-accent text-accent">
+              <Bookmark className="size-6 fill-accent" />
             </div>
             <div>
-              <h1 className="text-3xl font-extrabold tracking-tight text-white">My List</h1>
-              <p className="text-xs text-gray-400 mt-1">
-                Your saved Jellyfin favorites and bookmarked movies & TV shows
+              <h1 className="text-2xl sm:text-3xl font-black uppercase tracking-tight text-white">My List</h1>
+              <p className="text-xs text-foreground-muted mt-1">
+                Your saved Jellyfin favorites and bookmarked media items
               </p>
             </div>
           </div>
@@ -70,51 +69,51 @@ export default function MyListPage() {
 
         {/* Filter Controls */}
         <div className="flex flex-wrap items-center gap-3">
-          {/* Search bar */}
+          {/* Search Bar */}
           <div className="relative w-full sm:w-64">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted" />
             <input
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Search My List..."
-              className="w-full bg-[#1b1c22] border border-white/10 focus:border-brand-red rounded-xl py-2 pl-9 pr-3 text-xs text-white placeholder-gray-500 focus:outline-none"
+              className="w-full rounded-none bg-surface border border-border focus:border-accent text-xs text-white placeholder-muted py-2 pl-9 pr-3 focus:outline-none transition-colors"
             />
           </div>
 
           {/* Type Filter Tabs */}
-          <div className="flex items-center bg-[#141519] border border-white/10 rounded-xl p-1 text-xs">
+          <div className="flex items-center bg-surface border border-border rounded-none p-1 text-xs">
             <button
               onClick={() => setActiveTab("all")}
-              className={`px-3 py-1.5 rounded-lg font-medium transition-all ${
+              className={`rounded-none px-3.5 py-1.5 font-bold uppercase tracking-wider transition-all ${
                 activeTab === "all"
-                  ? "bg-brand-red text-white font-bold shadow-md shadow-brand-red/20"
-                  : "text-gray-400 hover:text-white"
+                  ? "bg-accent text-white shadow-md"
+                  : "text-foreground-muted hover:text-white"
               }`}
             >
-              All ({items.length})
+              ALL ({items.length})
             </button>
             <button
               onClick={() => setActiveTab("movie")}
-              className={`flex items-center gap-1 px-3 py-1.5 rounded-lg font-medium transition-all ${
+              className={`flex items-center gap-1 rounded-none px-3.5 py-1.5 font-bold uppercase tracking-wider transition-all ${
                 activeTab === "movie"
-                  ? "bg-brand-red text-white font-bold shadow-md shadow-brand-red/20"
-                  : "text-gray-400 hover:text-white"
+                  ? "bg-accent text-white shadow-md"
+                  : "text-foreground-muted hover:text-white"
               }`}
             >
-              <Film className="w-3.5 h-3.5" />
-              <span>Movies</span>
+              <Film className="size-3.5" />
+              <span>MOVIES</span>
             </button>
             <button
               onClick={() => setActiveTab("series")}
-              className={`flex items-center gap-1 px-3 py-1.5 rounded-lg font-medium transition-all ${
+              className={`flex items-center gap-1 rounded-none px-3.5 py-1.5 font-bold uppercase tracking-wider transition-all ${
                 activeTab === "series"
-                  ? "bg-brand-red text-white font-bold shadow-md shadow-brand-red/20"
-                  : "text-gray-400 hover:text-white"
+                  ? "bg-accent text-white shadow-md"
+                  : "text-foreground-muted hover:text-white"
               }`}
             >
-              <Tv className="w-3.5 h-3.5" />
-              <span>TV Shows</span>
+              <Tv className="size-3.5" />
+              <span>TV SHOWS</span>
             </button>
           </div>
         </div>
@@ -124,30 +123,30 @@ export default function MyListPage() {
       {isLoading ? (
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 sm:gap-6">
           {Array.from({ length: 12 }).map((_, i) => (
-            <Skeleton key={i} className="aspect-[2/3] w-full rounded-xl bg-white/5" />
+            <Skeleton key={i} className="aspect-[2/3] w-full rounded-none bg-surface border border-border" />
           ))}
         </div>
       ) : error ? (
-        <div className="text-center py-16 text-gray-400 space-y-2">
-          <p className="text-lg font-bold text-white">Failed to load My List</p>
-          <p className="text-xs text-gray-500">Make sure your Jellyfin server is connected and authenticated.</p>
+        <div className="text-center py-16 text-foreground-muted space-y-2">
+          <p className="text-lg font-bold uppercase text-white">Failed to load My List</p>
+          <p className="text-xs text-muted">Make sure your Jellyfin server is connected and authenticated.</p>
         </div>
       ) : filteredItems.length === 0 ? (
-        <div className="text-center py-24 bg-[#141519]/50 border border-white/5 rounded-2xl space-y-4">
-          <div className="w-16 h-16 rounded-full bg-white/5 flex items-center justify-center mx-auto text-gray-500">
-            <Bookmark className="w-8 h-8" />
+        <div className="text-center py-24 bg-surface border border-border rounded-none space-y-4">
+          <div className="size-16 rounded-none border border-border bg-background flex items-center justify-center mx-auto text-muted">
+            <Bookmark className="size-8" />
           </div>
           <div className="space-y-1">
-            <h3 className="text-lg font-bold text-white">Your list is empty</h3>
-            <p className="text-xs text-gray-400 max-w-sm mx-auto">
+            <h3 className="text-lg font-black uppercase text-white">Your list is empty</h3>
+            <p className="text-xs text-foreground-muted max-w-sm mx-auto">
               Explore popular movies and TV shows and click "Add to My List" to save them here for quick access.
             </p>
           </div>
           <Link
             href="/popular"
-            className="inline-block px-5 py-2.5 rounded-xl bg-brand-red text-white text-xs font-bold hover:bg-brand-red-hover transition-colors shadow-lg shadow-brand-red/20"
+            className="inline-block rounded-none bg-accent text-white text-xs font-black uppercase tracking-wider px-6 py-3 hover:bg-accent-hover transition-colors shadow-lg"
           >
-            Browse Catalog
+            BROWSE CATALOG
           </Link>
         </div>
       ) : (
@@ -166,10 +165,10 @@ export default function MyListPage() {
             return (
               <div
                 key={item.Id}
-                className="group relative bg-[#141519] border border-white/10 rounded-xl overflow-hidden shadow-lg hover:border-brand-red/50 hover:shadow-2xl hover:shadow-brand-red/10 transition-all flex flex-col"
+                className="group relative bg-card border border-border rounded-none overflow-hidden shadow-md hover:border-accent hover:shadow-2xl transition-all flex flex-col"
               >
                 {/* Poster Container */}
-                <div className="relative aspect-[2/3] w-full bg-[#1b1c22] overflow-hidden">
+                <div className="relative aspect-[2/3] w-full bg-background overflow-hidden">
                   {imageUrl ? (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img
@@ -178,16 +177,16 @@ export default function MyListPage() {
                       className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
                     />
                   ) : (
-                    <div className="w-full h-full flex flex-col items-center justify-center p-4 text-center text-gray-500">
-                      {isMovie ? <Film className="w-8 h-8 mb-2" /> : <Tv className="w-8 h-8 mb-2" />}
-                      <span className="text-xs font-semibold text-gray-400 line-clamp-2">{item.Name}</span>
+                    <div className="w-full h-full flex flex-col items-center justify-center p-4 text-center text-muted">
+                      {isMovie ? <Film className="size-8 mb-2" /> : <Tv className="size-8 mb-2" />}
+                      <span className="text-xs font-bold text-gray-400 line-clamp-2">{item.Name}</span>
                     </div>
                   )}
 
                   {/* Watched Checkmark Badge */}
                   {isPlayed && (
-                    <div className="absolute top-2 left-2 flex items-center gap-1 bg-emerald-500/90 text-white text-[10px] font-extrabold px-2 py-0.5 rounded-md shadow-md backdrop-blur-md">
-                      <CheckCircle2 className="w-3 h-3" />
+                    <div className="absolute top-2 left-2 flex items-center gap-1 bg-emerald-600 border border-emerald-400 text-white text-[10px] font-black uppercase px-2 py-0.5 rounded-none shadow-md">
+                      <CheckCircle2 className="size-3" />
                       <span>WATCHED</span>
                     </div>
                   )}
@@ -204,21 +203,21 @@ export default function MyListPage() {
                   {/* Hover Overlay with Play CTA */}
                   <Link
                     href={watchUrl}
-                    className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"
+                    className="absolute inset-0 bg-surface/90 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"
                   >
-                    <div className="w-12 h-12 rounded-full bg-brand-red text-white flex items-center justify-center shadow-xl shadow-brand-red/40 transform scale-75 group-hover:scale-100 transition-transform">
-                      <Play className="w-6 h-6 fill-white ml-0.5" />
+                    <div className="size-12 rounded-none bg-accent text-white flex items-center justify-center shadow-xl transform scale-75 group-hover:scale-100 transition-transform">
+                      <Play className="size-6 fill-white ml-0.5" />
                     </div>
                   </Link>
                 </div>
 
                 {/* Info Container */}
-                <div className="p-3 flex flex-col flex-1 justify-between bg-[#141519]">
+                <div className="p-3 flex flex-col flex-1 justify-between bg-surface border-t border-border">
                   <div>
-                    <h3 className="text-xs font-bold text-white line-clamp-1 group-hover:text-brand-red transition-colors">
+                    <h3 className="text-xs font-bold text-white line-clamp-1 group-hover:text-accent transition-colors">
                       {item.Name}
                     </h3>
-                    <div className="flex items-center gap-2 text-[10px] text-gray-400 mt-1 uppercase font-semibold">
+                    <div className="flex items-center gap-2 text-[10px] text-muted mt-1 uppercase font-semibold">
                       <span>{item.Type}</span>
                     </div>
                   </div>

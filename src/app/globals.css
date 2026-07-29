@@ -180,3 +180,23 @@ body {
 .animate-backdrop-left {
   animation: backdropSwipeLeft 0.7s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
+
+/* Continuous Marquee Animations for Poster Wall */
+@keyframes marqueeLeft {
+  0% { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}
+
+@keyframes marqueeRight {
+  0% { transform: translateX(-50%); }
+  100% { transform: translateX(0); }
+}
+
+.animate-marquee-left {
+  animation: marqueeLeft linear infinite;
+}
+
+.animate-marquee-right {
+  animation: marqueeRight linear infinite;
+}
+

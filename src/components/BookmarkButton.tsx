@@ -73,14 +73,16 @@ export function BookmarkButton({
         onClick={handleToggle}
         disabled={loading}
         title={bookmarked ? "Remove from My List" : "Add to My List"}
-        className={`p-2.5 rounded-full bg-black/60 hover:bg-black/80 text-white backdrop-blur-md transition-all border border-white/10 ${className}`}
+        className={`rounded-none bg-surface/90 border border-border p-2 text-white hover:border-accent hover:text-accent transition-all ${
+          bookmarked ? "border-accent text-accent bg-accent/10" : ""
+        } ${className}`}
       >
         {loading ? (
-          <Loader2 className="w-4 h-4 animate-spin text-gray-400" />
+          <Loader2 className="size-4 animate-spin text-gray-400" />
         ) : (
           <Bookmark
-            className={`w-4 h-4 transition-colors ${
-              bookmarked ? "fill-brand-red text-brand-red" : "text-white"
+            className={`size-4 transition-colors ${
+              bookmarked ? "fill-accent text-accent" : "text-white"
             }`}
           />
         )}
@@ -93,20 +95,20 @@ export function BookmarkButton({
       <button
         onClick={handleToggle}
         disabled={loading}
-        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold transition-all backdrop-blur-md ${
+        className={`flex items-center gap-1.5 rounded-none px-3 py-1.5 text-[11px] font-extrabold uppercase tracking-wider transition-all border ${
           bookmarked
-            ? "bg-brand-red/20 text-brand-red border border-brand-red/40"
-            : "bg-white/10 hover:bg-white/20 text-white border border-white/10"
+            ? "bg-accent/20 text-accent border-accent"
+            : "bg-surface hover:bg-surface-hover text-white border-border"
         } ${className}`}
       >
         {loading ? (
-          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+          <Loader2 className="size-3.5 animate-spin" />
         ) : bookmarked ? (
-          <Check className="w-3.5 h-3.5 text-brand-red" />
+          <Check className="size-3.5 text-accent" />
         ) : (
-          <Bookmark className="w-3.5 h-3.5" />
+          <Bookmark className="size-3.5" />
         )}
-        <span>{bookmarked ? "In My List" : "Add to List"}</span>
+        <span>{bookmarked ? "IN MY LIST" : "ADD TO LIST"}</span>
       </button>
     )
   }
@@ -115,17 +117,17 @@ export function BookmarkButton({
     <button
       onClick={handleToggle}
       disabled={loading}
-      className={`flex items-center justify-center gap-2 px-5 py-3 rounded-xl font-bold text-sm transition-all border ${
+      className={`flex items-center justify-center gap-2 rounded-none border px-5 py-3 text-xs font-bold uppercase tracking-wider transition-all active:scale-95 ${
         bookmarked
-          ? "bg-brand-red/15 border-brand-red/50 text-brand-red hover:bg-brand-red/25"
-          : "bg-surface-hover hover:bg-surface-hover-alt border-white/10 text-white"
+          ? "border-accent bg-accent/20 text-accent hover:bg-accent/30"
+          : "border-gray-500 bg-black/40 text-white hover:border-white hover:bg-black/60"
       } ${className}`}
     >
       {loading ? (
-        <Loader2 className="w-4 h-4 animate-spin text-gray-400" />
+        <Loader2 className="size-4 animate-spin text-gray-400" />
       ) : (
         <Bookmark
-          className={`w-4 h-4 ${bookmarked ? "fill-brand-red text-brand-red" : ""}`}
+          className={`size-4 ${bookmarked ? "fill-accent text-accent" : ""}`}
         />
       )}
       <span>{bookmarked ? "IN MY LIST" : "ADD TO MY LIST"}</span>

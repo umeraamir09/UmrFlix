@@ -3,7 +3,21 @@
 import { useState, useEffect, useRef } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { LogOut, Bookmark, ShieldCheck, UserCheck, LogIn, Settings, Check, RefreshCw } from "lucide-react"
+import {
+  LogOut,
+  Bookmark,
+  Settings,
+  Crown,
+  Pencil,
+  ArrowLeftRight,
+  History,
+  Bell,
+  Check,
+  LogIn,
+  ChevronDown,
+  ChevronUp,
+  ShieldCheck,
+} from "lucide-react"
 import { usePlayerSettings, type SubtitleMode } from "@/lib/player-settings"
 
 export type UserProfile = {
@@ -25,7 +39,7 @@ const SUBTITLE_MODE_OPTIONS: { id: SubtitleMode; label: string; description: str
   {
     id: "burn",
     label: "Burn subtitles into stream",
-    description: "Transcoded by server into video stream",
+    description: "Transcoded into video stream by server",
   },
 ]
 
@@ -34,6 +48,7 @@ export function UserProfileMenu() {
   const [user, setUser] = useState<UserProfile | null>(null)
   const [loading, setLoading] = useState(true)
   const [open, setOpen] = useState(false)
+  const [showSubtitleSettings, setShowSubtitleSettings] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
 
   const [playerSettings, updatePlayerSettings] = usePlayerSettings()
@@ -84,7 +99,7 @@ export function UserProfileMenu() {
   }
 
   if (loading) {
-    return <div className="w-8 h-8 rounded-full bg-white/10 animate-pulse" />
+    return <div className="size-8 rounded-full bg-surface animate-pulse border border-border" />
   }
 
   // If user is NOT signed in, render Sign In button
@@ -92,22 +107,24 @@ export function UserProfileMenu() {
     return (
       <Link
         href="/login"
-        className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-brand-red text-white text-xs font-bold hover:bg-brand-red-hover transition-all shadow-md shadow-brand-red/20 active:scale-95"
+        className="flex items-center gap-1.5 px-4 py-2 rounded-none bg-accent hover:bg-accent-hover text-white text-xs font-bold uppercase tracking-wider transition-all shadow-md active:scale-95"
       >
-        <LogIn className="w-3.5 h-3.5" />
-        <span>Sign In</span>
+        <LogIn className="size-3.5" />
+        <span>SIGN IN</span>
       </Link>
     )
   }
 
   const initial = user.username.charAt(0).toUpperCase()
 
-  // If user IS signed in, Sign In button is hidden and Avatar Settings Menu is rendered
   return (
-    <div className="relative" ref={menuRef}>
+    <div className="relative h-full flex items-center" ref={menuRef}>
+      {/* Navbar Avatar Trigger Button */}
       <button
         onClick={() => setOpen(!open)}
-        className="flex items-center gap-2 rounded-full p-1 border border-white/10 hover:border-brand-red/50 transition-all bg-[#1b1c22] focus:outline-none focus:ring-1 focus:ring-brand-red"
+        className={`h-full flex items-center gap-2 px-3 rounded-none border-l border-r border-border transition-colors ${
+          open ? "bg-surface-hover text-white" : "text-gray-200 hover:text-white hover:bg-surface-hover"
+        }`}
         title={`Account: ${user.username}`}
         aria-label="User Account Menu"
         aria-expanded={open}
@@ -117,95 +134,134 @@ export function UserProfileMenu() {
           <img
             src={user.avatarUrl}
             alt={user.username}
-            className="w-7 h-7 rounded-full object-cover"
+            className="size-7 object-cover border border-amber-500/50"
           />
         ) : (
-          <div className="w-7 h-7 rounded-full bg-brand-red text-white flex items-center justify-center text-xs font-bold shadow-md shadow-brand-red/20">
+          <div className="size-7 bg-accent text-white flex items-center justify-center text-xs font-black uppercase shadow-md">
             {initial}
           </div>
         )}
+        <span className="text-xs font-bold uppercase tracking-wider hidden md:inline-block max-w-[100px] truncate">
+          {user.username}
+        </span>
       </button>
 
+      {/* Crunchyroll-Inspired Avatar Dropdown Menu */}
       {open && (
-        <div className="absolute right-0 mt-2 w-72 rounded-2xl bg-[#141519]/95 border border-white/10 shadow-2xl backdrop-blur-xl p-2.5 z-50 animate-fadeIn text-xs text-gray-200 space-y-2">
-          {/* User Account Card */}
-          <div className="p-3 rounded-xl bg-[#1d1e24] border border-white/5 space-y-1.5">
-            <div className="flex items-center justify-between">
-              <span className="font-extrabold text-white text-sm truncate">{user.username}</span>
-              {user.isAdmin ? (
-                <span className="flex items-center gap-1 text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-400 font-bold border border-amber-500/30">
-                  <ShieldCheck className="w-3 h-3" /> Admin
-                </span>
+        <div className="absolute right-0 top-full w-72 sm:w-80 border border-border border-t-0 bg-[#141519] shadow-2xl backdrop-blur-xl rounded-none animate-in fade-in slide-in-from-top-1 duration-150 z-50 text-xs text-gray-200">
+          
+          {/* Header Section: Avatar, Username, Pencil Icon */}
+          <div className="p-4 flex items-center justify-between border-b border-border/80 bg-surface/50">
+            <div className="flex items-center gap-3">
+              {user.avatarUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={user.avatarUrl}
+                  alt={user.username}
+                  className="size-11 rounded-full object-cover border-2 border-amber-400 shadow-md"
+                />
               ) : (
-                <span className="flex items-center gap-1 text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-full bg-gray-500/20 text-gray-300 font-bold border border-gray-500/30">
-                  <UserCheck className="w-3 h-3" /> Member
-                </span>
+                <div className="size-11 rounded-full bg-accent text-white flex items-center justify-center text-base font-black uppercase shadow-md">
+                  {initial}
+                </div>
               )}
+              <div>
+                <div className="flex items-center gap-1.5">
+                  <span className="text-base font-bold text-white tracking-tight">{user.username}</span>
+                  {user.isAdmin && (
+                    <span title="Admin User">
+                      <ShieldCheck className="size-4 text-amber-400" />
+                    </span>
+                  )}
+                </div>
+                <p className="text-[11px] text-foreground-muted font-medium">
+                  {user.isAdmin ? "Administrator" : "Member"}
+                </p>
+              </div>
             </div>
-            {user.serverUrl && (
-              <p className="text-[10px] text-gray-400 truncate">
-                Server: {user.serverUrl.replace(/^https?:\/\//, "")}
-              </p>
-            )}
+            <button
+              onClick={() => router.push("/login")}
+              className="p-1.5 text-gray-400 hover:text-white transition-colors"
+              title="Edit / Switch Account"
+            >
+              <Pencil className="size-4" />
+            </button>
           </div>
 
-          {/* Navigation Links */}
-          <div className="space-y-1 pt-0.5">
-            <Link
-              href="/my-list"
-              onClick={() => setOpen(false)}
-              className="flex items-center gap-2.5 px-3 py-2 rounded-xl hover:bg-white/5 transition-colors text-gray-200 hover:text-white font-medium"
+          {/* Promotional / Premium Banner Button */}
+          {/* <div className="p-3 border-b border-border/80 bg-surface/30">
+            <button
+              onClick={() => router.push("/my-list")}
+              className="w-full flex items-center justify-center gap-2 bg-[#fab818] hover:bg-[#e0a412] text-black font-black text-xs uppercase tracking-wider py-2.5 rounded-none shadow-md transition-all active:scale-[0.99] cursor-pointer"
             >
-              <Bookmark className="w-4 h-4 text-brand-red fill-brand-red/20" />
-              <span>My List / Favorites</span>
+              <Crown className="size-4 fill-black" />
+              <span>GO PREMIUM</span>
+            </button>
+          </div> */}
+
+          {/* Group 1: Switch Profile & Settings */}
+          <div className="py-1 border-b border-border/80">
+            {/* <button
+              onClick={handleLogout}
+              className="w-full flex items-center gap-3.5 px-4 py-3 text-gray-200 hover:bg-surface-hover hover:text-white transition-colors text-left font-medium cursor-pointer"
+            >
+              <ArrowLeftRight className="size-4 text-gray-400" />
+              <span className="text-sm">Switch Profile</span>
+            </button> */}
+
+            <Link
+              href="/account/preferences"
+              onClick={() => setOpen(false)}
+              className="flex items-center gap-3.5 px-4 py-3 text-gray-200 hover:bg-surface-hover hover:text-white transition-colors text-left font-medium"
+            >
+              <Settings className="size-4 text-gray-400" />
+              <span className="text-sm">Settings</span>
             </Link>
           </div>
 
-          {/* Subtitle Settings Section */}
-          <div className="pt-2 border-t border-white/10 space-y-1">
-            <div className="flex items-center gap-1.5 px-3 text-[10px] font-bold uppercase tracking-wider text-gray-400">
-              <Settings className="w-3 h-3 text-brand-red" />
-              <span>Subtitle Preferences</span>
-            </div>
-            <div className="space-y-1 pt-1">
-              {SUBTITLE_MODE_OPTIONS.map((opt) => {
-                const selected = playerSettings.subtitleMode === opt.id
-                return (
-                  <button
-                    key={opt.id}
-                    onClick={() => updatePlayerSettings({ subtitleMode: opt.id })}
-                    className={`w-full flex items-start justify-between gap-2 px-3 py-2 rounded-xl text-left transition-colors ${
-                      selected ? "bg-brand-red/15 border border-brand-red/30 text-white" : "hover:bg-white/5 text-gray-400 hover:text-gray-200"
-                    }`}
-                  >
-                    <div>
-                      <span className={`block font-semibold text-xs ${selected ? "text-brand-red" : "text-gray-200"}`}>
-                        {opt.label}
-                      </span>
-                      <span className="block text-[10px] text-gray-400 mt-0.5 leading-snug">
-                        {opt.description}
-                      </span>
-                    </div>
-                    {selected && <Check className="w-3.5 h-3.5 text-brand-red mt-0.5 shrink-0" />}
-                  </button>
-                )
-              })}
-            </div>
+          {/* Group 2: Watchlist & Library / History */}
+          <div className="py-1 border-b border-border/80">
+            <Link
+              href="/my-list"
+              onClick={() => setOpen(false)}
+              className="flex items-center gap-3.5 px-4 py-3 text-gray-200 hover:bg-surface-hover hover:text-white transition-colors font-medium"
+            >
+              <Bookmark className="size-4 text-gray-400" />
+              <span className="text-sm">Watchlist</span>
+            </Link>
+
+            <Link
+              href="/library"
+              onClick={() => setOpen(false)}
+              className="flex items-center gap-3.5 px-4 py-3 text-gray-200 hover:bg-surface-hover hover:text-white transition-colors font-medium"
+            >
+              <History className="size-4 text-gray-400" />
+              <span className="text-sm">My Library & History</span>
+            </Link>
           </div>
 
-          {/* Switch Account / Logout Button */}
-          <div className="pt-2 border-t border-white/10">
+          {/* Group 3: Notifications
+          <div className="py-1 border-b border-border/80">
+            <div className="flex items-center justify-between px-4 py-3 text-gray-200 hover:bg-surface-hover hover:text-white transition-colors font-medium cursor-pointer">
+              <div className="flex items-center gap-3.5">
+                <Bell className="size-4 text-gray-400" />
+                <span className="text-sm">Notifications</span>
+              </div>
+              <span className="size-2 rounded-full bg-accent" title="System Status Active" />
+            </div>
+          </div> */}
+
+          {/* Group 4: Log Out */}
+          <div className="py-1">
             <button
               onClick={handleLogout}
-              className="w-full flex items-center justify-between px-3 py-2 rounded-xl hover:bg-red-500/15 transition-colors text-red-400 font-semibold text-left"
+              className="w-full flex items-center gap-3.5 px-4 py-3 text-gray-200 hover:bg-accent/15 hover:text-accent transition-colors text-left font-medium cursor-pointer"
             >
-              <div className="flex items-center gap-2">
-                <LogOut className="w-4 h-4" />
-                <span>Sign Out / Switch Account</span>
-              </div>
-              <RefreshCw className="w-3 h-3 opacity-60" />
+              <LogOut className="size-4 text-gray-400 group-hover:text-accent" />
+              <span className="text-sm font-semibold">Log Out</span>
             </button>
           </div>
+
         </div>
       )}
     </div>

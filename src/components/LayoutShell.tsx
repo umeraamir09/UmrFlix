@@ -11,7 +11,7 @@ import { Footer } from "@/components/Footer"
 export function LayoutShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
 
-  if (pathname?.startsWith("/watch")) {
+  if (pathname?.startsWith("/watch") || pathname?.startsWith("/login")) {
     return <main className="flex-1 bg-black">{children}</main>
   }
 
