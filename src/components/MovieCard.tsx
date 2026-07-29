@@ -148,7 +148,13 @@ export function MovieCard({
           </button>
           <BookmarkButton
             itemId={availabilityState?.jellyfinItemId || String(item.id)}
+            tmdbId={item.id}
+            jellyfinId={availabilityState?.jellyfinItemId}
+            mediaType={type}
             title={title}
+            posterPath={item.poster_path}
+            overview={item.overview}
+            releaseYear={year}
             variant="icon"
             className="!p-1.5 border-none bg-transparent hover:bg-white/10"
           />

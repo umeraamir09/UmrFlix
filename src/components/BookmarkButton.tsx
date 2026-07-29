@@ -1,67 +1,129 @@
 "use client"
 
-import { useState, useEffect, MouseEvent } from "react"
+import { useState, MouseEvent } from "react"
+import useSWR from "swr"
 import { Bookmark, Check, Loader2 } from "lucide-react"
 
 export type BookmarkButtonProps = {
-  itemId: string
+  itemId?: string
+  tmdbId?: number
+  tvdbId?: number
+  jellyfinId?: string
+  mediaType?: "movie" | "tv"
   title?: string
+  posterPath?: string | null
+  overview?: string
+  releaseYear?: string
   initialBookmarked?: boolean
   variant?: "button" | "icon" | "pill"
   className?: string
 }
 
+type MyListItem = {
+  id: string
+  tmdbId?: number
+  tvdbId?: number
+  jellyfinId?: string
+  mediaType: "movie" | "tv"
+}
+
+const fetcher = (url: string) => fetch(url).then((res) => res.json())
+
 export function BookmarkButton({
   itemId,
+  tmdbId,
+  tvdbId,
+  jellyfinId,
+  mediaType = "movie",
+  title,
+  posterPath,
+  overview,
+  releaseYear,
   initialBookmarked = false,
   variant = "button",
   className = "",
 }: BookmarkButtonProps) {
-  const [bookmarked, setBookmarked] = useState(initialBookmarked)
+  const { data, mutate } = useSWR<{ items?: MyListItem[] }>(
+    "/api/my-list",
+    fetcher,
+    {
+      revalidateOnFocus: false,
+      dedupingInterval: 10000,
+    }
+  )
+
+  const [localBookmarked, setLocalBookmarked] = useState<boolean | null>(null)
   const [loading, setLoading] = useState(false)
 
-  // Check initial favorite status from server if not explicitly passed
-  useEffect(() => {
-    if (!itemId) return
-    let active = true
-    async function checkFav() {
-      try {
-        const res = await fetch("/api/jellyfin/favorites")
-        if (res.ok) {
-          const data = await res.json()
-          const isFav = data.items?.some((i: { Id: string }) => i.Id === itemId)
-          if (active && isFav !== undefined) {
-            setBookmarked(Boolean(isFav))
-          }
-        }
-      } catch {
-        /* silent error */
-      }
-    }
-    checkFav()
-    return () => {
-      active = false
-    }
-  }, [itemId])
+  const isFavInServer = data?.items
+    ? data.items.some((i) => {
+        if (tmdbId && i.tmdbId === Number(tmdbId) && (!mediaType || i.mediaType === mediaType)) return true
+        if (jellyfinId && i.jellyfinId === jellyfinId) return true
+        if (itemId && (i.id === itemId || i.jellyfinId === itemId || String(i.tmdbId) === itemId)) return true
+        return false
+      })
+    : null
+
+  const bookmarked =
+    localBookmarked !== null
+      ? localBookmarked
+      : isFavInServer !== null
+      ? isFavInServer
+      : initialBookmarked
 
   async function handleToggle(e: MouseEvent) {
     e.preventDefault()
     e.stopPropagation()
-    if (!itemId || loading) return
+    if (loading) return
 
     setLoading(true)
     const nextState = !bookmarked
+    setLocalBookmarked(nextState)
 
     try {
-      const res = await fetch(`/api/jellyfin/favorites/${itemId}`, {
-        method: nextState ? "POST" : "DELETE",
-      })
+      if (nextState) {
+        // Add to My List
+        const res = await fetch("/api/my-list", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            id: itemId,
+            tmdbId,
+            tvdbId,
+            jellyfinId,
+            mediaType,
+            title: title || "Untitled Item",
+            posterPath,
+            overview,
+            releaseYear,
+          }),
+        })
 
-      if (res.ok) {
-        setBookmarked(nextState)
+        if (res.ok) {
+          mutate()
+        } else {
+          setLocalBookmarked(!nextState)
+        }
+      } else {
+        // Remove from My List
+        const params = new URLSearchParams()
+        if (itemId) params.set("id", itemId)
+        if (tmdbId) params.set("tmdbId", String(tmdbId))
+        if (jellyfinId) params.set("jellyfinId", jellyfinId)
+        if (mediaType) params.set("mediaType", mediaType)
+
+        const res = await fetch(`/api/my-list?${params.toString()}`, {
+          method: "DELETE",
+        })
+
+        if (res.ok) {
+          mutate()
+        } else {
+          setLocalBookmarked(!nextState)
+        }
       }
     } catch {
-      /* silent error */
+      setLocalBookmarked(!nextState)
     } finally {
       setLoading(false)
     }

@@ -194,7 +194,13 @@ export function MovieDetail({ params }: { params: Promise<{ id: string }> }) {
 
                 <BookmarkButton
                   itemId={availability?.jellyfinItemId || String(movie.id)}
+                  tmdbId={movie.id}
+                  jellyfinId={availability?.jellyfinItemId}
+                  mediaType="movie"
                   title={movie.title}
+                  posterPath={movie.poster_path}
+                  overview={movie.overview}
+                  releaseYear={movie.release_date ? new Date(movie.release_date).getFullYear().toString() : undefined}
                 />
               </div>
             </div>

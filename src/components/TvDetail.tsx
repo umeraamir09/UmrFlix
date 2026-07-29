@@ -194,7 +194,14 @@ export function TvDetail({ params }: { params: Promise<{ id: string }> }) {
 
                 <BookmarkButton
                   itemId={availability?.jellyfinItemId || String(show.id)}
+                  tmdbId={show.id}
+                  tvdbId={tvdbId}
+                  jellyfinId={availability?.jellyfinItemId}
+                  mediaType="tv"
                   title={show.name}
+                  posterPath={show.poster_path}
+                  overview={show.overview}
+                  releaseYear={show.first_air_date ? new Date(show.first_air_date).getFullYear().toString() : undefined}
                 />
               </div>
             </div>

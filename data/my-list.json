@@ -1,0 +1,56 @@
+{
+  "f888533f8fdb487eaae5737578fa6975": [
+    {
+      "id": "980431",
+      "userId": "f888533f8fdb487eaae5737578fa6975",
+      "tmdbId": 980431,
+      "mediaType": "movie",
+      "title": "Avatar Aang: The Last Airbender",
+      "posterPath": "/3sgnSfNT27Bx5O5ukr7B26mhEQq.jpg",
+      "overview": "Avatar Aang, the world's last Airbender, learns of an ancient power that could save his culture from extinction. With the help of his friends, he embarks on a global quest to find it before it falls into the wrong hands and threatens to upend the peace they sacrificed everything to achieve.",
+      "releaseYear": "2026",
+      "addedAt": "2026-07-29T17:43:09.755Z"
+    },
+    {
+      "id": "1368337",
+      "userId": "f888533f8fdb487eaae5737578fa6975",
+      "tmdbId": 1368337,
+      "mediaType": "movie",
+      "title": "The Odyssey",
+      "posterPath": "/5rhTDKUhPYvpdQIijFIs5VoWsON.jpg",
+      "overview": "Odysseus, the legendary King of Ithaca, embarks on a long and perilous journey home following the Trojan War. Throughout his voyage, he is forced to confront the whims of gods, mythological monsters, and trials that stretch both his cunning and his humanity to the breaking point.",
+      "releaseYear": "2026",
+      "addedAt": "2026-07-29T17:43:08.319Z"
+    },
+    {
+      "id": "jellyfin-2050feab7d0bcfd7c33bfabd2cd5ff2c",
+      "userId": "f888533f8fdb487eaae5737578fa6975",
+      "jellyfinId": "2050feab7d0bcfd7c33bfabd2cd5ff2c",
+      "mediaType": "movie",
+      "title": "Obsession",
+      "posterPath": "/api/jellyfin/image/2050feab7d0bcfd7c33bfabd2cd5ff2c?type=Primary",
+      "overview": "After breaking the mysterious \"One Wish Willow\" to win his crush's heart, a hopeless romantic finds himself getting exactly what he asked for but soon discovers that some desires come at a dark, sinister price.",
+      "releaseYear": "2026",
+      "addedAt": "2026-07-29T17:42:25.665Z"
+    }
+  ],
+  "2c54fa7a85f24c5fa6ab358c9153a043": [
+    {
+      "id": "278624",
+      "userId": "2c54fa7a85f24c5fa6ab358c9153a043",
+      "mediaType": "movie",
+      "title": "Lucky",
+      "addedAt": "2026-07-29T17:44:44.252Z",
+      "tmdbId": 278624,
+      "posterPath": "https://image.tmdb.org/t/p/w500/pf1ELTsZBoOdhcsI5CE1O6VaOtm.jpg",
+      "releaseYear": "2013"
+    },
+    {
+      "id": "215072",
+      "userId": "2c54fa7a85f24c5fa6ab358c9153a043",
+      "mediaType": "movie",
+      "title": "A Shop for Killers",
+      "addedAt": "2026-07-29T17:44:41.333Z"
+    }
+  ]
+}
