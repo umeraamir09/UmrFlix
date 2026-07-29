@@ -1,4 +1,5 @@
 import { env } from "./env"
+import { getSession } from "./auth"
 
 const BASE = env("JELLYFIN_URL")
 const TIMEOUT = 8_000
@@ -33,6 +34,9 @@ export type JellyfinItem = {
   }
   Type: string
   MediaType: string
+  ImageTags?: Record<string, string>
+  BackdropImageTags?: string[]
+  UserData?: JellyfinUserData
 }
 
 export type JellyfinItemsResponse = {
@@ -40,12 +44,27 @@ export type JellyfinItemsResponse = {
   TotalRecordCount: number
 }
 
-let cachedToken: { token: string; userId: string } | null = null
+let cachedToken: { token: string; userId: string; serverUrl?: string } | null = null
 
-export async function authenticate(): Promise<{ token: string; userId: string }> {
+export async function authenticate(): Promise<{ token: string; userId: string; serverUrl?: string }> {
+  // Check active user session first (server-side)
+  try {
+    const session = await getSession()
+    if (session?.accessToken && session?.userId) {
+      return {
+        token: session.accessToken,
+        userId: session.userId,
+        serverUrl: session.serverUrl,
+      }
+    }
+  } catch {
+    /* fallback to environment credentials */
+  }
+
   if (cachedToken) return cachedToken
 
-  const res = await jellyfinFetch(`${BASE}/Users/AuthenticateByName`, {
+  const serverUrl = BASE || "http://localhost:8096"
+  const res = await jellyfinFetch(`${serverUrl}/Users/AuthenticateByName`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -65,9 +84,10 @@ export async function authenticate(): Promise<{ token: string; userId: string }>
   }
 
   const data: JellyfinAuthResponse = await res.json()
-  cachedToken = { token: data.AccessToken, userId: data.User.Id }
+  cachedToken = { token: data.AccessToken, userId: data.User.Id, serverUrl }
   return cachedToken
 }
+
 
 export function getAuthHeaders(token: string): Record<string, string> {
   return {
@@ -582,3 +602,43 @@ export async function getEpisodes(seriesId: string, seasonId?: string): Promise<
   const data = await res.json()
   return data.Items ?? []
 }
+
+// ── Favorites / Watchlist Sync ──
+
+export async function getUserFavorites(overrideUserId?: string, overrideToken?: string): Promise<JellyfinItem[]> {
+  const auth = overrideUserId && overrideToken ? { userId: overrideUserId, token: overrideToken } : await authenticate()
+  const params = new URLSearchParams({
+    userId: auth.userId,
+    filters: "IsFavorite",
+    recursive: "true",
+    fields: "ProviderIds,Overview,PrimaryImageTag,BackdropImageTags,UserData",
+    includeItemTypes: "Movie,Series",
+  })
+
+  const res = await jellyfinFetch(`${BASE}/Users/${auth.userId}/Items?${params}`, {
+    headers: getAuthHeaders(auth.token),
+  })
+
+  if (!res.ok) return []
+  const data: JellyfinItemsResponse = await res.json()
+  return data.Items ?? []
+}
+
+export async function toggleFavoriteItem(
+  itemId: string,
+  isFavorite: boolean,
+  overrideUserId?: string,
+  overrideToken?: string
+): Promise<boolean> {
+  const auth = overrideUserId && overrideToken ? { userId: overrideUserId, token: overrideToken } : await authenticate()
+  const path = `${BASE}/Users/${auth.userId}/FavoriteItems/${itemId}`
+  const method = isFavorite ? "POST" : "DELETE"
+
+  const res = await jellyfinFetch(path, {
+    method,
+    headers: getAuthHeaders(auth.token),
+  }).catch(() => null)
+
+  return Boolean(res && res.ok)
+}
+

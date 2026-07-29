@@ -5,6 +5,7 @@ import Image from "next/image"
 import { useRouter } from "next/navigation"
 import { getImageUrl, formatYear, formatRating } from "@/lib/utils"
 import { AvailabilityBadge } from "@/components/AvailabilityBadge"
+import { BookmarkButton } from "@/components/BookmarkButton"
 import { Star, Bookmark } from "lucide-react"
 import { IconPlay, IconDownloadNav, IconAdd } from "@/components/ui/icons"
 import type { AvailabilityResult } from "@/app/api/availability/route"
@@ -145,9 +146,12 @@ export function MovieCard({
           >
             <IconPlay className="size-5 fill-accent text-accent" />
           </button>
-          <div className="text-accent hover:scale-110 transition-transform cursor-pointer" title="Bookmark">
-            <IconDownloadNav className="size-5" />
-          </div>
+          <BookmarkButton
+            itemId={availabilityState?.jellyfinItemId || String(item.id)}
+            title={title}
+            variant="icon"
+            className="!p-1.5 border-none bg-transparent hover:bg-white/10"
+          />
           <div className="text-accent hover:scale-110 transition-transform cursor-pointer" title="Add to Library">
             <IconAdd className="size-5" />
           </div>
