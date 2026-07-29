@@ -26,20 +26,18 @@ export type RecommendationItem = {
   score: number
 }
 
-// Cache for recommendations
+// Cache for recommendations per mediaType
 const CACHE_TTL = 30 * 60 * 1000 // 30 minutes
-let cache: { items: RecommendationItem[]; timestamp: number } = {
-  items: [],
-  timestamp: 0,
-}
+const cacheMap = new Map<string, { items: RecommendationItem[]; timestamp: number }>()
 
 export function invalidateRecommendationCache() {
-  cache.items.length = 0
-  cache.timestamp = 0
+  cacheMap.clear()
 }
 
-function isCacheValid(): boolean {
-  return Date.now() - cache.timestamp < CACHE_TTL
+function isCacheValid(key: string): boolean {
+  const entry = cacheMap.get(key)
+  if (!entry) return false
+  return Date.now() - entry.timestamp < CACHE_TTL
 }
 
 /**
@@ -180,10 +178,14 @@ export async function generateRecommendations(
   } = {}
 ): Promise<RecommendationItem[]> {
   const { limit = 20, mediaType, includeWatched = false } = options
+  const cacheKey = mediaType || "all"
 
   // Check cache
-  if (isCacheValid() && cache.items.length > 0 && !includeWatched) {
-    return cache.items.slice(0, limit)
+  if (isCacheValid(cacheKey) && !includeWatched) {
+    const cachedEntry = cacheMap.get(cacheKey)
+    if (cachedEntry && cachedEntry.items.length > 0) {
+      return cachedEntry.items.slice(0, limit)
+    }
   }
 
   try {
@@ -198,26 +200,37 @@ export async function generateRecommendations(
 
     const recommendations: RecommendationItem[] = []
 
-    // Source 1: Get recommendations based on recently watched items
-    for (const item of watchHistory.slice(0, 5)) {
+    // Source 1: Get recommendations based on recently watched items matching mediaType
+    const filteredHistory = watchHistory.filter(item => {
+      if (!mediaType) return true
+      if (mediaType === "movie") return item.Type === "Movie"
+      return item.Type === "Series" || item.Type === "Episode"
+    })
+
+    for (const item of filteredHistory.slice(0, 5)) {
       const tmdbId = item.ProviderIds?.Tmdb ? parseInt(item.ProviderIds.Tmdb) : null
       if (!tmdbId) continue
       
-      const similar = await getSimilarRecommendations(tmdbId, item.Type === "Movie" ? "movie" : "tv")
+      const itemType = item.Type === "Movie" ? "movie" : "tv"
+      const similar = await getSimilarRecommendations(tmdbId, itemType)
       const filtered = similar.filter(rec => !watchedItemIds.has(rec.tmdbId))
       recommendations.push(...filtered)
     }
 
-    // Source 2: Trending content
-    const trendingMovies = await getTrendingItems("movie")
-    const trendingTv = await getTrendingItems("tv")
-    
-    recommendations.push(...trendingMovies.filter(m => !watchedItemIds.has(m.tmdbId)).slice(0, 10))
-    recommendations.push(...trendingTv.filter(m => !watchedItemIds.has(m.tmdbId)).slice(0, 10))
+    // Source 2: Trending content matching requested mediaType
+    if (!mediaType || mediaType === "movie") {
+      const trendingMovies = await getTrendingItems("movie")
+      recommendations.push(...trendingMovies.filter(m => !watchedItemIds.has(m.tmdbId)).slice(0, 10))
+    }
+    if (!mediaType || mediaType === "tv") {
+      const trendingTv = await getTrendingItems("tv")
+      recommendations.push(...trendingTv.filter(m => !watchedItemIds.has(m.tmdbId)).slice(0, 10))
+    }
 
     // Deduplicate
     const seenIds = new Set<number>()
     const uniqueRecommendations = recommendations.filter(rec => {
+      if (mediaType && rec.media_type !== mediaType) return false
       if (seenIds.has(rec.tmdbId)) return false
       seenIds.add(rec.tmdbId)
       return true
@@ -259,15 +272,18 @@ export async function generateRecommendations(
 
     // Update cache
     if (!includeWatched) {
-      cache.items = releasedItems
-      cache.timestamp = Date.now()
+      cacheMap.set(cacheKey, {
+        items: releasedItems,
+        timestamp: Date.now(),
+      })
     }
 
     return releasedItems.slice(0, limit)
   } catch (err) {
     console.error("Failed to generate recommendations:", err)
     // Fallback to trending
-    const fallback = await getTrendingItems(mediaType?.includes("movie") ? "movie" : "tv")
+    const fallbackType = mediaType || "movie"
+    const fallback = await getTrendingItems(fallbackType)
     return fallback.slice(0, limit)
   }
 }
