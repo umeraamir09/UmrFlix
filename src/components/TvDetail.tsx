@@ -1,6 +1,6 @@
 "use client"
 
-import { use, useState } from "react"
+import { use } from "react"
 import useSWR from "swr"
 import { getImageUrl, formatRating, formatDate } from "@/lib/utils"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -11,7 +11,7 @@ import { SeasonBrowser } from "@/components/SeasonBrowser"
 import { MovieRow } from "@/components/MovieRow"
 import { CastCarousel } from "@/components/CastCarousel"
 import { useAvailability } from "@/lib/use-availability"
-import { Star, Calendar, Bookmark, Check, Tv, User, Globe, ShieldAlert, Award } from "lucide-react"
+import { Star, Calendar, Tv, Globe, ShieldAlert } from "lucide-react"
 import type { TmdbTvDetail } from "@/lib/tmdb"
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json())
@@ -30,8 +30,6 @@ export function TvDetail({ params }: { params: Promise<{ id: string }> }) {
     id ? `/api/tmdb/tv/${id}?append_to_response=credits,videos,images,recommendations,similar,external_ids,content_ratings&include_image_language=en,null` : null,
     fetcher
   )
-
-  const [isBookmarked, setIsBookmarked] = useState(false)
 
   const showId = data?.id
   const { availability, refresh } = useAvailability(
@@ -194,7 +192,14 @@ export function TvDetail({ params }: { params: Promise<{ id: string }> }) {
 
                 <BookmarkButton
                   itemId={availability?.jellyfinItemId || String(show.id)}
+                  tmdbId={show.id}
+                  tvdbId={tvdbId}
+                  jellyfinId={availability?.jellyfinItemId}
+                  mediaType="tv"
                   title={show.name}
+                  posterPath={show.poster_path}
+                  overview={show.overview}
+                  releaseYear={show.first_air_date ? new Date(show.first_air_date).getFullYear().toString() : undefined}
                 />
               </div>
             </div>

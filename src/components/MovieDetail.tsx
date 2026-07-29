@@ -1,6 +1,6 @@
 "use client"
 
-import { use, useState } from "react"
+import { use } from "react"
 import useSWR from "swr"
 import Image from "next/image"
 import { getImageUrl, formatRating, formatDate, formatRuntime } from "@/lib/utils"
@@ -11,7 +11,7 @@ import { BookmarkButton } from "@/components/BookmarkButton"
 import { MovieRow } from "@/components/MovieRow"
 import { CastCarousel } from "@/components/CastCarousel"
 import { useAvailability } from "@/lib/use-availability"
-import { Star, Clock, Calendar, Bookmark, Check, User, Globe, DollarSign } from "lucide-react"
+import { Star, Clock, Calendar, Globe, DollarSign } from "lucide-react"
 import type { TmdbMovieDetail } from "@/lib/tmdb"
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json())
@@ -35,8 +35,6 @@ export function MovieDetail({ params }: { params: Promise<{ id: string }> }) {
     id ? `/api/tmdb/movie/${id}?append_to_response=credits,videos,images,recommendations,similar&include_image_language=en,null` : null,
     fetcher
   )
-
-  const [isBookmarked, setIsBookmarked] = useState(false)
 
   const movieId = data?.id
   const { availability, refresh } = useAvailability(
@@ -194,7 +192,13 @@ export function MovieDetail({ params }: { params: Promise<{ id: string }> }) {
 
                 <BookmarkButton
                   itemId={availability?.jellyfinItemId || String(movie.id)}
+                  tmdbId={movie.id}
+                  jellyfinId={availability?.jellyfinItemId}
+                  mediaType="movie"
                   title={movie.title}
+                  posterPath={movie.poster_path}
+                  overview={movie.overview}
+                  releaseYear={movie.release_date ? new Date(movie.release_date).getFullYear().toString() : undefined}
                 />
               </div>
             </div>
