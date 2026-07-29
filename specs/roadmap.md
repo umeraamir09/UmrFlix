@@ -124,23 +124,23 @@ The core MVP foundation has been fully built and verified:
 
 ---
 
-## Phase 3: Multi-User Auth, Profiles & Personalization
+## Phase 3: Multi-User Auth, Profiles & Personalization (Completed)
 
 ### 3.1 Native Jellyfin Authentication & Session Security
-- [ ] **User Authentication Flow (`/login`):**
+- [x] **User Authentication Flow (`/login`):**
   - Replace static `.env` Jellyfin credentials with a multi-user Jellyfin login interface.
   - Authenticate against Jellyfin server API (`POST /Users/AuthenticateByName`).
   - Store Jellyfin `AccessToken` and `UserId` in encrypted httpOnly HTTP cookies (`iron-session` or JWT).
   - User profile switcher in Navbar (Avatar, username, active server URL).
 
 ### 3.2 Role-Based Access Control (RBAC)
-- [ ] **Permissions & Limits:**
+- [x] **Permissions & Limits:**
   - Admin users: Full control over Radarr/Sonarr profiles, root folders, download cancellation, and library settings.
   - Standard users: Can browse and request titles (subject to request quotas or approval workflows).
   - Guest/Kids mode: Filter catalog based on Jellyfin rating restrictions.
 
 ### 3.3 Personalized Watchlists & Favorites
-- [ ] **User Personalization:**
+- [x] **User Personalization:**
   - "My List" bookmark button synced with Jellyfin User Favorites (`POST /Users/{userId}/FavoriteItems/{itemId}`).
   - Watch status indicators (green checkmark for watched, partial progress bar for in-progress).
 
