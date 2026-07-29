@@ -1,9 +1,10 @@
 import fs from "fs/promises"
 import path from "path"
 import { ConvexHttpClient } from "convex/browser"
+import { toggleFavoriteItem } from "@/lib/jellyfin"
 
 export type MyListItem = {
-  id: string // composite key: "tmdb-movie-550", "tmdb-tv-1399", or "jellyfin-<id>"
+  id: string // deterministic composite key e.g. "tmdb-movie-550", "tmdb-tv-1399", "jellyfin-abc123"
   userId: string
   tmdbId?: number
   tvdbId?: number
@@ -16,7 +17,22 @@ export type MyListItem = {
   addedAt: string
 }
 
-type StorageSchema = Record<string, MyListItem[]> // userId -> MyListItem[]
+type StorageSchema = Record<string, MyListItem[]>
+
+type ConvexRecord = {
+  _id: string
+  itemId: string
+  userId: string
+  tmdbId?: number
+  tvdbId?: number
+  jellyfinId?: string
+  mediaType?: "movie" | "tv"
+  title: string
+  posterPath?: string | null
+  overview?: string
+  releaseYear?: string
+  addedAt?: string
+}
 
 const DATA_DIR = path.join(process.cwd(), "data")
 const FILE_PATH = path.join(DATA_DIR, "my-list.json")
@@ -77,10 +93,29 @@ async function writeStorage(data: StorageSchema): Promise<void> {
   await fs.rename(tmpPath, FILE_PATH)
 }
 
-function getItemKey(target: { id?: string; tmdbId?: number; jellyfinId?: string; mediaType?: "movie" | "tv" }): string {
-  if (target.id) return target.id
-  if (target.tmdbId && target.mediaType) return `tmdb-${target.mediaType}-${target.tmdbId}`
-  if (target.jellyfinId) return `jellyfin-${target.jellyfinId}`
+export function getItemKey(target: {
+  id?: string
+  tmdbId?: number
+  jellyfinId?: string
+  mediaType?: "movie" | "tv"
+}): string {
+  if (target.tmdbId) {
+    const type = target.mediaType || "movie"
+    return `tmdb-${type}-${target.tmdbId}`
+  }
+  if (target.jellyfinId) {
+    return `jellyfin-${target.jellyfinId}`
+  }
+  if (target.id) {
+    if (target.id.startsWith("tmdb-") || target.id.startsWith("jellyfin-")) {
+      return target.id
+    }
+    if (/^\d+$/.test(target.id)) {
+      const type = target.mediaType || "movie"
+      return `tmdb-${type}-${target.id}`
+    }
+    return target.id
+  }
   return ""
 }
 
@@ -89,7 +124,7 @@ export async function getUserMyList(userId: string): Promise<MyListItem[]> {
   if (convex) {
     try {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const records = (await convex.query("myList:getUserList" as any, { userId })) as any[]
+      const records = (await convex.query("myList:getUserList" as any, { userId })) as ConvexRecord[]
       if (Array.isArray(records)) {
         return records.map((r) => ({
           id: r.itemId || r._id,
@@ -106,11 +141,10 @@ export async function getUserMyList(userId: string): Promise<MyListItem[]> {
         }))
       }
     } catch (err) {
-      console.error("[Convex Query Error] Failed to query user list from self-hosted Convex:", err)
+      console.error("[Convex Query Error] Failed to query user list:", err)
     }
   }
 
-  // Fallback to local JSON store only when Convex is unconfigured or query failed
   const db = await readStorage()
   return db[userId] || []
 }
@@ -136,6 +170,13 @@ export async function addToMyList(
     addedAt: now,
   }
 
+  // Centralized Hybrid Jellyfin Sync (Issue 13)
+  if (item.jellyfinId) {
+    toggleFavoriteItem(item.jellyfinId, true).catch((err) =>
+      console.warn("Failed to sync favorite to Jellyfin server:", err)
+    )
+  }
+
   const convex = getConvexClient()
   if (convex) {
     try {
@@ -152,14 +193,12 @@ export async function addToMyList(
         overview: newItem.overview,
         releaseYear: newItem.releaseYear,
       })
-      // Saved directly to self-hosted Convex! Skip local JSON file write completely.
       return newItem
     } catch (err) {
-      console.error("[Convex Mutation Error] Failed to add item to self-hosted Convex:", err)
+      console.error("[Convex Mutation Error] Failed to add item:", err)
     }
   }
 
-  // Fallback to local file store if Convex is unconfigured or mutation failed
   const db = await readStorage()
   const list = db[userId] || []
 
@@ -191,6 +230,13 @@ export async function removeFromMyList(
 ): Promise<boolean> {
   const key = getItemKey(target)
 
+  // Centralized Hybrid Jellyfin Sync (Issue 13)
+  if (target.jellyfinId) {
+    toggleFavoriteItem(target.jellyfinId, false).catch((err) =>
+      console.warn("Failed to unsync favorite from Jellyfin server:", err)
+    )
+  }
+
   const convex = getConvexClient()
   if (convex) {
     try {
@@ -201,11 +247,10 @@ export async function removeFromMyList(
       })
       return true
     } catch (err) {
-      console.error("[Convex Mutation Error] Failed to remove item from self-hosted Convex:", err)
+      console.error("[Convex Mutation Error] Failed to remove item:", err)
     }
   }
 
-  // Fallback to local JSON store
   const db = await readStorage()
   const list = db[userId] || []
 

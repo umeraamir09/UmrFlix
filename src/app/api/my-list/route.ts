@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server"
 import { getSession } from "@/lib/auth"
-import { getUserFavorites, toggleFavoriteItem } from "@/lib/jellyfin"
+import { getUserFavorites } from "@/lib/jellyfin"
 import { tmdbFetch } from "@/lib/tmdb"
 import { getImageUrl } from "@/lib/utils"
 import {
@@ -10,53 +10,76 @@ import {
   MyListItem,
 } from "@/lib/my-list-store"
 
-export async function GET() {
-  try {
-    const session = await getSession()
-    const userId = session?.userId || "default-user"
+// Bounded concurrency pool for in-memory TMDB enrichment (Issue 1 & 2)
+async function enrichItemsInPool(items: MyListItem[], maxConcurrency = 5): Promise<MyListItem[]> {
+  const itemsToEnrich = items.map((item, index) => ({ item, index })).filter(({ item }) => {
+    const numericId = item.tmdbId || (/^\d+$/.test(item.id) ? Number(item.id) : undefined)
+    return numericId && !item.posterPath
+  })
 
-    // Fetch custom stored items
-    const customItems = await getUserMyList(userId)
-    const customJellyfinIds = new Set(customItems.map((i) => i.jellyfinId).filter(Boolean))
+  if (itemsToEnrich.length === 0) return items
 
-    // Auto-enrich any items missing posterPath or tmdbId metadata
-    for (let i = 0; i < customItems.length; i++) {
-      const item = customItems[i]
-      const numericId = item.tmdbId || (/^\d+$/.test(item.id) ? Number(item.id) : undefined)
+  const enrichedResult = [...items]
+  const chunks: typeof itemsToEnrich[] = []
+  for (let i = 0; i < itemsToEnrich.length; i += maxConcurrency) {
+    chunks.push(itemsToEnrich.slice(i, i + maxConcurrency))
+  }
 
-      if (numericId && (!item.posterPath || !item.tmdbId)) {
+  for (const chunk of chunks) {
+    await Promise.allSettled(
+      chunk.map(async ({ item, index }) => {
+        const numericId = item.tmdbId || Number(item.id)
         try {
           const endpoint = item.mediaType === "tv" ? `/tv/${numericId}` : `/movie/${numericId}`
-          const details = await tmdbFetch<{ poster_path?: string; overview?: string; release_date?: string; first_air_date?: string; name?: string; title?: string }>(endpoint)
+          const details = await tmdbFetch<{ poster_path?: string; overview?: string; release_date?: string; first_air_date?: string }>(endpoint)
 
           const posterPath = details.poster_path ? getImageUrl(details.poster_path, "w500") : item.posterPath
           const releaseDate = details.release_date || details.first_air_date
           const releaseYear = releaseDate ? releaseDate.split("-")[0] : item.releaseYear
 
-          const updated = await addToMyList(userId, {
+          enrichedResult[index] = {
             ...item,
             tmdbId: numericId,
-            posterPath,
+            posterPath: posterPath || null,
             overview: details.overview || item.overview,
-            releaseYear,
-          })
-          customItems[i] = updated
+            releaseYear: releaseYear || item.releaseYear,
+          }
         } catch {
-          // Ignore TMDB fetch errors for invalid IDs
+          // Keep original item on error
         }
-      }
-    }
+      })
+    )
+  }
 
-    // Hybrid sync: fetch Jellyfin favorites and merge any native Jellyfin favorites
+  return enrichedResult
+}
+
+export async function GET(req: Request) {
+  try {
+    const session = await getSession()
+    const userId = session?.userId || "default-user"
+
+    const { searchParams } = new URL(req.url)
+    const limit = searchParams.get("limit") ? Number(searchParams.get("limit")) : undefined
+    const offset = searchParams.get("offset") ? Number(searchParams.get("offset")) : 0
+
+    // Fetch custom stored items
+    let customItems = await getUserMyList(userId)
+    const customJellyfinIds = new Set(customItems.map((i) => i.jellyfinId).filter(Boolean))
+
+    // Hybrid sync: fetch Jellyfin favorites in-memory without side-effect mutations during GET
     try {
       const jellyfinFavorites = await getUserFavorites()
       for (const fav of jellyfinFavorites) {
         if (!customJellyfinIds.has(fav.Id)) {
           const isMovie = fav.Type?.toLowerCase() === "movie"
           const mediaType = isMovie ? "movie" : "tv"
-
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const favAny = fav as Record<string, any>
-          const newItem: Omit<MyListItem, "id" | "userId" | "addedAt"> = {
+
+          const newItem: MyListItem = {
+            id: `jellyfin-${fav.Id}`,
+            userId,
             jellyfinId: fav.Id,
             mediaType,
             title: fav.Name,
@@ -67,11 +90,10 @@ export async function GET() {
               : null,
             overview: typeof favAny.Overview === "string" ? favAny.Overview : undefined,
             releaseYear: typeof favAny.ProductionYear === "number" || typeof favAny.ProductionYear === "string" ? String(favAny.ProductionYear) : undefined,
+            addedAt: new Date().toISOString(),
           }
 
-          // Auto-persist Jellyfin native favorite to custom store
-          const added = await addToMyList(userId, newItem)
-          customItems.unshift(added)
+          customItems.unshift(newItem)
           customJellyfinIds.add(fav.Id)
         }
       }
@@ -79,7 +101,14 @@ export async function GET() {
       console.warn("Could not sync Jellyfin favorites into My List:", err)
     }
 
-    return NextResponse.json({ items: customItems })
+    // Enrich missing posterPath in-memory using bounded concurrency pool (Issue 1 & 2)
+    customItems = await enrichItemsInPool(customItems, 5)
+
+    // Optional pagination (Issue 14)
+    const total = customItems.length
+    const items = limit ? customItems.slice(offset, offset + limit) : customItems
+
+    return NextResponse.json({ items, total, offset, limit })
   } catch (e) {
     const message = e instanceof Error ? e.message : "Failed to fetch My List"
     return NextResponse.json({ error: message }, { status: 500 })
@@ -108,13 +137,6 @@ export async function POST(req: Request) {
       releaseYear: body.releaseYear,
     })
 
-    // Hybrid Sync with Jellyfin if item has jellyfinId
-    if (body.jellyfinId) {
-      toggleFavoriteItem(body.jellyfinId, true).catch((err) =>
-        console.warn("Failed to sync favorite to Jellyfin server:", err)
-      )
-    }
-
     return NextResponse.json({ success: true, item })
   } catch (e) {
     const message = e instanceof Error ? e.message : "Failed to add item to My List"
@@ -139,13 +161,6 @@ export async function DELETE(req: Request) {
       jellyfinId,
       mediaType,
     })
-
-    // Hybrid Sync with Jellyfin if jellyfinId provided
-    if (jellyfinId) {
-      toggleFavoriteItem(jellyfinId, false).catch((err) =>
-        console.warn("Failed to unsync favorite from Jellyfin server:", err)
-      )
-    }
 
     return NextResponse.json({ success: removed })
   } catch (e) {

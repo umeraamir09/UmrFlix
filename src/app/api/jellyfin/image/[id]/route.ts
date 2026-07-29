@@ -8,14 +8,23 @@ export async function GET(
 ) {
   try {
     const { id } = await params
+    if (!id || typeof id !== "string") {
+      return new NextResponse("Invalid item ID", { status: 400 })
+    }
+
     const { searchParams } = new URL(req.url)
     const type = searchParams.get("type") || "Primary"
 
     const { token } = await authenticate()
     const baseUrl = env("JELLYFIN_URL")
-    const imageUrl = `${baseUrl}/Items/${id}/Images/${type}?api_key=${token}`
+    const imageUrl = `${baseUrl}/Items/${id}/Images/${type}`
 
-    const res = await fetch(imageUrl)
+    const res = await fetch(imageUrl, {
+      headers: {
+        "X-Emby-Token": token,
+      },
+    })
+
     if (!res.ok) {
       return new NextResponse(null, { status: res.status })
     }

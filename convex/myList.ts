@@ -4,11 +4,10 @@ import { v } from "convex/values"
 export const getUserList = query({
   args: { userId: v.string() },
   handler: async (ctx, args) => {
-    const items = await ctx.db
+    return await ctx.db
       .query("myList")
       .withIndex("by_user", (q) => q.eq("userId", args.userId))
       .collect()
-    return items
   },
 })
 
@@ -28,7 +27,7 @@ export const addItem = mutation({
   handler: async (ctx, args) => {
     const existing = await ctx.db
       .query("myList")
-      .withIndex("by_user_item", (q) =>
+      .withIndex("by_user_item", (q: any) =>
         q.eq("userId", args.userId).eq("itemId", args.itemId)
       )
       .first()
@@ -49,7 +48,7 @@ export const addItem = mutation({
       return existing._id
     }
 
-    const newId = await ctx.db.insert("myList", {
+    return await ctx.db.insert("myList", {
       userId: args.userId,
       itemId: args.itemId,
       tmdbId: args.tmdbId,
@@ -62,8 +61,6 @@ export const addItem = mutation({
       releaseYear: args.releaseYear,
       addedAt: now,
     })
-
-    return newId
   },
 })
 
@@ -73,22 +70,18 @@ export const removeItem = mutation({
     itemId: v.string(),
   },
   handler: async (ctx, args) => {
-    const items = await ctx.db
+    const existing = await ctx.db
       .query("myList")
-      .withIndex("by_user", (q) => q.eq("userId", args.userId))
-      .collect()
+      .withIndex("by_user_item", (q: any) =>
+        q.eq("userId", args.userId).eq("itemId", args.itemId)
+      )
+      .first()
 
-    let count = 0
-    for (const item of items) {
-      if (
-        item.itemId === args.itemId ||
-        (item.jellyfinId && item.jellyfinId === args.itemId) ||
-        (item.tmdbId && String(item.tmdbId) === args.itemId)
-      ) {
-        await ctx.db.delete(item._id)
-        count++
-      }
+    if (existing) {
+      await ctx.db.delete(existing._id)
+      return true
     }
-    return count > 0
+
+    return false
   },
 })

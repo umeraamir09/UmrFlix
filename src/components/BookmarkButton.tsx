@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, MouseEvent } from "react"
+import { useState, useRef, MouseEvent } from "react"
 import useSWR from "swr"
 import { Bookmark, Check, Loader2 } from "lucide-react"
 
@@ -19,14 +19,6 @@ export type BookmarkButtonProps = {
   className?: string
 }
 
-type MyListItem = {
-  id: string
-  tmdbId?: number
-  tvdbId?: number
-  jellyfinId?: string
-  mediaType: "movie" | "tv"
-}
-
 const fetcher = (url: string) => fetch(url).then((res) => res.json())
 
 export function BookmarkButton({
@@ -43,8 +35,17 @@ export function BookmarkButton({
   variant = "button",
   className = "",
 }: BookmarkButtonProps) {
-  const { data, mutate } = useSWR<{ items?: MyListItem[] }>(
-    "/api/my-list",
+  // Construct targeted single-item check endpoint (Issue 6)
+  const checkParams = new URLSearchParams()
+  if (itemId) checkParams.set("id", itemId)
+  if (tmdbId) checkParams.set("tmdbId", String(tmdbId))
+  if (jellyfinId) checkParams.set("jellyfinId", jellyfinId)
+  if (mediaType) checkParams.set("mediaType", mediaType)
+
+  const checkUrl = checkParams.toString() ? `/api/my-list/check?${checkParams.toString()}` : null
+
+  const { data, mutate } = useSWR<{ bookmarked?: boolean }>(
+    checkUrl,
     fetcher,
     {
       revalidateOnFocus: false,
@@ -54,30 +55,26 @@ export function BookmarkButton({
 
   const [localBookmarked, setLocalBookmarked] = useState<boolean | null>(null)
   const [loading, setLoading] = useState(false)
-
-  const isFavInServer = data?.items
-    ? data.items.some((i) => {
-        if (tmdbId && i.tmdbId === Number(tmdbId) && (!mediaType || i.mediaType === mediaType)) return true
-        if (jellyfinId && i.jellyfinId === jellyfinId) return true
-        if (itemId && (i.id === itemId || i.jellyfinId === itemId || String(i.tmdbId) === itemId)) return true
-        return false
-      })
-    : null
+  const pendingLockRef = useRef(false) // Prevent rapid click race conditions (Issue 7)
 
   const bookmarked =
     localBookmarked !== null
       ? localBookmarked
-      : isFavInServer !== null
-      ? isFavInServer
+      : data?.bookmarked !== undefined
+      ? data.bookmarked
       : initialBookmarked
 
   async function handleToggle(e: MouseEvent) {
     e.preventDefault()
     e.stopPropagation()
-    if (loading) return
 
+    // Lock against rapid concurrent clicks (Issue 7)
+    if (loading || pendingLockRef.current) return
+    pendingLockRef.current = true
     setLoading(true)
-    const nextState = !bookmarked
+
+    const currentState = bookmarked
+    const nextState = !currentState
     setLocalBookmarked(nextState)
 
     try {
@@ -100,9 +97,9 @@ export function BookmarkButton({
         })
 
         if (res.ok) {
-          mutate()
+          mutate({ bookmarked: true }, false)
         } else {
-          setLocalBookmarked(!nextState)
+          setLocalBookmarked(currentState)
         }
       } else {
         // Remove from My List
@@ -117,15 +114,16 @@ export function BookmarkButton({
         })
 
         if (res.ok) {
-          mutate()
+          mutate({ bookmarked: false }, false)
         } else {
-          setLocalBookmarked(!nextState)
+          setLocalBookmarked(currentState)
         }
       }
     } catch {
-      setLocalBookmarked(!nextState)
+      setLocalBookmarked(currentState)
     } finally {
       setLoading(false)
+      pendingLockRef.current = false
     }
   }
 
