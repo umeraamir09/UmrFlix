@@ -11,6 +11,19 @@ export const getUserList = query({
   },
 })
 
+export const isInList = query({
+  args: { userId: v.string(), itemId: v.string() },
+  handler: async (ctx, args) => {
+    const existing = await ctx.db
+      .query("myList")
+      .withIndex("by_user_item", (q) =>
+        q.eq("userId", args.userId).eq("itemId", args.itemId)
+      )
+      .first()
+    return Boolean(existing)
+  },
+})
+
 export const addItem = mutation({
   args: {
     userId: v.string(),
@@ -27,7 +40,7 @@ export const addItem = mutation({
   handler: async (ctx, args) => {
     const existing = await ctx.db
       .query("myList")
-      .withIndex("by_user_item", (q: any) =>
+      .withIndex("by_user_item", (q) =>
         q.eq("userId", args.userId).eq("itemId", args.itemId)
       )
       .first()
@@ -72,7 +85,7 @@ export const removeItem = mutation({
   handler: async (ctx, args) => {
     const existing = await ctx.db
       .query("myList")
-      .withIndex("by_user_item", (q: any) =>
+      .withIndex("by_user_item", (q) =>
         q.eq("userId", args.userId).eq("itemId", args.itemId)
       )
       .first()

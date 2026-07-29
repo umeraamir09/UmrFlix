@@ -11,7 +11,7 @@ import { SeasonBrowser } from "@/components/SeasonBrowser"
 import { MovieRow } from "@/components/MovieRow"
 import { CastCarousel } from "@/components/CastCarousel"
 import { useAvailability } from "@/lib/use-availability"
-import { Star, Calendar, Tv, User, Globe, ShieldAlert, Award } from "lucide-react"
+import { Star, Calendar, Tv, Globe, ShieldAlert } from "lucide-react"
 import type { TmdbTvDetail } from "@/lib/tmdb"
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json())

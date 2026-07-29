@@ -1,10 +1,11 @@
 import fs from "fs/promises"
 import path from "path"
 import { ConvexHttpClient } from "convex/browser"
+import type { FunctionReference } from "convex/server"
 import { toggleFavoriteItem } from "@/lib/jellyfin"
 
 export type MyListItem = {
-  id: string // deterministic composite key e.g. "tmdb-movie-550", "tmdb-tv-1399", "jellyfin-abc123"
+  id: string // deterministic composite key e.g. "tmdb:movie:550", "tmdb:tv:1399", "jellyfin:abc123"
   userId: string
   tmdbId?: number
   tvdbId?: number
@@ -34,10 +35,31 @@ type ConvexRecord = {
   addedAt?: string
 }
 
+type ConvexAddItemArgs = {
+  userId: string
+  itemId: string
+  tmdbId?: number
+  tvdbId?: number
+  jellyfinId?: string
+  mediaType: string
+  title: string
+  posterPath?: string | null
+  overview?: string
+  releaseYear?: string
+}
+
+type QueryRef<Args extends Record<string, unknown>, Ret> = FunctionReference<"query", "public", Args, Ret>
+type MutationRef<Args extends Record<string, unknown>, Ret> = FunctionReference<"mutation", "public", Args, Ret>
+
+const getUserListRef = "myList:getUserList" as unknown as QueryRef<{ userId: string }, ConvexRecord[]>
+const isInListRef = "myList:isInList" as unknown as QueryRef<{ userId: string; itemId: string }, boolean>
+const addItemRef = "myList:addItem" as unknown as MutationRef<ConvexAddItemArgs, string>
+const removeItemRef = "myList:removeItem" as unknown as MutationRef<{ userId: string; itemId: string }, boolean>
+
 const DATA_DIR = path.join(process.cwd(), "data")
 const FILE_PATH = path.join(DATA_DIR, "my-list.json")
 
-function getConvexClient(): ConvexHttpClient | null {
+function getConvexClient(userToken?: string): ConvexHttpClient | null {
   const url =
     process.env.CONVEX_SELF_HOSTED_URL ||
     process.env.NEXT_PUBLIC_CONVEX_SELF_HOSTED_URL ||
@@ -51,9 +73,18 @@ function getConvexClient(): ConvexHttpClient | null {
     const client = new ConvexHttpClient(url, {
       skipConvexDeploymentUrlCheck: true,
     })
-    if (adminKey) {
+
+    // Prefer scoped user token (Issue #4); use adminKey only as fallback if configured
+    if (userToken) {
+      client.setAuth(userToken)
+    } else if (adminKey) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      ;(client as any).setAdminAuth(adminKey)
+      const rawClient = client as any
+      if (typeof rawClient.setAdminAuth === "function") {
+        rawClient.setAdminAuth(adminKey)
+      } else {
+        client.setAuth(adminKey)
+      }
     }
     return client
   } catch (err) {
@@ -93,38 +124,44 @@ async function writeStorage(data: StorageSchema): Promise<void> {
   await fs.rename(tmpPath, FILE_PATH)
 }
 
+// Unambiguous, deterministic key strategy (Issue #16)
 export function getItemKey(target: {
   id?: string
   tmdbId?: number
   jellyfinId?: string
   mediaType?: "movie" | "tv"
 }): string {
+  const mediaType = target.mediaType || "movie"
+
   if (target.tmdbId) {
-    const type = target.mediaType || "movie"
-    return `tmdb-${type}-${target.tmdbId}`
+    return `tmdb:${mediaType}:${target.tmdbId}`
   }
   if (target.jellyfinId) {
-    return `jellyfin-${target.jellyfinId}`
+    return `jellyfin:${target.jellyfinId}`
   }
   if (target.id) {
-    if (target.id.startsWith("tmdb-") || target.id.startsWith("jellyfin-")) {
+    if (target.id.startsWith("tmdb:") || target.id.startsWith("jellyfin:")) {
       return target.id
     }
+    if (target.id.startsWith("tmdb-")) {
+      return target.id.replace(/^tmdb-/, "tmdb:")
+    }
+    if (target.id.startsWith("jellyfin-")) {
+      return target.id.replace(/^jellyfin-/, "jellyfin:")
+    }
     if (/^\d+$/.test(target.id)) {
-      const type = target.mediaType || "movie"
-      return `tmdb-${type}-${target.id}`
+      return `tmdb:${mediaType}:${target.id}`
     }
     return target.id
   }
   return ""
 }
 
-export async function getUserMyList(userId: string): Promise<MyListItem[]> {
-  const convex = getConvexClient()
+export async function getUserMyList(userId: string, userToken?: string): Promise<MyListItem[]> {
+  const convex = getConvexClient(userToken)
   if (convex) {
     try {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const records = (await convex.query("myList:getUserList" as any, { userId })) as ConvexRecord[]
+      const records = await convex.query(getUserListRef, { userId })
       if (Array.isArray(records)) {
         return records.map((r) => ({
           id: r.itemId || r._id,
@@ -151,7 +188,8 @@ export async function getUserMyList(userId: string): Promise<MyListItem[]> {
 
 export async function addToMyList(
   userId: string,
-  item: Omit<MyListItem, "id" | "userId" | "addedAt"> & { id?: string }
+  item: Omit<MyListItem, "id" | "userId" | "addedAt"> & { id?: string },
+  userToken?: string
 ): Promise<MyListItem> {
   const key = getItemKey(item)
   const now = new Date().toISOString()
@@ -170,18 +208,17 @@ export async function addToMyList(
     addedAt: now,
   }
 
-  // Centralized Hybrid Jellyfin Sync (Issue 13)
+  // Centralized Hybrid Jellyfin Sync (Issue #13)
   if (item.jellyfinId) {
     toggleFavoriteItem(item.jellyfinId, true).catch((err) =>
       console.warn("Failed to sync favorite to Jellyfin server:", err)
     )
   }
 
-  const convex = getConvexClient()
+  const convex = getConvexClient(userToken)
   if (convex) {
     try {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      await convex.mutation("myList:addItem" as any, {
+      await convex.mutation(addItemRef, {
         userId,
         itemId: newItem.id,
         tmdbId: newItem.tmdbId,
@@ -202,12 +239,7 @@ export async function addToMyList(
   const db = await readStorage()
   const list = db[userId] || []
 
-  const existingIndex = list.findIndex((i) => {
-    if (key && i.id === key) return true
-    if (item.tmdbId && i.tmdbId === item.tmdbId && i.mediaType === item.mediaType) return true
-    if (item.jellyfinId && i.jellyfinId === item.jellyfinId) return true
-    return false
-  })
+  const existingIndex = list.findIndex((i) => getItemKey(i) === key)
 
   if (existingIndex >= 0) {
     list[existingIndex] = {
@@ -226,22 +258,22 @@ export async function addToMyList(
 
 export async function removeFromMyList(
   userId: string,
-  target: { id?: string; tmdbId?: number; jellyfinId?: string; mediaType?: "movie" | "tv" }
+  target: { id?: string; tmdbId?: number; jellyfinId?: string; mediaType?: "movie" | "tv" },
+  userToken?: string
 ): Promise<boolean> {
   const key = getItemKey(target)
 
-  // Centralized Hybrid Jellyfin Sync (Issue 13)
+  // Centralized Hybrid Jellyfin Sync (Issue #13)
   if (target.jellyfinId) {
     toggleFavoriteItem(target.jellyfinId, false).catch((err) =>
       console.warn("Failed to unsync favorite from Jellyfin server:", err)
     )
   }
 
-  const convex = getConvexClient()
+  const convex = getConvexClient(userToken)
   if (convex) {
     try {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      await convex.mutation("myList:removeItem" as any, {
+      await convex.mutation(removeItemRef, {
         userId,
         itemId: key || target.jellyfinId || (target.tmdbId ? String(target.tmdbId) : ""),
       })
@@ -255,12 +287,7 @@ export async function removeFromMyList(
   const list = db[userId] || []
 
   const initialLength = list.length
-  const filtered = list.filter((i) => {
-    if (key && i.id === key) return false
-    if (target.tmdbId && i.tmdbId === Number(target.tmdbId) && (!target.mediaType || i.mediaType === target.mediaType)) return false
-    if (target.jellyfinId && i.jellyfinId === target.jellyfinId) return false
-    return true
-  })
+  const filtered = list.filter((i) => getItemKey(i) !== key)
 
   if (filtered.length !== initialLength) {
     db[userId] = filtered
@@ -271,17 +298,28 @@ export async function removeFromMyList(
   return false
 }
 
+// O(1) Index-based item check (Issue #6)
 export async function isItemInMyList(
   userId: string,
-  target: { id?: string; tmdbId?: number; jellyfinId?: string; mediaType?: "movie" | "tv" }
+  target: { id?: string; tmdbId?: number; jellyfinId?: string; mediaType?: "movie" | "tv" },
+  userToken?: string
 ): Promise<boolean> {
-  const list = await getUserMyList(userId)
   const key = getItemKey(target)
+  if (!key) return false
 
-  return list.some((i) => {
-    if (key && i.id === key) return true
-    if (target.tmdbId && i.tmdbId === Number(target.tmdbId) && (!target.mediaType || i.mediaType === target.mediaType)) return true
-    if (target.jellyfinId && i.jellyfinId === target.jellyfinId) return true
-    return false
-  })
+  const convex = getConvexClient(userToken)
+  if (convex) {
+    try {
+      const result = await convex.query(isInListRef, { userId, itemId: key })
+      if (typeof result === "boolean") {
+        return result
+      }
+    } catch (err) {
+      console.error("[Convex Query Error] Failed to check item in list:", err)
+    }
+  }
+
+  const db = await readStorage()
+  const list = db[userId] || []
+  return list.some((i) => getItemKey(i) === key)
 }
