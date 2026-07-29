@@ -22,6 +22,14 @@ export default function RootLayout({
       lang="en"
       className="h-full antialiased font-sans"
     >
+      <head>
+        <link rel="preconnect" href="https://cdn.fontshare.com" />
+        <link rel="preconnect" href="https://api.fontshare.com" />
+        <link
+          rel="stylesheet"
+          href="https://api.fontshare.com/v2/css?f[]=satoshi@1,2&display=swap"
+        />
+      </head>
       <body className="flex min-h-screen flex-col bg-background text-foreground font-sans">
         <ToastProvider>
           <Navbar />

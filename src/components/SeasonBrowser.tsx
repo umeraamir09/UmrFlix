@@ -12,10 +12,13 @@ import {
   Play,
   Tv,
   Info,
+  MoreVertical,
+  ArrowUpDown,
+  SlidersHorizontal,
 } from "lucide-react"
 import { CinemaPlayer } from "@/components/player/CinemaPlayer"
 import type { NextEpisodeInfo } from "@/components/player/PlayerOverlays"
-import { getImageUrl } from "@/lib/utils"
+import { getImageUrl, formatDate } from "@/lib/utils"
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json())
 
@@ -80,29 +83,25 @@ function statusBadge(status: EpisodeStatus, downloadProgress?: number) {
   switch (status) {
     case "in_library":
       return (
-        <span className="flex items-center gap-1 bg-success/90 backdrop-blur-md px-2 py-0.5 text-[10px] font-black uppercase tracking-wider text-white shadow-md">
-          <CheckCircle2 className="size-3" /> In Library
+        <span className="flex items-center gap-1 bg-success/90 backdrop-blur-md px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wider text-white shadow-md">
+          <CheckCircle2 className="size-2.5" /> In Library
         </span>
       )
     case "downloading":
       return (
-        <span className="flex items-center gap-1 bg-warning/90 backdrop-blur-md px-2 py-0.5 text-[10px] font-black uppercase tracking-wider text-black shadow-md">
-          <Download className="size-3 animate-pulse" />
+        <span className="flex items-center gap-1 bg-warning/90 backdrop-blur-md px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wider text-black shadow-md">
+          <Download className="size-2.5 animate-pulse" />
           {downloadProgress != null ? `${Math.round(downloadProgress)}%` : "Downloading"}
         </span>
       )
     case "unaired":
       return (
-        <span className="bg-black/70 backdrop-blur-md px-2 py-0.5 text-[10px] font-black uppercase tracking-wider text-gray-300 shadow-md">
+        <span className="bg-black/80 backdrop-blur-md px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wider text-gray-300 shadow-md">
           Unaired
         </span>
       )
     default:
-      return (
-        <span className="bg-black/60 backdrop-blur-md px-2 py-0.5 text-[10px] font-black uppercase tracking-wider text-gray-400 shadow-md">
-          Missing
-        </span>
-      )
+      return null
   }
 }
 
@@ -138,7 +137,7 @@ export function SeasonBrowser({
   const seasons: SeasonInfo[] = useMemo(() => {
     if (tmdbSeasons && tmdbSeasons.length > 0) {
       return tmdbSeasons
-        .filter((s) => s.season_number > 0) // Exclude Specials/Season 0 from main list if needed, or include all
+        .filter((s) => s.season_number > 0)
         .map((s) => ({
           id: s.id,
           name: s.name || `Season ${s.season_number}`,
@@ -156,6 +155,9 @@ export function SeasonBrowser({
   const [selectedSeason, setSelectedSeason] = useState<number | null>(null)
   const currentSeason = selectedSeason ?? seasons[0]?.seasonNumber ?? 1
 
+  const [isSeasonMenuOpen, setIsSeasonMenuOpen] = useState(false)
+  const [isSortAscending, setIsSortAscending] = useState(true)
+
   // TMDB Season Detail SWR
   const { data: tmdbSeasonData, isLoading: isTmdbLoading } = useSWR<TmdbSeasonResponse>(
     tmdbId && currentSeason != null ? `/api/tmdb/tv/${tmdbId}/season/${currentSeason}` : null,
@@ -163,7 +165,6 @@ export function SeasonBrowser({
   )
 
   const [activeEpisodeId, setActiveEpisodeId] = useState<string | null>(null)
-  const [expandedOverviewId, setExpandedOverviewId] = useState<string | null>(null)
 
   // Combined Season Episodes List
   const seasonEpisodes = useMemo(() => {
@@ -176,8 +177,10 @@ export function SeasonBrowser({
       })
     }
 
+    let list: EpisodeInfo[] = []
+
     if (tmdbSeasonData?.episodes) {
-      return tmdbSeasonData.episodes.map((tmdbEp) => {
+      list = tmdbSeasonData.episodes.map((tmdbEp) => {
         const jEp = jEpMap.get(tmdbEp.episode_number)
         const isUnaired = tmdbEp.air_date ? new Date(tmdbEp.air_date) > new Date() : false
         
@@ -206,17 +209,18 @@ export function SeasonBrowser({
             : jEp?.thumbUrl || "https://images.unsplash.com/photo-1574375927938-d5a98e8ffe85?q=80&w=600&auto=format&fit=crop",
         }
       })
-    }
-
-    // Fallback if TMDB season is loading and Jellyfin data exists
-    if (jellyfinData?.episodes) {
-      return jellyfinData.episodes
+    } else if (jellyfinData?.episodes) {
+      list = jellyfinData.episodes
         .filter((e) => e.seasonNumber === currentSeason)
-        .sort((a, b) => a.episodeNumber - b.episodeNumber)
     }
 
-    return []
-  }, [tmdbSeasonData, jellyfinData, currentSeason])
+    return list.sort((a, b) =>
+      isSortAscending ? a.episodeNumber - b.episodeNumber : b.episodeNumber - a.episodeNumber
+    )
+  }, [tmdbSeasonData, jellyfinData, currentSeason, isSortAscending])
+
+  // Current active season info
+  const activeSeasonInfo = seasons.find((s) => s.seasonNumber === currentSeason) || seasons[0]
 
   // Playable episodes for cinema player
   const playableEpisodes = useMemo(
@@ -246,7 +250,7 @@ export function SeasonBrowser({
   )
 
   return (
-    <section className="mt-10 space-y-6">
+    <section className="mt-8 space-y-6">
       {/* ── Active cinema player ── */}
       {activeEpisode && activeEpisode.jellyfinItemId && (
         <div className="space-y-3 rounded-none border border-accent bg-black p-2 shadow-2xl">
@@ -264,121 +268,121 @@ export function SeasonBrowser({
         </div>
       )}
 
-      {/* ── Season Header & Controls Bar ── */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-border pb-4">
-        <div className="flex items-center gap-3">
-          {/* Season Dropdown Selector (Matching Reference Image 2) */}
-          <div className="relative">
-            <select
-              value={currentSeason}
-              onChange={(e) => setSelectedSeason(Number(e.target.value))}
-              className="appearance-none bg-surface text-white border border-border px-4 py-2.5 pr-10 font-black text-sm uppercase tracking-wider cursor-pointer focus:outline-none focus:border-accent hover:border-gray-500 transition-colors"
-            >
-              {seasons.map((s) => (
-                <option key={s.id} value={s.seasonNumber} className="bg-surface text-white py-2">
-                  {s.name} ({s.episodeCount || seasonEpisodes.length} Episodes)
-                </option>
-              ))}
-            </select>
-            <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 size-4 text-gray-400 pointer-events-none" />
-          </div>
+      {/* ── Top Header Control Bar (Matching Crunchyroll Style) ── */}
+      <div className="relative flex items-center justify-between border-b border-border/80 pb-3">
+        {/* Left Side: Season Dropdown Selector Button */}
+        <div className="relative">
+          <button
+            onClick={() => setIsSeasonMenuOpen(!isSeasonMenuOpen)}
+            className="flex items-center gap-2 text-base font-bold text-accent hover:text-accent-light transition-colors group focus:outline-none"
+          >
+            <ChevronDown className={`size-5 text-accent transition-transform duration-200 ${isSeasonMenuOpen ? "rotate-180" : ""}`} />
+            <span className="font-extrabold uppercase tracking-tight text-accent">
+              {activeSeasonInfo?.name || `Season ${currentSeason}`}
+            </span>
+          </button>
 
-          <span className="text-xs text-gray-400 font-medium">
-            {seasonEpisodes.length} Episodes
-          </span>
+          {/* Crunchyroll Dark Dropdown Menu Overlay */}
+          {isSeasonMenuOpen && (
+            <>
+              <div
+                className="fixed inset-0 z-30"
+                onClick={() => setIsSeasonMenuOpen(false)}
+              />
+              <div className="absolute left-0 top-full mt-2 z-40 w-72 bg-[#181a20] border border-border shadow-2xl divide-y divide-border/40 py-1 rounded-none animate-in fade-in slide-in-from-top-2 duration-150">
+                {seasons.map((s) => {
+                  const isSelected = s.seasonNumber === currentSeason
+                  return (
+                    <button
+                      key={s.id}
+                      onClick={() => {
+                        setSelectedSeason(s.seasonNumber)
+                        setIsSeasonMenuOpen(false)
+                      }}
+                      className={`w-full flex items-center justify-between px-4 py-3 text-left transition-colors ${
+                        isSelected
+                          ? "bg-accent/15 text-accent font-extrabold"
+                          : "text-gray-300 hover:bg-surface hover:text-white"
+                      }`}
+                    >
+                      <span className="text-sm font-bold uppercase tracking-wider">{s.name}</span>
+                      <span className="text-xs font-medium text-gray-500">
+                        {s.episodeCount || 0} Episodes
+                      </span>
+                    </button>
+                  )
+                })}
+              </div>
+            </>
+          )}
         </div>
 
-        {/* Season Quick Tab Pills */}
-        <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-1" role="tablist">
-          {seasons.map((season) => {
-            const isActive = season.seasonNumber === currentSeason
-            return (
-              <button
-                key={season.id}
-                role="tab"
-                aria-selected={isActive}
-                onClick={() => setSelectedSeason(season.seasonNumber)}
-                className={`flex shrink-0 items-center gap-2 px-3 py-1.5 text-xs font-bold uppercase tracking-wider border transition-all ${
-                  isActive
-                    ? "border-accent bg-accent text-white"
-                    : "border-border bg-surface text-gray-400 hover:border-gray-500 hover:text-white"
-                }`}
-              >
-                <span>S{season.seasonNumber}</span>
-              </button>
-            )
-          })}
+        {/* Right Side: Sort & Options Bar */}
+        <div className="flex items-center gap-4 text-xs font-extrabold tracking-wider text-gray-400 uppercase">
+          <button
+            onClick={() => setIsSortAscending(!isSortAscending)}
+            className="flex items-center gap-1.5 hover:text-white transition-colors"
+          >
+            <ArrowUpDown className="size-3.5 text-gray-500" />
+            <span>{isSortAscending ? "OLDEST" : "NEWEST"}</span>
+          </button>
         </div>
       </div>
 
       {/* ── Episodes Loading Skeleton ── */}
       {isTmdbLoading && (
-        <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
-          {[...Array(6)].map((_, i) => (
-            <div key={i} className="space-y-3 border border-border/40 bg-surface p-3 animate-pulse">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+          {[...Array(10)].map((_, i) => (
+            <div key={i} className="space-y-2 border border-border/30 bg-surface p-2 animate-pulse">
               <div className="aspect-video w-full bg-card" />
-              <div className="h-4 w-3/4 bg-card" />
               <div className="h-3 w-1/2 bg-card" />
+              <div className="h-3.5 w-3/4 bg-card" />
             </div>
           ))}
         </div>
       )}
 
-      {/* ── Episode Grid ── */}
+      {/* ── Crunchyroll Style Episode Grid ── */}
       {!isTmdbLoading && (
-        <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 sm:gap-5">
           {seasonEpisodes.map((ep) => {
             const playable = ep.status === "in_library" && Boolean(ep.jellyfinItemId)
             const isActive = (ep.jellyfinItemId && ep.jellyfinItemId === activeEpisodeId) || ep.id === activeEpisodeId
-            const isOverviewExpanded = expandedOverviewId === ep.id
 
             return (
               <div
                 key={ep.id}
-                className={`group flex flex-col justify-between overflow-hidden border bg-surface transition-all duration-200 ${
+                className={`group relative flex flex-col justify-between overflow-hidden transition-all duration-200 ${
                   isActive
                     ? "border-accent ring-1 ring-accent"
-                    : playable
-                    ? "border-border/80 hover:border-accent/70 hover:shadow-xl"
-                    : "border-border/40 hover:border-border/80"
+                    : "border-border/50 hover:border-accent/80"
                 }`}
               >
+                {/* ── 1. Regular Card State ── */}
                 <div>
-                  {/* Episode Thumbnail Container */}
+                  {/* Widescreen Thumbnail */}
                   <div className="relative aspect-video w-full overflow-hidden bg-card">
                     <Image
                       src={ep.thumbUrl}
                       alt={ep.title}
                       fill
-                      sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
-                      className="object-cover transition-transform duration-500 group-hover:scale-105"
+                      sizes="(max-width: 640px) 100vw, (max-width: 1024px) 33vw, 20vw"
+                      className="object-cover transition-transform duration-500"
                       unoptimized
                     />
 
                     {/* Top Left Status Badge */}
-                    <div className="absolute left-2.5 top-2.5 z-10">
-                      {statusBadge(ep.status, ep.downloadProgress)}
-                    </div>
-
-                    {/* Bottom Right Duration Badge */}
-                    {ep.runtimeMinutes != null && ep.runtimeMinutes > 0 && (
-                      <div className="absolute right-2.5 bottom-2.5 z-10 flex items-center gap-1 bg-black/80 backdrop-blur-md px-2 py-0.5 text-[10px] font-bold text-white shadow-md">
-                        <Clock className="size-3 text-accent" />
-                        <span>{ep.runtimeMinutes}m</span>
+                    {ep.status !== "missing" && (
+                      <div className="absolute left-2 top-2 z-10">
+                        {statusBadge(ep.status, ep.downloadProgress)}
                       </div>
                     )}
 
-                    {/* Hover Play Button Overlay */}
-                    {playable && (
-                      <button
-                        onClick={() => ep.jellyfinItemId && setActiveEpisodeId(ep.jellyfinItemId)}
-                        className="absolute inset-0 z-20 flex items-center justify-center bg-black/50 opacity-0 transition-opacity duration-200 group-hover:opacity-100 cursor-pointer"
-                        aria-label={`Play E${ep.episodeNumber}`}
-                      >
-                        <span className="flex size-14 items-center justify-center bg-accent text-white shadow-2xl hover:scale-110 transition-transform active:scale-95">
-                          <Play className="ml-1 size-7 fill-white" />
-                        </span>
-                      </button>
+                    {/* Crunchyroll Duration Badge (Bottom Right 23m) */}
+                    {ep.runtimeMinutes != null && ep.runtimeMinutes > 0 && (
+                      <div className="absolute right-1.5 bottom-1.5 z-10 bg-black/85 border border-white/10 px-1.5 py-0.5 text-[11px] font-mono font-bold text-white shadow-md">
+                        {ep.runtimeMinutes}m
+                      </div>
                     )}
 
                     {/* Watch Progress Bar */}
@@ -392,64 +396,68 @@ export function SeasonBrowser({
                     )}
                   </div>
 
-                  {/* Episode Metadata Details */}
-                  <div className="p-4 space-y-2">
-                    {/* Episode Number & Air Date */}
-                    <div className="flex items-center justify-between gap-2 text-xs font-black tracking-widest text-accent uppercase">
-                      <span>E{ep.episodeNumber} • EPISODE {ep.episodeNumber}</span>
-                      {ep.airDate && (
-                        <span className="flex items-center gap-1 text-[10px] font-medium text-gray-400 tracking-normal normal-case">
-                          <Calendar className="size-3 text-gray-500" />
-                          {new Date(ep.airDate).toLocaleDateString("en-US", {
-                            month: "short",
-                            day: "numeric",
-                            year: "numeric",
-                          })}
-                        </span>
-                      )}
-                    </div>
+                  {/* Below Thumbnail Info */}
+                  <div className="p-3 space-y-1">
+                    {/* Show Name Header (Tiny uppercase font) */}
+                    <p className="text-[10px] font-extrabold uppercase tracking-widest text-gray-400 line-clamp-1">
+                      {showName}
+                    </p>
 
-                    {/* Title */}
-                    <h4 className="text-sm font-bold text-white leading-snug line-clamp-1 group-hover:text-accent transition-colors">
-                      {ep.title}
+                    {/* Episode Number & Title */}
+                    <h4 className="text-xs sm:text-sm font-bold text-white leading-snug line-clamp-1 group-hover:text-accent transition-colors">
+                      E{ep.episodeNumber} – {ep.title}
                     </h4>
 
-                    {/* Overview snippet */}
-                    <p className={`text-xs leading-relaxed text-gray-400 ${isOverviewExpanded ? "" : "line-clamp-3"}`}>
-                      {ep.overview}
-                    </p>
-                    {ep.overview.length > 120 && (
-                      <button
-                        onClick={() => setExpandedOverviewId(isOverviewExpanded ? null : ep.id)}
-                        className="text-[10px] font-bold uppercase tracking-wider text-gray-500 hover:text-white transition-colors"
-                      >
-                        {isOverviewExpanded ? "Show Less" : "Show Overview"}
+                    {/* Footer Row: Dub | Sub & Options */}
+                    <div className="flex items-center justify-between text-[11px] text-gray-500 font-medium pt-1">
+                      <span>Dub | Sub</span>
+                      <button className="hover:text-white transition-colors" aria-label="Options">
+                        <MoreVertical className="size-3.5 text-gray-400" />
                       </button>
-                    )}
+                    </div>
                   </div>
                 </div>
 
-                {/* Bottom Action Footer */}
-                <div className="p-4 pt-0">
-                  {playable ? (
-                    <button
-                      onClick={() => ep.jellyfinItemId && setActiveEpisodeId(ep.jellyfinItemId)}
-                      className="w-full flex items-center justify-center gap-2 bg-accent px-4 py-2.5 text-xs font-black uppercase tracking-wider text-white shadow-lg hover:bg-accent-hover active:scale-98 transition-all"
-                    >
-                      <Play className="size-4 fill-white" />
-                      PLAY E{ep.episodeNumber}
-                    </button>
-                  ) : (
-                    <div className="w-full flex items-center justify-between border border-border/60 bg-black/40 px-3 py-2 text-[11px] font-medium text-gray-400">
-                      <span className="flex items-center gap-1.5">
+                {/* ── 2. Crunchyroll Hover/Active Overview Overlay Card (Look at E3 in reference image!) ── */}
+                <div className="absolute inset-0 z-20 bg-[#16181f]/95 backdrop-blur-sm p-3.5 flex flex-col justify-between opacity-0 group-hover:opacity-100 transition-all duration-200 shadow-2xl pointer-events-none group-hover:pointer-events-auto">
+                  <div className="space-y-1.5">
+
+                    {/* Episode Title */}
+                    <h4 className="text-base font-bold text-white line-clamp-1">
+                      E{ep.episodeNumber} – {ep.title}
+                    </h4>
+
+                    {/* Air Date */}
+                    {ep.airDate && (
+                      <p className="flex items-center gap-1 text-xs font-medium text-gray-400">
+                        <Calendar className="size-3 text-gray-400" />
+                        {formatDate(ep.airDate)}
+                      </p>
+                    )}
+
+                    {/* Overview Paragraph */}
+                    <p className="text-sm leading-relaxed text-gray-300 line-clamp-4 pt-1">
+                      {ep.overview}
+                    </p>
+                  </div>
+
+                  {/* Bottom Play Action CTA Button */}
+                  <div className="pt-3 border-t border-border/50 mt-auto">
+                    {playable ? (
+                      <button
+                        onClick={() => ep.jellyfinItemId && setActiveEpisodeId(ep.jellyfinItemId)}
+                        className="flex items-center gap-2 text-xs font-black uppercase tracking-wider text-accent hover:text-accent-light transition-colors active:scale-95"
+                      >
+                        <Play className="size-4 fill-accent text-accent" />
+                        PLAY E{ep.episodeNumber}
+                      </button>
+                    ) : (
+                      <div className="flex items-center gap-1.5 text-[10px] font-extrabold uppercase tracking-wider text-gray-400">
                         <Info className="size-3.5 text-gray-500" />
-                        {ep.status === "unaired" ? "Coming Soon" : "Not Streamable Yet"}
-                      </span>
-                      <span className="uppercase text-[9px] font-extrabold text-gray-500">
-                        {ep.status}
-                      </span>
-                    </div>
-                  )}
+                        {ep.status === "unaired" ? "UNAIRED" : "NOT STREAMABLE YET"}
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
             )
@@ -458,7 +466,7 @@ export function SeasonBrowser({
       )}
 
       {seasonEpisodes.length === 0 && !isTmdbLoading && (
-        <p className="text-sm text-gray-400 py-6 text-center border border-dashed border-border">
+        <p className="text-sm text-gray-400 py-8 text-center border border-dashed border-border/60">
           No episode details available for this season.
         </p>
       )}

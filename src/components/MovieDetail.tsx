@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge"
 import { RequestButton } from "@/components/RequestButton"
 import { CinemaPlayer } from "@/components/player/CinemaPlayer"
 import { MovieRow } from "@/components/MovieRow"
+import { CastCarousel } from "@/components/CastCarousel"
 import { useAvailability } from "@/lib/use-availability"
 import { Star, Clock, Calendar, Bookmark, Check, Film, User, Globe, DollarSign, Award } from "lucide-react"
 import type { TmdbMovieDetail } from "@/lib/tmdb"
@@ -71,7 +72,7 @@ export function MovieDetail({ params }: { params: Promise<{ id: string }> }) {
   // Directors & Writers
   const directors = movie.credits?.crew?.filter((c) => c.job === "Director") || []
   const writers = movie.credits?.crew?.filter((c) => c.job === "Writer" || c.job === "Screenplay") || []
-  const cast = movie.credits?.cast?.slice(0, 10) || []
+  const cast = movie.credits?.cast?.slice(0, 15) || []
 
   // Spoken languages
   const spokenLanguages = movie.spoken_languages?.map((l) => l.english_name || l.name).join(", ") || "English"
@@ -103,6 +104,10 @@ export function MovieDetail({ params }: { params: Promise<{ id: string }> }) {
         <div className="absolute bottom-8 left-0 right-0 z-10 mx-auto max-w-[1600px] px-4 sm:px-6 md:px-8">
           <div className="flex flex-col md:flex-row gap-6 items-start md:items-end">
             {/* Poster */}
+            <div className="flex flex-col items-start gap-2 md:gap-4">
+              <div className="flex items-center gap-2 text-xs font-black uppercase tracking-widest text-accent">
+                <span className="bg-accent/20 px-2 py-0.5 border border-accent/40">MOVIE</span>
+              </div>
             <div className="w-36 sm:w-44 md:w-52 shrink-0 overflow-hidden rounded-none border border-border shadow-2xl hidden sm:block">
               <img
                 src={getImageUrl(movie.poster_path, "w500")}
@@ -110,13 +115,10 @@ export function MovieDetail({ params }: { params: Promise<{ id: string }> }) {
                 className="w-full h-auto object-cover"
               />
             </div>
+            </div>
 
             {/* Title / Logo / Metadata Details */}
             <div className="space-y-4 max-w-3xl">
-              <div className="flex items-center gap-2 text-xs font-black uppercase tracking-widest text-accent">
-                <span className="bg-accent/20 px-2 py-0.5 border border-accent/40">MOVIE</span>
-                <span className="text-gray-400 font-medium">• SUB | DUB</span>
-              </div>
 
               {/* Logo image or text title */}
               {logoUrl ? (
@@ -192,7 +194,7 @@ export function MovieDetail({ params }: { params: Promise<{ id: string }> }) {
 
                 <button
                   onClick={() => setIsBookmarked(!isBookmarked)}
-                  className={`flex items-center gap-2 rounded-none border px-4 py-3 text-xs font-bold uppercase tracking-wider transition-all active:scale-95 ${
+                  className={`flex items-center gap-2 rounded-none border px-4 py-2.5 text-xs font-bold uppercase tracking-wider transition-all active:scale-95 ${
                     isBookmarked
                       ? "border-accent bg-accent/20 text-accent"
                       : "border-gray-500 bg-black/40 text-white hover:border-white hover:bg-black/60"
@@ -234,63 +236,33 @@ export function MovieDetail({ params }: { params: Promise<{ id: string }> }) {
         )}
 
         {/* Overview & Metadata Grid */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-10">
           {/* Main Story Overview (Left 2 Columns) */}
-          <div className="lg:col-span-2 space-y-6">
-            <div className="space-y-3 bg-surface p-6 border border-border">
-              <h2 className="text-lg font-black uppercase tracking-wider text-white border-b border-border pb-3 flex items-center gap-2">
+          <div className="lg:col-span-2 space-y-8">
+            {/* Story Synopsis */}
+            <div className="space-y-3">
+              {/* <h2 className="text-lg font-black uppercase tracking-wider text-white border-b border-border pb-3 flex items-center gap-2">
                 <Film className="size-5 text-accent" /> STORY SYNOPSIS
-              </h2>
-              <p className="text-sm sm:text-base leading-relaxed text-gray-300">
+              </h2> */}
+              <p className="text-base sm:text-lg leading-relaxed text-gray-300">
                 {movie.overview || "No overview available for this movie."}
               </p>
             </div>
 
-            {/* Cast Grid */}
-            {cast.length > 0 && (
-              <div className="space-y-4 bg-surface p-6 border border-border">
-                <h2 className="text-lg font-black uppercase tracking-wider text-white border-b border-border pb-3 flex items-center gap-2">
-                  <User className="size-5 text-accent" /> TOP CAST
-                </h2>
-                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-4">
-                  {cast.map((actor) => (
-                    <div key={actor.id} className="space-y-2 bg-card p-2 border border-border/60 text-center group">
-                      <div className="relative aspect-square w-full overflow-hidden bg-surface">
-                        {actor.profile_path ? (
-                          <img
-                            src={getImageUrl(actor.profile_path, "w185")}
-                            alt={actor.name}
-                            className="size-full object-cover transition-transform duration-300 group-hover:scale-105"
-                          />
-                        ) : (
-                          <div className="size-full flex items-center justify-center text-gray-600">
-                            <User className="size-8" />
-                          </div>
-                        )}
-                      </div>
-                      <div>
-                        <p className="text-xs font-bold text-white line-clamp-1 group-hover:text-accent transition-colors">
-                          {actor.name}
-                        </p>
-                        <p className="text-[10px] text-gray-400 line-clamp-1">{actor.character}</p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
+            {/* Scrollable Cast Carousel with Navigation Arrows */}
+            <CastCarousel cast={cast} />
           </div>
 
-          {/* Right Sidebar Metadata Details */}
+          {/* Right Sidebar Metadata Details (Open Design) */}
           <div className="space-y-6">
-            <div className="bg-surface p-6 border border-border space-y-4">
-              <h2 className="text-lg font-black uppercase tracking-wider text-white border-b border-border pb-3 flex items-center gap-2">
+            <div className="space-y-4">
+              {/* <h2 className="text-lg font-black uppercase tracking-wider text-white border-b border-border pb-3 flex items-center gap-2">
                 <Award className="size-5 text-accent" /> MOVIE DETAILS
-              </h2>
+              </h2> */}
 
-              <dl className="space-y-3.5 text-xs">
+              <dl className="space-y-4 text-xs">
                 {directors.length > 0 && (
-                  <div>
+                  <div className="pt-2">
                     <dt className="font-bold text-gray-400 uppercase tracking-wider">Director</dt>
                     <dd className="text-sm font-semibold text-white mt-0.5">
                       {directors.map((d) => d.name).join(", ")}
@@ -299,7 +271,7 @@ export function MovieDetail({ params }: { params: Promise<{ id: string }> }) {
                 )}
 
                 {writers.length > 0 && (
-                  <div>
+                  <div className="pt-3">
                     <dt className="font-bold text-gray-400 uppercase tracking-wider">Writers</dt>
                     <dd className="text-sm font-medium text-gray-200 mt-0.5">
                       {writers.map((w) => w.name).join(", ")}
@@ -307,7 +279,7 @@ export function MovieDetail({ params }: { params: Promise<{ id: string }> }) {
                   </div>
                 )}
 
-                <div>
+                <div className="pt-3">
                   <dt className="font-bold text-gray-400 uppercase tracking-wider flex items-center gap-1.5">
                     <Globe className="size-3.5 text-accent" /> Spoken Languages
                   </dt>
@@ -315,7 +287,7 @@ export function MovieDetail({ params }: { params: Promise<{ id: string }> }) {
                 </div>
 
                 {movie.production_companies && movie.production_companies.length > 0 && (
-                  <div>
+                  <div className="pt-3">
                     <dt className="font-bold text-gray-400 uppercase tracking-wider">Studios</dt>
                     <dd className="text-sm font-medium text-gray-200 mt-0.5">
                       {movie.production_companies.map((p) => p.name).join(", ")}
@@ -324,7 +296,7 @@ export function MovieDetail({ params }: { params: Promise<{ id: string }> }) {
                 )}
 
                 {formatCurrency(movie.budget) && (
-                  <div>
+                  <div className="pt-3">
                     <dt className="font-bold text-gray-400 uppercase tracking-wider flex items-center gap-1">
                       <DollarSign className="size-3.5 text-success" /> Budget
                     </dt>
@@ -335,7 +307,7 @@ export function MovieDetail({ params }: { params: Promise<{ id: string }> }) {
                 )}
 
                 {formatCurrency(movie.revenue) && (
-                  <div>
+                  <div className="pt-3">
                     <dt className="font-bold text-gray-400 uppercase tracking-wider flex items-center gap-1">
                       <DollarSign className="size-3.5 text-success" /> Box Office Revenue
                     </dt>

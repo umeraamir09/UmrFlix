@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge"
 import { RequestButton } from "@/components/RequestButton"
 import { SeasonBrowser } from "@/components/SeasonBrowser"
 import { MovieRow } from "@/components/MovieRow"
+import { CastCarousel } from "@/components/CastCarousel"
 import { useAvailability } from "@/lib/use-availability"
 import { Star, Calendar, Bookmark, Check, Tv, User, Globe, ShieldAlert, Award } from "lucide-react"
 import type { TmdbTvDetail } from "@/lib/tmdb"
@@ -65,7 +66,7 @@ export function TvDetail({ params }: { params: Promise<{ id: string }> }) {
 
   // Creators & Cast
   const creators = show.created_by || []
-  const cast = show.credits?.cast?.slice(0, 10) || []
+  const cast = show.credits?.cast?.slice(0, 15) || []
   const contentRating = show.content_ratings?.results?.find((r) => r.iso_3166_1 === "US")?.rating || "TV-14"
 
   // Spoken languages
@@ -98,20 +99,21 @@ export function TvDetail({ params }: { params: Promise<{ id: string }> }) {
         <div className="absolute bottom-8 left-0 right-0 z-10 mx-auto max-w-[1600px] px-4 sm:px-6 md:px-8">
           <div className="flex flex-col md:flex-row gap-6 items-start md:items-end">
             {/* Poster */}
-            <div className="w-36 sm:w-44 md:w-52 shrink-0 overflow-hidden rounded-none border border-border shadow-2xl hidden sm:block">
-              <img
-                src={getImageUrl(show.poster_path, "w500")}
-                alt={show.name}
-                className="w-full h-auto object-cover"
-              />
+            <div className="flex flex-col items-start gap-2 md:gap-4">
+              <div className="flex items-center gap-2 text-xs font-black uppercase tracking-widest text-accent">
+                <span className="bg-accent/20 px-2 py-0.5 border border-accent/40">SERIES</span>
+              </div>
+              <div className="w-36 sm:w-44 md:w-52 shrink-0 overflow-hidden rounded-none border border-border shadow-2xl hidden sm:block">
+                <img
+                  src={getImageUrl(show.poster_path, "w500")}
+                  alt={show.name}
+                  className="w-full h-auto object-cover"
+                />
+              </div>
             </div>
 
             {/* Title / Logo / Metadata Details */}
             <div className="space-y-4 max-w-3xl">
-              <div className="flex items-center gap-2 text-xs font-black uppercase tracking-widest text-accent">
-                <span className="bg-accent/20 px-2 py-0.5 border border-accent/40">SERIES</span>
-                <span className="text-gray-400 font-medium">• SUB | DUB</span>
-              </div>
 
               {/* Logo image or text title */}
               {logoUrl ? (
@@ -191,11 +193,10 @@ export function TvDetail({ params }: { params: Promise<{ id: string }> }) {
 
                 <button
                   onClick={() => setIsBookmarked(!isBookmarked)}
-                  className={`flex items-center gap-2 rounded-none border px-4 py-3 text-xs font-bold uppercase tracking-wider transition-all active:scale-95 ${
-                    isBookmarked
+                  className={`flex items-center gap-2 rounded-none border px-4 py-2.5 text-xs font-bold uppercase tracking-wider transition-all active:scale-95 ${isBookmarked
                       ? "border-accent bg-accent/20 text-accent"
                       : "border-gray-500 bg-black/40 text-white hover:border-white hover:bg-black/60"
-                  }`}
+                    }`}
                 >
                   {isBookmarked ? (
                     <>
@@ -218,63 +219,33 @@ export function TvDetail({ params }: { params: Promise<{ id: string }> }) {
       {/* ── Main Detail Section ── */}
       <div className="mx-auto max-w-[1600px] px-4 sm:px-6 md:px-8 mt-8 space-y-12">
         {/* Overview & Metadata Grid */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-10">
           {/* Main Story Overview (Left 2 Columns) */}
-          <div className="lg:col-span-2 space-y-6">
-            <div className="space-y-3 bg-surface p-6 border border-border">
-              <h2 className="text-lg font-black uppercase tracking-wider text-white border-b border-border pb-3 flex items-center gap-2">
+          <div className="lg:col-span-2 space-y-8">
+            {/* Show Synopsis */}
+            <div className="space-y-3">
+              {/* <h2 className="text-lg font-black uppercase tracking-wider text-white border-b border-border pb-3 flex items-center gap-2">
                 <Tv className="size-5 text-accent" /> SHOW SYNOPSIS
-              </h2>
-              <p className="text-sm sm:text-base leading-relaxed text-gray-300">
+              </h2> */}
+              <p className="text-base sm:text-lg leading-relaxed text-gray-300">
                 {show.overview || "No overview available for this show."}
               </p>
             </div>
 
-            {/* Cast Grid */}
-            {cast.length > 0 && (
-              <div className="space-y-4 bg-surface p-6 border border-border">
-                <h2 className="text-lg font-black uppercase tracking-wider text-white border-b border-border pb-3 flex items-center gap-2">
-                  <User className="size-5 text-accent" /> TOP CAST
-                </h2>
-                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-4">
-                  {cast.map((actor) => (
-                    <div key={actor.id} className="space-y-2 bg-card p-2 border border-border/60 text-center group">
-                      <div className="relative aspect-square w-full overflow-hidden bg-surface">
-                        {actor.profile_path ? (
-                          <img
-                            src={getImageUrl(actor.profile_path, "w185")}
-                            alt={actor.name}
-                            className="size-full object-cover transition-transform duration-300 group-hover:scale-105"
-                          />
-                        ) : (
-                          <div className="size-full flex items-center justify-center text-gray-600">
-                            <User className="size-8" />
-                          </div>
-                        )}
-                      </div>
-                      <div>
-                        <p className="text-xs font-bold text-white line-clamp-1 group-hover:text-accent transition-colors">
-                          {actor.name}
-                        </p>
-                        <p className="text-[10px] text-gray-400 line-clamp-1">{actor.character}</p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
+            {/* Scrollable Cast Carousel with Navigation Arrows */}
+            <CastCarousel cast={cast} />
           </div>
 
-          {/* Right Sidebar Metadata Details */}
+          {/* Right Sidebar Metadata Details (Open Design) */}
           <div className="space-y-6">
-            <div className="bg-surface p-6 border border-border space-y-4">
-              <h2 className="text-lg font-black uppercase tracking-wider text-white border-b border-border pb-3 flex items-center gap-2">
+            <div className="space-y-4">
+              {/* <h2 className="text-lg font-black uppercase tracking-wider text-white border-b border-border pb-3 flex items-center gap-2">
                 <Award className="size-5 text-accent" /> SHOW DETAILS
-              </h2>
+              </h2> */}
 
-              <dl className="space-y-3.5 text-xs">
+              <dl className="space-y-4 text-xs">
                 {creators.length > 0 && (
-                  <div>
+                  <div className="pt-2">
                     <dt className="font-bold text-gray-400 uppercase tracking-wider">Created By</dt>
                     <dd className="text-sm font-semibold text-white mt-0.5">
                       {creators.map((c) => c.name).join(", ")}
@@ -282,14 +253,14 @@ export function TvDetail({ params }: { params: Promise<{ id: string }> }) {
                   </div>
                 )}
 
-                <div>
+                <div className="pt-3">
                   <dt className="font-bold text-gray-400 uppercase tracking-wider flex items-center gap-1.5">
                     <Globe className="size-3.5 text-accent" /> Spoken Languages
                   </dt>
                   <dd className="text-sm font-medium text-gray-200 mt-0.5">{spokenLanguages}</dd>
                 </div>
 
-                <div>
+                <div className="pt-3">
                   <dt className="font-bold text-gray-400 uppercase tracking-wider flex items-center gap-1.5">
                     <ShieldAlert className="size-3.5 text-warning" /> Content Advisory
                   </dt>
@@ -299,7 +270,7 @@ export function TvDetail({ params }: { params: Promise<{ id: string }> }) {
                 </div>
 
                 {show.networks && show.networks.length > 0 && (
-                  <div>
+                  <div className="pt-3">
                     <dt className="font-bold text-gray-400 uppercase tracking-wider">Networks / Platforms</dt>
                     <dd className="text-sm font-medium text-gray-200 mt-0.5">
                       {show.networks.map((n) => n.name).join(", ")}
@@ -308,7 +279,7 @@ export function TvDetail({ params }: { params: Promise<{ id: string }> }) {
                 )}
 
                 {show.number_of_episodes != null && (
-                  <div>
+                  <div className="pt-3">
                     <dt className="font-bold text-gray-400 uppercase tracking-wider">Total Episodes</dt>
                     <dd className="text-sm font-medium text-gray-200 mt-0.5">
                       {show.number_of_episodes} Episodes ({show.number_of_seasons || show.seasons?.length} Seasons)
@@ -321,7 +292,7 @@ export function TvDetail({ params }: { params: Promise<{ id: string }> }) {
         </div>
 
         {/* ── Season & Episode Previews Section ── */}
-        <div className="pt-4 border-t border-border">
+        <div className="pt-4">
           <div className="flex items-center justify-between">
             <h2 className="text-xl sm:text-2xl font-black uppercase tracking-tight text-white flex items-center gap-2">
               <Tv className="size-6 text-accent" /> EPISODES & SEASONS
