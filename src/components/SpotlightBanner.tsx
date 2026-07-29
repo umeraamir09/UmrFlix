@@ -50,7 +50,7 @@ export function SpotlightBanner({ item }: { item: SpotlightItem }) {
 
           <div className="flex flex-wrap items-center gap-3 pt-2">
             <Link
-              href={`/${item.media_type}/${item.id}`}
+              href={`/watch?tmdb=${item.id}&type=${item.media_type}`}
               className="flex items-center gap-2 rounded-none bg-accent px-5 py-2.5 text-xs font-bold uppercase tracking-wider text-white shadow-lg hover:bg-accent-hover transition-all hover:scale-105 active:scale-95"
             >
               <IconPlay className="size-4 fill-white" />

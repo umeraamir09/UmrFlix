@@ -1,7 +1,7 @@
 "use client"
 
 import Image from "next/image"
-import { History, Loader2, Play, SkipForward, TriangleAlert, X } from "lucide-react"
+import { Loader2, Play, SkipForward, TriangleAlert, X } from "lucide-react"
 
 export function formatTimecode(totalSeconds: number): string {
   const s = Math.max(0, Math.floor(totalSeconds))
@@ -11,50 +11,6 @@ export function formatTimecode(totalSeconds: number): string {
   const mm = h > 0 ? String(m).padStart(2, "0") : String(m)
   const ss = String(sec).padStart(2, "0")
   return h > 0 ? `${h}:${mm}:${ss}` : `${mm}:${ss}`
-}
-
-// ── Resume playback modal ──
-
-export function ResumeModal({
-  positionSeconds,
-  onResume,
-  onStartFromBeginning,
-}: {
-  positionSeconds: number
-  onResume: () => void
-  onStartFromBeginning: () => void
-}) {
-  return (
-    <div className="absolute inset-0 z-40 flex items-center justify-center bg-black/70 backdrop-blur-sm">
-      <div className="mx-4 w-full max-w-sm rounded-none border border-border bg-surface p-6 shadow-2xl">
-        <div className="mb-1 flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-accent">
-          <History className="size-4" />
-          Continue Watching
-        </div>
-        <h3 className="text-xl font-bold text-white">
-          Resume from {formatTimecode(positionSeconds)}?
-        </h3>
-        <p className="mt-1 text-sm text-gray-400">
-          You stopped watching here last time.
-        </p>
-        <div className="mt-5 flex flex-col gap-2">
-          <button
-            onClick={onResume}
-            className="flex w-full items-center justify-center gap-2 rounded-none bg-accent px-4 py-2.5 text-sm font-bold uppercase tracking-wider text-white transition-colors hover:bg-accent-hover"
-          >
-            <Play className="size-4 fill-white" />
-            Resume {formatTimecode(positionSeconds)}
-          </button>
-          <button
-            onClick={onStartFromBeginning}
-            className="flex w-full items-center justify-center gap-2 rounded-none border border-border bg-card px-4 py-2.5 text-sm font-bold uppercase tracking-wider text-gray-200 transition-colors hover:border-gray-500 hover:text-white"
-          >
-            Start from Beginning
-          </button>
-        </div>
-      </div>
-    </div>
-  )
 }
 
 // ── Skip intro / recap floating button ──

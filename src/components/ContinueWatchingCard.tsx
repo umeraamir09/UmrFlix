@@ -19,7 +19,13 @@ export interface ContinueWatchingItem {
 }
 
 export function ContinueWatchingCard({ item }: { item: ContinueWatchingItem }) {
-  const href = item.id ? `/${item.media_type}/${item.id}` : "#"
+  // Resume items carry the exact Jellyfin movie/episode id — go straight to
+  // the fullscreen player; fall back to the detail page when unknown.
+  const href = item.jellyfinItemId
+    ? `/watch?id=${item.jellyfinItemId}`
+    : item.id
+      ? `/${item.media_type}/${item.id}`
+      : "#"
   const backdropUrl = item.jellyfinImageUrl
     ? item.jellyfinImageUrl
     : item.backdrop_path

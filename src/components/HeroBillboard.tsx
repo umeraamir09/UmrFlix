@@ -119,7 +119,13 @@ export function HeroBillboard({ items }: { items: BillboardItem[] }) {
           {/* Action CTAs */}
           <div className="flex flex-wrap items-center gap-3 pt-2">
             <Link
-              href={`/${activeItem.media_type}/${activeItem.id}`}
+              href={
+                // In library → straight to the fullscreen player; otherwise
+                // the detail page (where the title can be requested).
+                activeItem.inLibrary && activeItem.jellyfinItemId
+                  ? `/watch?id=${activeItem.jellyfinItemId}${activeItem.media_type === "tv" ? "&type=tv" : ""}`
+                  : `/${activeItem.media_type}/${activeItem.id}`
+              }
               className="flex items-center gap-2 rounded-none bg-accent px-6 py-3 text-xs sm:text-sm font-bold uppercase tracking-wider text-white shadow-xl hover:bg-accent-hover transition-all active:scale-95"
             >
               <IconPlay className="size-4 fill-white" />

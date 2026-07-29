@@ -6,10 +6,8 @@ import {
   Check,
   ChevronLeft,
   Flag,
-  Minus,
-  Pause,
-  Play,
-  Plus,
+  PictureInPicture2,
+  SkipForward,
   Type,
   Volume2,
   VolumeX,
@@ -30,10 +28,6 @@ import {
   IconSkipForward,
   IconSubtitles,
   IconSpeed,
-  IconLockClosed,
-  IconLockOpen,
-  IconMirror,
-  IconInfo,
   IconFullscreen,
 } from "@/components/ui/icons"
 
@@ -542,13 +536,16 @@ export function PlayerControls({
     return () => window.removeEventListener("mousedown", close)
   }, [audioSubsOpen, speedOpen])
 
-  // Close menus when controls fade out
-  useEffect(() => {
+  // Close menus when controls fade out (render-time state adjustment — see
+  // react.dev "you might not need an effect")
+  const [prevVisible, setPrevVisible] = useState(visible)
+  if (prevVisible !== visible) {
+    setPrevVisible(visible)
     if (!visible) {
       setAudioSubsOpen(false)
       setSpeedOpen(false)
     }
-  }, [visible])
+  }
 
   return (
     <div
@@ -651,15 +648,33 @@ export function PlayerControls({
             </div>
           </div>
 
-          {/* Center Title */}
+          {/* Center Title (+ episode subtitle) */}
           <div className="flex-1 min-w-0 text-center px-2">
             <span className="text-sm sm:text-base font-normal tracking-wide text-white text-center truncate block max-w-[220px] sm:max-w-xs md:max-w-md mx-auto drop-shadow-md">
               {title}
             </span>
+            {subtitle && (
+              <span className="mt-0.5 text-[11px] sm:text-xs font-medium tracking-wide text-gray-300 text-center truncate block max-w-[220px] sm:max-w-xs md:max-w-md mx-auto drop-shadow-md">
+                {subtitle}
+              </span>
+            )}
           </div>
 
           {/* Right Controls */}
           <div className="flex items-center gap-5 sm:gap-7 shrink-0 relative">
+            {/* Next Episode (only when one is available) */}
+            {hasNext && onNextEpisode && (
+              <button
+                onClick={onNextEpisode}
+                className="flex items-center gap-2 rounded-none border border-white/20 bg-black/50 px-3 py-2 text-xs font-bold uppercase tracking-wider text-white backdrop-blur transition-all hover:border-accent hover:bg-accent active:scale-95"
+                aria-label="Play next episode"
+                title="Next Episode"
+              >
+                <span className="hidden sm:inline">Next Episode</span>
+                <SkipForward className="size-4" />
+              </button>
+            )}
+
             {/* Subtitles & Audio Menu */}
             <div ref={audioSubsRef} className="relative">
               <button
@@ -711,6 +726,16 @@ export function PlayerControls({
                 />
               )}
             </div>
+
+            {/* Picture-in-Picture */}
+            <button
+              onClick={onTogglePip}
+              className="hidden sm:flex items-center justify-center p-1 text-white transition-transform hover:scale-110 active:scale-95"
+              aria-label="Picture in Picture"
+              title="Picture in Picture"
+            >
+              <PictureInPicture2 className="size-8 sm:size-9 stroke-[1.8]" />
+            </button>
 
             {/* Fullscreen */}
             <button

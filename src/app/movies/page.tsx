@@ -1,5 +1,18 @@
 import { redirect } from "next/navigation"
 
-export default function MoviesRedirectPage() {
-  redirect("/movie")
+export default async function MoviesRedirectPage({
+  searchParams,
+}: {
+  searchParams?: Promise<{ [key: string]: string | string[] | undefined }>
+}) {
+  const params = (await searchParams) || {}
+  const search = new URLSearchParams()
+  for (const [key, value] of Object.entries(params)) {
+    if (typeof value === "string") {
+      search.set(key, value)
+    }
+  }
+  const qs = search.toString()
+  redirect(`/movie${qs ? `?${qs}` : ""}`)
 }
+

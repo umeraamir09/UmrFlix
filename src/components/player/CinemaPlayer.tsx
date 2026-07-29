@@ -6,6 +6,7 @@ import {
   QUALITY_PRESETS,
   type PlaybackPayload,
 } from "@/lib/playback-types"
+import { usePlayerSettings } from "@/lib/player-settings"
 import { parseVtt, type VttCue } from "@/lib/vtt"
 import {
   SubtitleOverlay,
@@ -19,7 +20,6 @@ import {
   NextEpisodeOverlay,
   PlayerError,
   PlayerLoading,
-  ResumeModal,
   SkipSegmentButton,
   formatTimecode,
   type NextEpisodeInfo,
@@ -28,7 +28,6 @@ import { usePlaybackReporter, type ReporterState } from "./use-playback-reporter
 import { playerLog } from "./player-debug"
 import { canBrowserPlayNatively } from "./codec-probe"
 import { PlayerDebugHud } from "./PlayerDebugHud"
-import { Play } from "lucide-react"
 
 function maskUrl(url: string): string {
   return url.replace(/api_key=[^&]+/, "api_key=***")
@@ -45,6 +44,8 @@ export type CinemaPlayerProps = {
   subtitle?: string
   poster?: string
   autoPlay?: boolean
+  /** Fill the entire viewport (Netflix-style /watch page) instead of a 16:9 box. */
+  fill?: boolean
   nextEpisode?: NextEpisodeInfo | null
   onNextEpisode?: () => void
   onWatched?: () => void
@@ -59,6 +60,7 @@ export function CinemaPlayer({
   subtitle,
   poster,
   autoPlay = false,
+  fill = false,
   nextEpisode = null,
   onNextEpisode,
   onWatched,
@@ -75,6 +77,13 @@ export function CinemaPlayer({
   const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   // Once playback has started (or autoplay is requested) stream rebuilds keep playing
   const playIntentRef = useRef(autoPlay)
+  // Tracks whether a stream has ever been attached — used to preserve the
+  // playhead across stream rebuilds (quality / track / subtitle-mode changes)
+  const hadStreamRef = useRef(false)
+
+  // ── User preferences (navbar settings) ──
+  const [playerSettings] = usePlayerSettings()
+  const burnSubtitles = playerSettings.subtitleMode === "burn"
 
   // ── Data state ──
   const [payload, setPayload] = useState<PlaybackPayload | null>(null)
@@ -98,8 +107,7 @@ export function CinemaPlayer({
   const [subStyle, setSubStyle] = useState<SubtitleStyle>(() => loadSubtitleStyle())
 
   // ── UI state ──
-  const [endpointReady, setEndpointReady] = useState(false) // resume question answered
-  const [resumeSeconds, setResumeSeconds] = useState<number | null>(null) // offered resume point
+  const [endpointReady, setEndpointReady] = useState(false) // playback info settled
   const [controlsVisible, setControlsVisible] = useState(true)
   const [isFullscreen, setIsFullscreen] = useState(false)
   const [nextPrompt, setNextPrompt] = useState<{ secondsLeft: number } | null>(null)
@@ -165,7 +173,6 @@ export function CinemaPlayer({
       setAudioIndex(null)
       setSubtitleIndex(null)
       setEndpointReady(false)
-      setResumeSeconds(null)
       setNextPrompt(null)
       setCreditsPillDismissed(false)
       setNeedsManualPlay(false)
@@ -176,6 +183,7 @@ export function CinemaPlayer({
       setBuffered(0)
       watchedReportedRef.current = false
       seekTargetRef.current = 0
+      hadStreamRef.current = false
       playIntentRef.current = autoPlay
     })
 
@@ -196,11 +204,12 @@ export function CinemaPlayer({
         const defaultSub =
           data.subtitles.find((s) => s.isDefault && !s.isImageBased) ?? null
         setSubtitleIndex(defaultSub ? defaultSub.index : null)
+        // Resume watching automatically — playback continues from the
+        // Jellyfin-saved position without prompting.
         if (data.resumeTicks > 0) {
-          setResumeSeconds(data.resumeTicks / TICKS_PER_SECOND)
-        } else {
-          setEndpointReady(true)
+          seekTargetRef.current = data.resumeTicks / TICKS_PER_SECOND
         }
+        setEndpointReady(true) // triggers the stream setup effect
       })
       .catch((e: Error) => {
         playerLog.error("payload", `failed to load playback info for ${itemId}:`, e)
@@ -215,11 +224,19 @@ export function CinemaPlayer({
   // ── Load subtitle cues when the selected track changes ──
   const selectedSubtitle =
     payload?.subtitles.find((s) => s.index === subtitleIndex) ?? null
+  // This track is delivered by the server transcoder (burned into the frames):
+  // image-based tracks are ALWAYS burned; text tracks only when the user has
+  // enabled the "burn subtitles" setting. Otherwise they're swapped in real
+  // time by the client-side overlay — no stream rebuild needed.
+  const burnSelectedSubtitle = selectedSubtitle != null && (selectedSubtitle.isImageBased || burnSubtitles)
+  const clientSideSubtitle = selectedSubtitle != null && !burnSelectedSubtitle
   const cues =
-    selectedSubtitle && cueState?.url === selectedSubtitle.url ? cueState.cues : []
+    clientSideSubtitle && selectedSubtitle && cueState?.url === selectedSubtitle.url
+      ? cueState.cues
+      : []
 
   useEffect(() => {
-    if (!selectedSubtitle || selectedSubtitle.isImageBased || !selectedSubtitle.url) return
+    if (!clientSideSubtitle || !selectedSubtitle.url) return
     const url = selectedSubtitle.url
     let cancelled = false
     fetch(url)
@@ -233,7 +250,7 @@ export function CinemaPlayer({
     return () => {
       cancelled = true
     }
-  }, [selectedSubtitle])
+  }, [clientSideSubtitle, selectedSubtitle])
 
   // ── Engine selection: direct play vs transcoded HLS ──
   const quality = QUALITY_PRESETS.find((q) => q.id === qualityId) ?? QUALITY_PRESETS[0]
@@ -258,10 +275,9 @@ export function CinemaPlayer({
   const wantsTranscode =
     qualityId !== "auto" ||
     (audioIndex != null && payload != null && audioIndex !== payload.defaultAudioIndex) ||
-    (selectedSubtitle?.isImageBased ?? false)
+    burnSelectedSubtitle
   const engine: "direct" | "hls" =
     payload?.canDirectPlay && codecProbe.supported && !wantsTranscode ? "direct" : "hls"
-  const imageBasedSubIndex = selectedSubtitle?.isImageBased ? selectedSubtitle.index : null
 
   const engineReason = !payload
     ? "awaiting payload"
@@ -270,7 +286,7 @@ export function CinemaPlayer({
       : !codecProbe.supported
         ? `direct play rejected by browser probe (${codecProbe.reason})`
         : wantsTranscode
-          ? `transcode requested (quality=${qualityId}${audioIndex != null && audioIndex !== payload.defaultAudioIndex ? ", audio override" : ""}${selectedSubtitle?.isImageBased ? ", image subs" : ""})`
+          ? `transcode requested (quality=${qualityId}${audioIndex != null && audioIndex !== payload.defaultAudioIndex ? ", audio override" : ""}${burnSelectedSubtitle ? selectedSubtitle?.isImageBased ? ", image subs" : ", burned subs" : ""})`
           : "direct play"
 
   // Log engine decisions once they settle
@@ -282,25 +298,40 @@ export function CinemaPlayer({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [payload, engine])
 
-  const buildStreamUrl = useCallback((): string => {
+  // Single source of truth for the stream URL — ANY change to quality,
+  // audio track, burned-in subtitle track or subtitle mode produces a new
+  // URL string, and the setup effect below rebuilds the stream reliably
+  // whenever it changes.
+  const streamUrl = useMemo((): string => {
     if (!payload) return ""
     const params = new URLSearchParams()
     if (quality.maxStreamingBitrate) {
       params.set("maxStreamingBitrate", String(quality.maxStreamingBitrate))
       params.set("maxWidth", String(quality.maxWidth))
       params.set("maxHeight", String(quality.maxHeight))
+    } else if (payload.canDirectPlay && engine === "hls") {
+      // "Auto" while transcoding anyway (audio override / burned subs):
+      // Jellyfin's default transcode bitrate is ~256 kbps at 416x234, so cap
+      // generously instead of letting the server pick a potato profile.
+      params.set("maxStreamingBitrate", "40000000")
+      params.set("maxWidth", "3840")
+      params.set("maxHeight", "2160")
     }
     const base = engine === "direct" ? payload.directUrl : payload.hlsUrl
     if (engine === "hls") {
       if (audioIndex != null) params.set("audioStreamIndex", String(audioIndex))
-      // Image-based subs (PGS/VobSub) can only be burned into the transcode
-      if (selectedSubtitle?.isImageBased) {
+      // Subtitles delivered by the transcoder (image-based tracks always,
+      // text tracks when the "burn subtitles" setting is enabled).
+      // subtitleMethod=Encode is REQUIRED — without it Jellyfin ignores the
+      // index and NO subtitles appear at all.
+      if (burnSelectedSubtitle) {
         params.set("subtitleStreamIndex", String(selectedSubtitle.index))
+        params.set("subtitleMethod", "Encode")
       }
     }
     const qs = params.toString()
     return qs ? `${base}&${qs}` : base
-  }, [payload, engine, quality, audioIndex, selectedSubtitle])
+  }, [payload, engine, quality, audioIndex, burnSelectedSubtitle, selectedSubtitle])
 
   // ── Reporter (heartbeat → Jellyfin) ──
   const getReporterState = useCallback((): ReporterState | null => {
@@ -325,24 +356,51 @@ export function CinemaPlayer({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [itemId])
 
-  // ── Stream setup (runs whenever engine/track/quality selection changes) ──
+  // ── Stream setup — rebuilds whenever the resolved stream URL changes
+  // (quality preset, audio track, burned-in subtitle track, subtitle mode) ──
   useEffect(() => {
     const video = videoRef.current
     if (!video || !payload || !endpointReady) return
 
     let cancelled = false
-    const url = buildStreamUrl()
+    const url = streamUrl
+    if (!url) return
     queueMicrotask(() => setLastStreamUrl(url))
     playerLog.info("stream", `building ${engine} stream: ${maskUrl(url)}`)
 
-    const restoreAndPlay = () => {
-      if (cancelled) return
+    // A rebuild while a stream was already attached (quality/track/mode
+    // change) must resume where the viewer was, not restart the video.
+    if (hadStreamRef.current && seekTargetRef.current === 0 && video.currentTime > 0) {
+      seekTargetRef.current = video.currentTime
+    }
+    hadStreamRef.current = true
+
+    // ── Restore & play helpers ──
+    // Position restore MUST NOT happen at MANIFEST_PARSED: with hls.js the
+    // video element has no duration at that point (NaN), so the seek was
+    // being silently skipped and every quality/track change restarted the
+    // video from 0. Restore is attempted on every later readiness milestone
+    // until it succeeds, and the seek target is only cleared once applied.
+    let restored = false
+    const tryRestore = () => {
+      if (cancelled || restored) return
       const target = seekTargetRef.current
-      if (target > 0 && Number.isFinite(video.duration)) {
-        video.currentTime = Math.min(target, Math.max(0, video.duration - 0.5))
-        playerLog.info("stream", `restoring position → ${target.toFixed(1)}s`)
-      }
+      if (target <= 0) return
+      const dur = video.duration
+      if (!Number.isFinite(dur) || dur <= 0) return
+      restored = true
       seekTargetRef.current = 0
+      video.currentTime = Math.min(target, Math.max(0, dur - 0.5))
+      playerLog.info("stream", `restored position → ${target.toFixed(1)}s (duration ${dur.toFixed(1)}s)`)
+    }
+
+    const fail = (message: string) => {
+      if (!cancelled) setLoadError(message)
+    }
+
+    const tryPlay = () => {
+      if (cancelled) return
+      tryRestore()
       if (playIntentRef.current) {
         playerLog.info("stream", "calling video.play()")
         video.play().catch((err) => {
@@ -364,13 +422,13 @@ export function CinemaPlayer({
 
       if (engine === "direct") {
         el.src = url
-        el.addEventListener("loadedmetadata", restoreAndPlay, { once: true })
+        el.addEventListener("loadedmetadata", tryPlay, { once: true })
         return
       }
 
       if (!payload?.supportsTranscoding) {
         playerLog.error("stream", "direct play unavailable AND transcoding unavailable")
-        setLoadError("This file can't be played: direct play unsupported and transcoding unavailable.")
+        fail("This file can't be played: direct play unsupported and transcoding unavailable.")
         return
       }
 
@@ -380,38 +438,83 @@ export function CinemaPlayer({
       playerLog.info("hls", `hls.js loaded, isSupported=${HlsCtor.isSupported()} nativeHls=${el.canPlayType("application/vnd.apple.mpegurl") || "no"}`)
 
       if (HlsCtor.isSupported()) {
+        const startPos = seekTargetRef.current > 0 ? seekTargetRef.current : -1
         const hls = new HlsCtor({
           enableWorker: true,
           lowLatencyMode: false,
           backBufferLength: 60,
           maxBufferLength: 40,
+          startPosition: startPos,
+          // Jellyfin transcoders can take 30-60s to emit the first segment —
+          // hls.js' 20s default frag timeout aborts the request too early and
+          // the server has to restart ffmpeg for every retry (endless stall).
+          manifestLoadingTimeOut: 20_000,
+          manifestLoadingMaxRetry: 2,
+          levelLoadingTimeOut: 20_000,
+          levelLoadingMaxRetry: 4,
+          fragLoadingTimeOut: 60_000,
+          fragLoadingMaxRetry: 6,
+          fragLoadingRetryDelay: 2_000,
+          levelLoadingRetryDelay: 1_500,
+          manifestLoadingRetryDelay: 1_500,
         })
         hlsRef.current = hls
         hls.on(HlsCtor.Events.MEDIA_ATTACHED, () => playerLog.info("hls", "media attached"))
         hls.on(HlsCtor.Events.MANIFEST_PARSED, (_e, d) => {
           playerLog.info("hls", `manifest parsed: ${d.levels?.length ?? 0} level(s)${d.levels?.[0] ? `, first=${d.levels[0].codecs ?? "?"} ${d.levels[0].audioCodec ?? ""}` : ""}`)
-          restoreAndPlay()
+          tryPlay()
         })
+        hls.on(HlsCtor.Events.LEVEL_LOADED, () => tryRestore())
         let firstFragLogged = false
+        let parseErrorCount = 0
+        let mediaRecoveryAttempts = 0
+        let networkRecoveryAttempts = 0
         hls.on(HlsCtor.Events.FRAG_BUFFERED, () => {
+          parseErrorCount = 0
           if (!firstFragLogged) {
             firstFragLogged = true
             playerLog.info("hls", "first fragment buffered")
           }
+          tryRestore()
         })
         hls.on(HlsCtor.Events.ERROR, (_event, data) => {
           const detail = `${data.type}/${data.details} fatal=${data.fatal}${data.url ? ` url=${maskUrl(data.url)}` : ""} reason=${data.reason ?? ""}`
           if (!data.fatal) {
             playerLog.warn("hls", detail)
+            // Jellyfin returns empty 200s while the transcoder spins up or
+            // after ffmpeg crashed — count the parse failures and surface a
+            // clear error instead of looping forever.
+            if (data.details === HlsCtor.ErrorDetails.FRAG_PARSING_ERROR) {
+              parseErrorCount++
+              if (parseErrorCount >= 6) {
+                fail(
+                  "The Jellyfin transcoder failed to produce video segments. " +
+                    "The server's ffmpeg transcoding may be misconfigured or overloaded — check the Jellyfin server logs.",
+                )
+              }
+            }
             return
           }
           playerLog.error("hls", detail)
           if (data.type === HlsCtor.ErrorTypes.NETWORK_ERROR) {
+            networkRecoveryAttempts++
+            if (networkRecoveryAttempts > 3) {
+              fail("Video segments could not be fetched — the transcoding session may have died on the server.")
+              return
+            }
             hls.startLoad() // recover from transient network stalls
           } else if (data.type === HlsCtor.ErrorTypes.MEDIA_ERROR) {
+            mediaRecoveryAttempts++
+            if (mediaRecoveryAttempts > 2) {
+              fail(
+                "The stream could not be decoded after multiple recovery attempts. " +
+                  "The server's transcoder may have failed — check the Jellyfin server logs.",
+              )
+              return
+            }
             hls.recoverMediaError()
-          } else if (!cancelled) {
-            setLoadError("The stream failed to load. Please try again.")
+          } else {
+            fail("The stream failed to load. Please try again.")
           }
         })
         hls.loadSource(url)
@@ -419,22 +522,28 @@ export function CinemaPlayer({
       } else if (el.canPlayType("application/vnd.apple.mpegurl")) {
         // Safari: native HLS
         el.src = url
-        el.addEventListener("loadedmetadata", restoreAndPlay, { once: true })
+        el.addEventListener("loadedmetadata", tryPlay, { once: true })
       } else if (!cancelled) {
         playerLog.error("hls", "neither MSE-hls.js nor native HLS available")
-        setLoadError("HLS playback is not supported in this browser.")
+        fail("HLS playback is not supported in this browser.")
       }
     }
 
     void setup()
 
     return () => {
+      // Preserve the playhead BEFORE hls.js detaches — detaching the
+      // MediaSource can reset video.currentTime, which is exactly the
+      // "restarts from 0" symptom on quality/track changes.
+      if (video.currentTime > 0 && seekTargetRef.current === 0) {
+        seekTargetRef.current = video.currentTime
+      }
       cancelled = true
       hlsRef.current?.destroy()
       hlsRef.current = null
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [payload, engine, qualityId, audioIndex, imageBasedSubIndex, endpointReady])
+  }, [payload, streamUrl, endpointReady])
 
   // Preserve volume across stream rebuilds
   useEffect(() => {
@@ -443,14 +552,6 @@ export function CinemaPlayer({
       videoRef.current.muted = muted
     }
   }, [payload, endpointReady, engine, volume, muted])
-
-  // ── Resume modal actions ──
-  const answerResume = (seconds: number) => {
-    playIntentRef.current = true // clicking "Resume" is a play intent
-    seekTargetRef.current = seconds
-    setResumeSeconds(null)
-    setEndpointReady(true) // triggers the stream setup effect
-  }
 
   // ── Auto-mark watched at 90% ──
   useEffect(() => {
@@ -544,17 +645,20 @@ export function CinemaPlayer({
   )
   const handleSubtitleChange = useCallback(
     (index: number | null) => {
-      // Image-based subs require a transcoded stream rebuild (burn-in);
-      // text tracks are rendered by the custom overlay and need no rebuild.
+      // Burned-in tracks (image-based, or any track while the "burn subtitles"
+      // setting is on) require a transcoded stream rebuild; text tracks in the
+      // default client-side mode swap out in real time without interrupting
+      // playback.
       const track = payload?.subtitles.find((s) => s.index === index)
       playerLog.info("user", `subtitle change → ${track ? `[${index}] ${track.title}` : "off"}`)
-      if (track?.isImageBased || selectedSubtitle?.isImageBased) {
+      const targetBurns = track != null && (track.isImageBased || burnSubtitles)
+      if (targetBurns || burnSelectedSubtitle) {
         rebuildAtPosition(() => setSubtitleIndex(index))
       } else {
         setSubtitleIndex(index)
       }
     },
-    [payload, selectedSubtitle, rebuildAtPosition],
+    [payload, burnSubtitles, burnSelectedSubtitle, rebuildAtPosition],
   )
 
   // ── Next-episode auto-play countdown ──
@@ -657,9 +761,9 @@ export function CinemaPlayer({
       onKeyDown={handleKeyDown}
       onMouseMove={pokeControls}
       onTouchStart={pokeControls}
-      className={`group relative aspect-video w-full select-none overflow-hidden rounded-lg bg-black outline-none [container-type:size] ${
-        !controlsVisible && playing ? "cursor-none" : ""
-      } ${className}`}
+      className={`group relative select-none overflow-hidden bg-black outline-none [container-type:size] ${
+        fill ? "h-dvh w-screen rounded-none" : "aspect-video w-full rounded-lg"
+      } ${!controlsVisible && playing ? "cursor-none" : ""} ${className}`}
     >
       <video
         ref={videoRef}
@@ -737,17 +841,6 @@ export function CinemaPlayer({
       {loadError && (
         <PlayerError message={loadError} onRetry={() => setRetryKey((k) => k + 1)} />
       )}
-
-      {/* Resume prompt */}
-      {payload && resumeSeconds !== null && !endpointReady && (
-        <ResumeModal
-          positionSeconds={resumeSeconds}
-          onResume={() => answerResume(resumeSeconds)}
-          onStartFromBeginning={() => answerResume(0)}
-        />
-      )}
-
-
 
       {/* Skip intro / recap / credits */}
       {activeMarker && !nextPrompt && (

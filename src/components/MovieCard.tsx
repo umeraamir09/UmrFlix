@@ -2,6 +2,7 @@
 
 import Link from "next/link"
 import Image from "next/image"
+import { useRouter } from "next/navigation"
 import { getImageUrl, formatYear, formatRating } from "@/lib/utils"
 import { AvailabilityBadge } from "@/components/AvailabilityBadge"
 import { Star, Bookmark } from "lucide-react"
@@ -50,6 +51,7 @@ export function MovieCard({
   availabilityState?: AvailabilityResult
 }) {
   const href = type === "movie" ? `/movie/${item.id}` : `/tv/${item.id}`
+  const router = useRouter()
   const title = item.title ?? item.name ?? "Unknown Title"
   const dateStr = item.release_date ?? item.first_air_date ?? ""
   const year = formatYear(dateStr)
@@ -129,9 +131,20 @@ export function MovieCard({
 
         {/* Bottom Action Bar (Crunchyroll Orange/Accent Icons) */}
         <div className="flex items-center gap-3 pt-2">
-          <div className="text-accent hover:scale-110 transition-transform cursor-pointer" title="Watch Now">
+          <button
+            className="text-accent hover:scale-110 transition-transform cursor-pointer"
+            title="Watch Now"
+            aria-label="Watch Now"
+            onClick={(e) => {
+              e.preventDefault()
+              e.stopPropagation()
+              // The watch page resolves availability (and, for series, picks
+              // the next episode) before starting playback.
+              router.push(`/watch?tmdb=${item.id}&type=${type}`)
+            }}
+          >
             <IconPlay className="size-5 fill-accent text-accent" />
-          </div>
+          </button>
           <div className="text-accent hover:scale-110 transition-transform cursor-pointer" title="Bookmark">
             <IconDownloadNav className="size-5" />
           </div>

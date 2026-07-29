@@ -7,11 +7,10 @@ import { getImageUrl, formatRating, formatDate, formatRuntime } from "@/lib/util
 import { Skeleton } from "@/components/ui/skeleton"
 import { Badge } from "@/components/ui/badge"
 import { RequestButton } from "@/components/RequestButton"
-import { CinemaPlayer } from "@/components/player/CinemaPlayer"
 import { MovieRow } from "@/components/MovieRow"
 import { CastCarousel } from "@/components/CastCarousel"
 import { useAvailability } from "@/lib/use-availability"
-import { Star, Clock, Calendar, Bookmark, Check, Film, User, Globe, DollarSign, Award } from "lucide-react"
+import { Star, Clock, Calendar, Bookmark, Check, User, Globe, DollarSign } from "lucide-react"
 import type { TmdbMovieDetail } from "@/lib/tmdb"
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json())
@@ -220,21 +219,6 @@ export function MovieDetail({ params }: { params: Promise<{ id: string }> }) {
 
       {/* ── Main Detail Section ── */}
       <div className="mx-auto max-w-[1600px] px-4 sm:px-6 md:px-8 mt-8 space-y-12">
-        {/* Cinema Player integration when item is available */}
-        {availability?.status === "in_library" && availability.jellyfinItemId && (
-          <div className="w-full border border-accent bg-black p-2 shadow-2xl">
-            <h2 className="text-sm font-black uppercase tracking-wider text-accent mb-2 px-2 flex items-center gap-2">
-              <Film className="size-4" /> CINEMA PLAYER
-            </h2>
-            <CinemaPlayer
-              itemId={availability.jellyfinItemId}
-              title={movie.title}
-              poster={getImageUrl(movie.backdrop_path, "original")}
-              autoPlay
-            />
-          </div>
-        )}
-
         {/* Overview & Metadata Grid */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-10">
           {/* Main Story Overview (Left 2 Columns) */}

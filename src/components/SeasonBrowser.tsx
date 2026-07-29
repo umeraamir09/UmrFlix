@@ -1,23 +1,19 @@
 "use client"
 
 import Image from "next/image"
-import { useCallback, useMemo, useState } from "react"
+import { useRouter } from "next/navigation"
+import { useMemo, useState } from "react"
 import useSWR from "swr"
 import {
   Calendar,
   CheckCircle2,
   ChevronDown,
-  Clock,
   Download,
   Play,
-  Tv,
   Info,
   MoreVertical,
   ArrowUpDown,
-  SlidersHorizontal,
 } from "lucide-react"
-import { CinemaPlayer } from "@/components/player/CinemaPlayer"
-import type { NextEpisodeInfo } from "@/components/player/PlayerOverlays"
 import { getImageUrl, formatDate } from "@/lib/utils"
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json())
@@ -73,10 +69,6 @@ type TmdbSeasonResponse = {
     still_path: string | null
     vote_average: number
   }[]
-}
-
-function episodeLabel(ep: { seasonNumber: number; episodeNumber: number }): string {
-  return `S${ep.seasonNumber}:E${ep.episodeNumber}`
 }
 
 function statusBadge(status: EpisodeStatus, downloadProgress?: number) {
@@ -164,7 +156,7 @@ export function SeasonBrowser({
     fetcher
   )
 
-  const [activeEpisodeId, setActiveEpisodeId] = useState<string | null>(null)
+  const router = useRouter()
 
   // Combined Season Episodes List
   const seasonEpisodes = useMemo(() => {
@@ -222,52 +214,12 @@ export function SeasonBrowser({
   // Current active season info
   const activeSeasonInfo = seasons.find((s) => s.seasonNumber === currentSeason) || seasons[0]
 
-  // Playable episodes for cinema player
-  const playableEpisodes = useMemo(
-    () => seasonEpisodes.filter((e) => e.status === "in_library" && e.jellyfinItemId),
-    [seasonEpisodes]
-  )
-
-  const activeEpisode = useMemo(
-    () => playableEpisodes.find((e) => e.jellyfinItemId === activeEpisodeId || e.id === activeEpisodeId) ?? null,
-    [playableEpisodes, activeEpisodeId]
-  )
-
-  const nextPlayable = useMemo(() => {
-    if (!activeEpisode) return null
-    const idx = playableEpisodes.findIndex((e) => e.id === activeEpisode.id)
-    return playableEpisodes[idx + 1] ?? null
-  }, [playableEpisodes, activeEpisode])
-
-  const toNextInfo = useCallback(
-    (ep: EpisodeInfo): NextEpisodeInfo => ({
-      id: ep.jellyfinItemId || ep.id,
-      title: ep.title,
-      label: episodeLabel(ep),
-      imageUrl: ep.thumbUrl,
-    }),
-    []
-  )
+  const playEpisode = (ep: EpisodeInfo) => {
+    if (ep.jellyfinItemId) router.push(`/watch?id=${ep.jellyfinItemId}`)
+  }
 
   return (
     <section className="mt-8 space-y-6">
-      {/* ── Active cinema player ── */}
-      {activeEpisode && activeEpisode.jellyfinItemId && (
-        <div className="space-y-3 rounded-none border border-accent bg-black p-2 shadow-2xl">
-          <CinemaPlayer
-            itemId={activeEpisode.jellyfinItemId}
-            title={`${showName} — ${episodeLabel(activeEpisode)}`}
-            subtitle={activeEpisode.title}
-            poster={activeEpisode.thumbUrl}
-            autoPlay
-            nextEpisode={nextPlayable ? toNextInfo(nextPlayable) : null}
-            onNextEpisode={
-              nextPlayable ? () => setActiveEpisodeId(nextPlayable.jellyfinItemId || nextPlayable.id) : undefined
-            }
-          />
-        </div>
-      )}
-
       {/* ── Top Header Control Bar (Matching Crunchyroll Style) ── */}
       <div className="relative flex items-center justify-between border-b border-border/80 pb-3">
         {/* Left Side: Season Dropdown Selector Button */}
@@ -347,16 +299,11 @@ export function SeasonBrowser({
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 sm:gap-5">
           {seasonEpisodes.map((ep) => {
             const playable = ep.status === "in_library" && Boolean(ep.jellyfinItemId)
-            const isActive = (ep.jellyfinItemId && ep.jellyfinItemId === activeEpisodeId) || ep.id === activeEpisodeId
 
             return (
               <div
                 key={ep.id}
-                className={`group relative flex flex-col justify-between overflow-hidden transition-all duration-200 ${
-                  isActive
-                    ? "border-accent ring-1 ring-accent"
-                    : "border-border/50 hover:border-accent/80"
-                }`}
+                className="group relative flex flex-col justify-between overflow-hidden transition-all duration-200 border-border/50 hover:border-accent/80"
               >
                 {/* ── 1. Regular Card State ── */}
                 <div>
@@ -445,7 +392,7 @@ export function SeasonBrowser({
                   <div className="pt-3 border-t border-border/50 mt-auto">
                     {playable ? (
                       <button
-                        onClick={() => ep.jellyfinItemId && setActiveEpisodeId(ep.jellyfinItemId)}
+                        onClick={() => playEpisode(ep)}
                         className="flex items-center gap-2 text-xs font-black uppercase tracking-wider text-accent hover:text-accent-light transition-colors active:scale-95"
                       >
                         <Play className="size-4 fill-accent text-accent" />

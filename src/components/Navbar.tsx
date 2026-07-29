@@ -5,8 +5,22 @@ import Image from "next/image"
 import { usePathname } from "next/navigation"
 import { Suspense, useState, useEffect, useRef } from "react"
 import { SearchBar } from "@/components/SearchBar"
-import { ChevronDown, Menu } from "lucide-react"
+import { Check, ChevronDown, Menu, Settings } from "lucide-react"
 import { IconSearch, IconClose, IconDownloadNav, IconUser } from "@/components/ui/icons"
+import { usePlayerSettings, type SubtitleMode } from "@/lib/player-settings"
+
+const SUBTITLE_MODE_OPTIONS: { id: SubtitleMode; label: string; description: string }[] = [
+  {
+    id: "client",
+    label: "Client-side subtitles",
+    description: "Rendered over the video — switch instantly, custom styling (default)",
+  },
+  {
+    id: "burn",
+    label: "Burn subtitles into video",
+    description: "Transcoded into the stream by the server on every playback",
+  },
+]
 
 const NAV_LINKS = [
   { href: "/popular", label: "Popular" },
@@ -31,17 +45,37 @@ export function Navbar() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [categoriesOpen, setCategoriesOpen] = useState(false)
   const [searchOpen, setSearchOpen] = useState(false)
+  const [settingsOpen, setSettingsOpen] = useState(false)
   const searchContainerRef = useRef<HTMLDivElement>(null)
+  const settingsRef = useRef<HTMLDivElement>(null)
+  const [playerSettings, updatePlayerSettings] = usePlayerSettings()
 
-  // Close search on escape key or route change
-  useEffect(() => {
+  // Close search & settings menu on route change (adjusted during render,
+  // not in an effect, per react.dev "you might not need an effect")
+  const [prevPathname, setPrevPathname] = useState(pathname)
+  if (prevPathname !== pathname) {
+    setPrevPathname(pathname)
     setSearchOpen(false)
-  }, [pathname])
+    setSettingsOpen(false)
+  }
+
+  // Close settings menu on click-outside
+  useEffect(() => {
+    if (!settingsOpen) return
+    const close = (e: MouseEvent) => {
+      if (settingsRef.current && !settingsRef.current.contains(e.target as Node)) {
+        setSettingsOpen(false)
+      }
+    }
+    window.addEventListener("mousedown", close)
+    return () => window.removeEventListener("mousedown", close)
+  }, [settingsOpen])
 
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
       if (e.key === "Escape") {
         setSearchOpen(false)
+        setSettingsOpen(false)
       }
     }
     document.addEventListener("keydown", handleKeyDown)
@@ -181,12 +215,62 @@ export function Navbar() {
             <IconDownloadNav className="size-5" />
           </Link>
 
-          {/* User Profile */}
-          <div
-            className="hidden sm:flex h-full items-center justify-center px-3.5 text-gray-200 hover:text-white hover:bg-surface-hover transition-colors cursor-pointer"
-            title="User Profile"
-          >
-            <IconUser className="size-6" />
+          {/* User Profile / Settings */}
+          <div ref={settingsRef} className="relative hidden sm:flex h-full items-center">
+            <button
+              onClick={() => setSettingsOpen((o) => !o)}
+              className={`h-full flex items-center justify-center px-3.5 transition-colors ${
+                settingsOpen
+                  ? "bg-surface-hover text-white"
+                  : "text-gray-200 hover:text-white hover:bg-surface-hover"
+              }`}
+              title="Settings"
+              aria-label="Settings"
+              aria-expanded={settingsOpen}
+            >
+              <IconUser className="size-6" />
+            </button>
+
+            {settingsOpen && (
+              <div className="absolute right-0 top-full w-80 border border-border border-t-0 bg-surface-hover shadow-2xl backdrop-blur-xl rounded-none animate-in fade-in slide-in-from-top-1 duration-150 z-50">
+                {/* Header */}
+                <div className="flex items-center gap-2 px-4 py-3 border-b border-border">
+                  <Settings className="size-4 text-accent" />
+                  <span className="text-xs font-black uppercase tracking-widest text-white">
+                    Settings
+                  </span>
+                </div>
+
+                {/* Subtitle mode */}
+                <div className="px-4 pt-3 pb-1 text-[11px] font-bold uppercase tracking-widest text-gray-400">
+                  Subtitles
+                </div>
+                <div className="pb-2">
+                  {SUBTITLE_MODE_OPTIONS.map((opt) => {
+                    const selected = playerSettings.subtitleMode === opt.id
+                    return (
+                      <button
+                        key={opt.id}
+                        onClick={() => updatePlayerSettings({ subtitleMode: opt.id })}
+                        className={`w-full flex items-start justify-between gap-3 px-4 py-2.5 text-left transition-colors ${
+                          selected ? "bg-surface" : "hover:bg-surface"
+                        }`}
+                      >
+                        <span className="min-w-0">
+                          <span className={`block text-sm font-semibold ${selected ? "text-white" : "text-gray-200"}`}>
+                            {opt.label}
+                          </span>
+                          <span className="block text-[11px] font-normal text-gray-400 mt-0.5 leading-snug">
+                            {opt.description}
+                          </span>
+                        </span>
+                        {selected && <Check className="mt-0.5 size-4 shrink-0 text-accent" />}
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Mobile Drawer Trigger */}

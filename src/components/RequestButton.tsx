@@ -1,6 +1,7 @@
 "use client"
 
 import { useState } from "react"
+import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { RequestModal } from "@/components/RequestModal"
 import { useToast } from "@/components/Toast"
@@ -25,8 +26,7 @@ export function RequestButton({
   onStatusChange?: () => void
 }) {
   const [showModal, setShowModal] = useState(false)
-  const [playUrl, setPlayUrl] = useState<string | null>(null)
-  const [loadingPlay, setLoadingPlay] = useState(false)
+  const router = useRouter()
   const { toast } = useToast()
 
   const handleSuccess = () => {
@@ -35,40 +35,18 @@ export function RequestButton({
     onStatusChange?.()
   }
 
-  const handlePlay = async () => {
-    if (playUrl) {
-      window.open(playUrl, "_blank")
-      return
-    }
-
+  const handlePlay = () => {
     if (!availability?.jellyfinItemId) return
-
-    setLoadingPlay(true)
-    try {
-      const res = await fetch(`/api/jellyfin/stream/${availability.jellyfinItemId}`)
-      const data = await res.json()
-      if (data.direct) {
-        setPlayUrl(data.direct)
-        window.open(data.direct, "_blank")
-      } else {
-        toast("Failed to get stream URL", "error")
-      }
-    } catch {
-      toast("Failed to start playback", "error")
-    } finally {
-      setLoadingPlay(false)
-    }
+    // For series this is the Jellyfin *series* id — the watch page resolves
+    // it to the next episode to watch; movies play directly.
+    router.push(`/watch?id=${availability.jellyfinItemId}&type=${type}`)
   }
 
-  if (availability?.status === "in_library") {
+  if (availability?.status === "in_library" && availability.jellyfinItemId) {
     return (
-      <Button onClick={handlePlay} disabled={loadingPlay}>
-        {loadingPlay ? (
-          <Loader2 className="mr-1 size-4 animate-spin" />
-        ) : (
-          <Play className="mr-1 size-4" />
-        )}
-        Play on Jellyfin
+      <Button onClick={handlePlay}>
+        <Play className="mr-1 size-4" />
+        Watch Now
       </Button>
     )
   }

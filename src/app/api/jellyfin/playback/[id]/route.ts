@@ -112,7 +112,7 @@ export async function GET(
           isImageBased,
           url: isImageBased
             ? null
-            : buildSubtitleUrl(id, mediaSource.Id, s.Index, token, format),
+            : buildSubtitleUrl(id, mediaSource.Id, s.Index, format),
         }
       })
 

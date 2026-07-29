@@ -1,7 +1,6 @@
 import type { Metadata } from "next"
 import "./globals.css"
-import { Navbar } from "@/components/Navbar"
-import { Footer } from "@/components/Footer"
+import { LayoutShell } from "@/components/LayoutShell"
 import { ToastProvider } from "@/components/Toast"
 
 export const metadata: Metadata = {
@@ -32,9 +31,7 @@ export default function RootLayout({
       </head>
       <body className="flex min-h-screen flex-col bg-background text-foreground font-sans">
         <ToastProvider>
-          <Navbar />
-          <main className="flex-1 pt-16">{children}</main>
-          <Footer />
+          <LayoutShell>{children}</LayoutShell>
         </ToastProvider>
       </body>
     </html>

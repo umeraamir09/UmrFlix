@@ -326,7 +326,6 @@ export async function getPlaybackInfo(itemId: string): Promise<JellyfinPlaybackI
     DirectPlayProfiles: [
       { Container: "mp4,m4v,mov", Type: "Video", VideoCodec: "h264,hevc,vp8,vp9,av1", AudioCodec: "aac,mp3,ac3,eac3,opus,flac,vorbis" },
       { Container: "webm", Type: "Video", VideoCodec: "vp8,vp9,av1", AudioCodec: "vorbis,opus" },
-      { Container: "mkv", Type: "Video", VideoCodec: "h264", AudioCodec: "aac,mp3,ac3,eac3" },
     ],
     TranscodingProfiles: [
       { Container: "ts", Type: "Video", VideoCodec: "h264", AudioCodec: "aac,mp3", Protocol: "hls", BreakOnNonKeyFrames: true, MinSegments: 1, SegmentLength: 6 },
@@ -471,15 +470,18 @@ export function buildDirectStreamUrl(itemId: string, token: string, opts: Stream
   return `${BASE}/Videos/${itemId}/stream?${params}`
 }
 
-/** External subtitle (converted to WebVTT server-side). */
+/**
+ * External subtitle text track, served through the app's same-origin proxy
+ * (converted server-side by Jellyfin). Same-origin keeps browser fetches free
+ * of CORS issues and never exposes the API token.
+ */
 export function buildSubtitleUrl(
   itemId: string,
   mediaSourceId: string,
   streamIndex: number,
-  token: string,
   format = "vtt",
 ): string {
-  return `${BASE}/Videos/${itemId}/${mediaSourceId}/Subtitles/${streamIndex}/0/Stream.${format}?api_key=${token}`
+  return `/api/jellyfin/subtitles/${itemId}/${mediaSourceId}/${streamIndex}?format=${format}`
 }
 
 export function buildItemImageUrl(itemId: string, token: string, type = "Thumb", maxWidth?: number): string {
