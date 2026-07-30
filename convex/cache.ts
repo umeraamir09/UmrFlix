@@ -86,7 +86,7 @@ export const clearStaleCache = mutation({
         .query("cacheStore")
         .withIndex("by_updatedAt")
         .filter((q) => q.lt(q.field("updatedAt"), cutoff))
-        .paginate({ numItems: PAGE_SIZE, cursor: paginationCursor ?? undefined })
+        .paginate({ numItems: PAGE_SIZE, cursor: paginationCursor })
 
       for (const entry of page.page) {
         await ctx.db.delete(entry._id)
