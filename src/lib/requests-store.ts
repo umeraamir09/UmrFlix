@@ -16,8 +16,8 @@ export type RequestItem = {
   title: string
   mediaType: "movie" | "tv"
   year?: number
-  posterPath?: string
-  backdropPath?: string
+  posterPath?: string | null
+  backdropPath?: string | null
   requestedBy: {
     userId: string
     username: string
@@ -241,8 +241,8 @@ export async function createRequest(payload: {
   title: string
   mediaType: "movie" | "tv"
   year?: number
-  posterPath?: string
-  backdropPath?: string
+  posterPath?: string | null
+  backdropPath?: string | null
   qualityProfileId: number
   rootFolderPath: string
   minimumAvailability?: string

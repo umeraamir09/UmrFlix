@@ -8,6 +8,8 @@
  * @module
  */
 
+import type * as cache from "../cache.js";
+import type * as crons from "../crons.js";
 import type * as myList from "../myList.js";
 import type * as requests from "../requests.js";
 
@@ -18,6 +20,8 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  cache: typeof cache;
+  crons: typeof crons;
   myList: typeof myList;
   requests: typeof requests;
 }>;

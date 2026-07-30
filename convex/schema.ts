@@ -25,8 +25,8 @@ export default defineSchema({
     title: v.string(),
     mediaType: v.string(),
     year: v.optional(v.number()),
-    posterPath: v.optional(v.string()),
-    backdropPath: v.optional(v.string()),
+    posterPath: v.optional(v.union(v.string(), v.null())),
+    backdropPath: v.optional(v.union(v.string(), v.null())),
     requestedByUserId: v.string(),
     requestedByUsername: v.string(),
     requestedAt: v.string(),
@@ -56,5 +56,20 @@ export default defineSchema({
   })
     .index("by_user", ["userId"])
     .index("by_user_read", ["userId", "read"]),
+
+  cacheStore: defineTable({
+    key: v.string(),
+    dataJson: v.string(),
+    updatedAt: v.number(),
+  })
+    .index("by_key", ["key"])
+    .index("by_updatedAt", ["updatedAt"]),
+
+  tmdbToTvdb: defineTable({
+    tmdbId: v.number(),
+    tvdbId: v.number(),
+    updatedAt: v.number(),
+  }).index("by_tmdb", ["tmdbId"]),
 })
+
 

@@ -7,17 +7,12 @@ import {
   LogOut,
   Bookmark,
   Settings,
-  Crown,
   Pencil,
-  ArrowLeftRight,
   History,
-  Bell,
-  Check,
   LogIn,
-  ChevronDown,
-  ChevronUp,
   ShieldCheck,
 } from "lucide-react"
+
 import { usePlayerSettings, type SubtitleMode } from "@/lib/player-settings"
 
 export type UserProfile = {
