@@ -42,10 +42,11 @@ export type RequestItem = {
 export type UserNotification = {
   id: string
   userId: string
-  requestId: string
+  requestId?: string
+  partyId?: string
   title: string
   message: string
-  type: "approved" | "denied"
+  type: "approved" | "denied" | "party_invite"
   read: boolean
   createdAt: string
 }
@@ -179,9 +180,10 @@ function mapConvexNotification(doc: any): UserNotification {
     id: doc.notifId,
     userId: doc.userId,
     requestId: doc.requestId,
+    partyId: doc.partyId,
     title: doc.title,
     message: doc.message,
-    type: doc.type as "approved" | "denied",
+    type: doc.type as "approved" | "denied" | "party_invite",
     read: doc.read,
     createdAt: doc.createdAt,
   }
@@ -621,3 +623,38 @@ export async function markAllNotificationsRead(userId: string): Promise<void> {
     saveStore(store)
   }
 }
+
+export async function addPartyInviteNotification(notifPayload: UserNotification): Promise<void> {
+  const convex = getConvexClient()
+  let persisted = false
+  if (convex) {
+    try {
+      await convex.mutation(addNotificationRef, {
+        notifId: notifPayload.id,
+        userId: notifPayload.userId,
+        requestId: notifPayload.requestId,
+        partyId: notifPayload.partyId,
+        title: notifPayload.title,
+        message: notifPayload.message,
+        type: "party_invite",
+      })
+      persisted = true
+    } catch (err) {
+      if (process.env.NODE_ENV === "development") {
+        console.warn("[Convex] addPartyInviteNotification failed, falling back to local store:", err)
+      }
+    }
+  }
+
+  if (!persisted) {
+    const store = ensureFileExists()
+    store.notifications.push(notifPayload)
+    saveStore(store)
+  }
+
+  eventBus.emitEvent({
+    type: "notification:created",
+    payload: { ...notifPayload, audience: [notifPayload.userId] },
+  })
+}
+

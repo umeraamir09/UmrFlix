@@ -1,47 +1,66 @@
 "use client"
 
-import { useState, useEffect, useRef } from "react"
+import { useState, useEffect, useRef, useCallback } from "react"
 import Link from "next/link"
+import useSWR from "swr"
 import { Bell, Check, CheckCheck, Clock, XCircle, ShieldCheck } from "lucide-react"
 import { useEventStream, onReFetch } from "@/lib/use-event-stream"
 
 export type UserNotification = {
   id: string
   userId: string
-  requestId: string
+  requestId?: string
+  partyId?: string
   title: string
   message: string
-  type: "approved" | "denied"
+  type: "approved" | "denied" | "party_invite"
   read: boolean
   createdAt: string
 }
 
+type NotificationsResponse = {
+  notifications: UserNotification[]
+  unreadCount: number
+}
+
+const fetcher = (url: string) =>
+  fetch(url).then((r) => r.json()) as Promise<NotificationsResponse>
+
 export function NotificationBell() {
-  const [notifications, setNotifications] = useState<UserNotification[]>([])
-  const [unreadCount, setUnreadCount] = useState(0)
   const [open, setOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
+  const hasSubscribedRef = useRef(false)
 
   useEventStream()
 
-  const fetchNotifications = async () => {
+  const { data, mutate } = useSWR("/api/notifications", fetcher, {
+    refreshInterval: 30_000,
+    revalidateOnFocus: true,
+  })
+
+  const notifications = data?.notifications ?? []
+  const unreadCount = data?.unreadCount ?? 0
+
+  // SSE-triggered refresh: fetch notifications and set SWR cache directly
+  const handleReFetch = useCallback(async () => {
     try {
       const res = await fetch("/api/notifications")
       if (res.ok) {
-        const data = await res.json()
-        setNotifications(data.notifications || [])
-        setUnreadCount(data.unreadCount || 0)
+        const fresh = await res.json()
+        mutate(fresh, false)
       }
     } catch {
-      console.error("[NotificationBell] Failed to fetch notifications")
+      // Silently fail — next poll will pick up changes
     }
-  }
+  }, [mutate])
 
+  // Subscribe to SSE re-fetch signals
   useEffect(() => {
-    fetchNotifications()
-    const unsub = onReFetch(fetchNotifications)
+    if (hasSubscribedRef.current) return
+    hasSubscribedRef.current = true
+    const unsub = onReFetch(handleReFetch)
     return () => unsub()
-  }, [])
+  }, [handleReFetch])
 
   useEffect(() => {
     if (!open) return
@@ -62,9 +81,8 @@ export function NotificationBell() {
         body: JSON.stringify({ notificationId }),
       })
       if (res.ok) {
-        const data = await res.json()
-        setNotifications(data.notifications || [])
-        setUnreadCount(data.unreadCount || 0)
+        const fresh = await res.json()
+        mutate(fresh, false)
       }
     } catch {
       console.error("[NotificationBell] Failed to mark notification as read")
@@ -79,9 +97,8 @@ export function NotificationBell() {
         body: JSON.stringify({ markAll: true }),
       })
       if (res.ok) {
-        const data = await res.json()
-        setNotifications(data.notifications || [])
-        setUnreadCount(data.unreadCount || 0)
+        const fresh = await res.json()
+        mutate(fresh, false)
       }
     } catch {
       console.error("[NotificationBell] Failed to mark all notifications as read")
@@ -143,7 +160,11 @@ export function NotificationBell() {
                   }`}
                 >
                   <div className="pt-0.5 shrink-0">
-                    {notif.type === "approved" ? (
+                    {notif.type === "party_invite" ? (
+                      <span className="p-1 rounded bg-accent/20 text-accent inline-block">
+                        <ShieldCheck className="size-4" />
+                      </span>
+                    ) : notif.type === "approved" ? (
                       <span className="p-1 rounded bg-emerald-500/20 text-emerald-400 inline-block">
                         <Check className="size-4" />
                       </span>
@@ -165,20 +186,45 @@ export function NotificationBell() {
                     </div>
                     <p className="text-gray-300 text-[11px] leading-relaxed">{notif.message}</p>
                     <div className="flex items-center justify-between pt-1.5">
-                      <Link
-                        href="/requests"
-                        onClick={() => setOpen(false)}
-                        className="text-[11px] font-semibold text-accent hover:underline flex items-center gap-1"
-                      >
-                        View My Requests &rarr;
-                      </Link>
-                      {!notif.read && (
-                        <button
-                          onClick={() => markAsRead(notif.id)}
-                          className="text-[10px] text-gray-400 hover:text-white underline"
-                        >
-                          Dismiss
-                        </button>
+                      {notif.type === "party_invite" && notif.partyId ? (
+                        <div className="flex items-center gap-2">
+                          <Link
+                            href={`/party/join/${notif.partyId}`}
+                            onClick={() => {
+                              markAsRead(notif.id)
+                              setOpen(false)
+                            }}
+                            className="rounded bg-accent px-3 py-1 text-[11px] font-bold text-white transition-colors hover:bg-accent-hover"
+                          >
+                            Join Party
+                          </Link>
+                          {!notif.read && (
+                            <button
+                              onClick={() => markAsRead(notif.id)}
+                              className="text-[10px] text-gray-400 hover:text-white underline"
+                            >
+                              Decline
+                            </button>
+                          )}
+                        </div>
+                      ) : (
+                        <>
+                          <Link
+                            href="/requests"
+                            onClick={() => setOpen(false)}
+                            className="text-[11px] font-semibold text-accent hover:underline flex items-center gap-1"
+                          >
+                            View My Requests &rarr;
+                          </Link>
+                          {!notif.read && (
+                            <button
+                              onClick={() => markAsRead(notif.id)}
+                              className="text-[10px] text-gray-400 hover:text-white underline"
+                            >
+                              Dismiss
+                            </button>
+                          )}
+                        </>
                       )}
                     </div>
                   </div>

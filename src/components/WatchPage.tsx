@@ -8,6 +8,7 @@ import { CinemaPlayer } from "@/components/player/CinemaPlayer"
 import type { NextEpisodeInfo } from "@/components/player/PlayerOverlays"
 import type { PlaybackPayload } from "@/lib/playback-types"
 import type { AvailabilityResult } from "@/app/api/availability/route"
+import { PartyRoomSnapshot, predictedPosition } from "@/lib/party/protocol"
 
 type LibraryEpisode = {
   id: string
@@ -47,26 +48,21 @@ function episodeLabel(ep: Pick<LibraryEpisode, "seasonNumber" | "episodeNumber">
   return `S${ep.seasonNumber}:E${ep.episodeNumber}`
 }
 
-/**
- * Dedicated fullscreen player route.
- *
- * Accepted query params:
- *  - ?id=<jellyfinItemId>            → movies & episodes play directly
- *  - ?id=<jellyfinSeriesId>&type=tv  → resolves to the next episode to watch
- *  - ?tmdb=<tmdbId>&type=movie|tv    → resolves via the availability index
- */
 export function WatchPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
 
   const idParam = searchParams.get("id")
   const tmdbParam = searchParams.get("tmdb")
-  const typeParam = searchParams.get("type") // "movie" | "tv" — with `id`, "tv" means the id is a series
+  const typeParam = searchParams.get("type") // "movie" | "tv"
+  const partyParam = searchParams.get("party")
 
   const [resolvedId, setResolvedId] = useState<string | null>(null)
   const [payload, setPayload] = useState<PlaybackPayload | null>(null)
   const [episodes, setEpisodes] = useState<LibraryEpisode[] | null>(null)
   const [error, setError] = useState<WatchError | null>(null)
+  const [partyInfo, setPartyInfo] = useState<{ partyId: string; isOwner: boolean } | null>(null)
+  const [partyStartAt, setPartyStartAt] = useState<number | undefined>(undefined)
 
   // ── Resolve WHAT to play (episode / series → episode / tmdb → jellyfin) ──
   useEffect(() => {
@@ -96,6 +92,24 @@ export function WatchPage() {
 
     async function resolve() {
       try {
+        if (partyParam) {
+          const partyRes = await fetch(`/api/party/${partyParam}`)
+          if (partyRes.ok) {
+            const snap: PartyRoomSnapshot = await partyRes.json()
+            if (!cancelled) {
+              setPartyInfo({ partyId: partyParam, isOwner: snap.isOwner })
+              if (snap.state) {
+                const estPos = predictedPosition(snap.state, snap.serverNow)
+                setPartyStartAt(estPos)
+                if (snap.state.itemId) {
+                  play(snap.state.itemId)
+                  return
+                }
+              }
+            }
+          }
+        }
+
         if (idParam) {
           if (typeParam === "tv") {
             await playSeries(idParam)
@@ -125,7 +139,9 @@ export function WatchPage() {
           return
         }
 
-        fail({ message: "Nothing to play — no movie or episode was specified." })
+        if (!partyParam) {
+          fail({ message: "Nothing to play — no movie or episode was specified." })
+        }
       } catch (e) {
         fail({ message: e instanceof Error ? e.message : "Failed to resolve the title to play." })
       }
@@ -135,7 +151,7 @@ export function WatchPage() {
     return () => {
       cancelled = true
     }
-  }, [idParam, tmdbParam, typeParam])
+  }, [idParam, tmdbParam, typeParam, partyParam])
 
   // ── Metadata / series context for the resolved item ──
   useEffect(() => {
@@ -191,10 +207,36 @@ export function WatchPage() {
     if (nextEpisode) router.replace(`/watch?id=${nextEpisode.id}`)
   }, [router, nextEpisode])
 
+  const handlePartyNextEpisode = useCallback(async () => {
+    // Host advances the entire party to the next episode
+    if (!nextEpisode || !partyInfo) return
+    const { partyId } = partyInfo
+    try {
+      await fetch(`/api/party/${partyId}/item`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ itemId: nextEpisode.id }),
+      })
+      // Update locally — SSE broadcast will handle guests via onPartyItemChange
+      setResolvedId(nextEpisode.id)
+    } catch (err) {
+      console.error("[WatchPage] Party next episode error:", err)
+    }
+  }, [nextEpisode, partyInfo])
+
   const handleBack = useCallback(() => {
     if (window.history.length > 1) router.back()
     else router.push("/")
   }, [router])
+
+  // Party-aware next-episode handler (must be before any early return — hooks order)
+  const effectiveOnNextEpisode = useMemo(() => {
+    if (!nextEpisode) return undefined
+    if (partyInfo) {
+      return partyInfo.isOwner ? handlePartyNextEpisode : undefined
+    }
+    return goToNextEpisode
+  }, [nextEpisode, partyInfo, handlePartyNextEpisode, goToNextEpisode])
 
   if (error) {
     return (
@@ -226,7 +268,9 @@ export function WatchPage() {
     return (
       <div className="flex h-dvh w-screen flex-col items-center justify-center gap-3 bg-black text-gray-400">
         <Loader2 className="size-10 animate-spin text-accent" />
-        <p className="text-sm font-semibold">Preparing your stream…</p>
+        <p className="text-sm font-semibold">
+          {partyParam ? "Joining watch party…" : "Preparing your stream…"}
+        </p>
       </div>
     )
   }
@@ -236,7 +280,6 @@ export function WatchPage() {
     ? `${series.name} — S${series.season ?? "?"}:E${series.episode ?? "?"}`
     : (payload?.title ?? "")
   const playerSubtitle = series?.name ? payload?.title : undefined
-
   return (
     <CinemaPlayer
       key={resolvedId}
@@ -247,8 +290,12 @@ export function WatchPage() {
       poster={payload?.backdropUrl}
       autoPlay
       nextEpisode={nextEpisode}
-      onNextEpisode={nextEpisode ? goToNextEpisode : undefined}
+      onNextEpisode={effectiveOnNextEpisode}
       onBack={handleBack}
+      party={partyInfo ?? undefined}
+      startAtSec={partyStartAt}
+      onPartyItemChange={(newItemId) => setResolvedId(newItemId)}
+      onPartyEnded={() => router.push("/")}
     />
   )
 }

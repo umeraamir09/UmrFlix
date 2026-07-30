@@ -750,4 +750,26 @@ export async function stopSession(sessionId: string): Promise<boolean> {
   }
 }
 
+export type JellyfinUserPublic = {
+  Id: string
+  Name: string
+  PrimaryImageTag?: string
+}
+
+export async function getJellyfinUsers(): Promise<JellyfinUserPublic[]> {
+  try {
+    const { token } = await authenticate()
+    const res = await jellyfinFetch(`${BASE}/Users`, {
+      headers: getAuthHeaders(token),
+    })
+    if (!res.ok) return []
+    const users: JellyfinUserPublic[] = await res.json()
+    return users ?? []
+  } catch (err) {
+    console.error("Failed to fetch Jellyfin users:", err)
+    return []
+  }
+}
+
+
 

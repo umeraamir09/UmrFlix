@@ -19,6 +19,28 @@ function notifyReFetch() {
   reFetchCallbacks.forEach((cb) => cb())
 }
 
+export function acquireSharedEventSource(onOpen?: () => void): {
+  es: EventSource
+  release: () => void
+} {
+  subscriberCount++
+  const es = getSharedEventSource()
+  let openHandler: (() => void) | null = null
+  if (onOpen) {
+    openHandler = () => onOpen()
+    es.addEventListener("open", openHandler)
+  }
+  return {
+    es,
+    release: () => {
+      if (openHandler && es) {
+        es.removeEventListener("open", openHandler)
+      }
+      closeSharedEventSource()
+    },
+  }
+}
+
 function getSharedEventSource(): EventSource {
   if (!sharedEventSource) {
     sharedEventSource = new EventSource("/api/events")
@@ -71,9 +93,17 @@ export function useEventStream() {
       }
     }
 
-    const notificationCreated = () => {
-      mutate("/api/notifications")
-      notifyReFetch()
+    const notificationCreated = (e: MessageEvent) => {
+      try {
+        const data = JSON.parse(e.data)
+        mutate("/api/notifications")
+        notifyReFetch()
+        if (data.type === "party_invite") {
+          toast("You've been invited to a Watch Party! Check your notifications.", "info")
+        }
+      } catch {
+        // ignore parse errors - already revalidating
+      }
     }
 
     const mediaGrabbed = (e: MessageEvent) => {

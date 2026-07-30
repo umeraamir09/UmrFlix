@@ -118,7 +118,8 @@ export const addNotification = mutation({
   args: {
     notifId: v.string(),
     userId: v.string(),
-    requestId: v.string(),
+    requestId: v.optional(v.string()),
+    partyId: v.optional(v.string()),
     title: v.string(),
     message: v.string(),
     type: v.string(),
@@ -128,6 +129,7 @@ export const addNotification = mutation({
       notifId: args.notifId,
       userId: args.userId,
       requestId: args.requestId,
+      partyId: args.partyId,
       title: args.title,
       message: args.message,
       type: args.type,

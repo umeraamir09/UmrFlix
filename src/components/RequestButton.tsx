@@ -5,7 +5,8 @@ import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { RequestModal } from "@/components/RequestModal"
 import { useToast } from "@/components/Toast"
-import { Plus, Play, Loader2, Layers } from "lucide-react"
+import { Plus, Play, Loader2, Layers, Users } from "lucide-react"
+import { StartPartyModal } from "@/components/party/StartPartyModal"
 import type { AvailabilityResult } from "@/app/api/availability/route"
 
 export function RequestButton({
@@ -30,7 +31,7 @@ export function RequestButton({
   year?: number
   tvdbId?: number
   seasonsCount?: number
-  availability: AvailabilityResult | null
+  availability?: AvailabilityResult | null
   onStatusChange?: () => void
   hasMissingSeasons?: boolean
   missingSeasons?: number[]
@@ -39,9 +40,11 @@ export function RequestButton({
   posterPath?: string | null
   backdropPath?: string | null
 }) {
-  const [showModal, setShowModal] = useState(false)
   const router = useRouter()
   const { toast } = useToast()
+  const [showModal, setShowModal] = useState(false)
+  const [showPartyModal, setShowPartyModal] = useState(false)
+  const [loading, setLoading] = useState(false)
 
   const handleSuccess = () => {
     setShowModal(false)
@@ -91,6 +94,23 @@ export function RequestButton({
           <Play className="mr-1 size-4" />
           Watch Now
         </Button>
+
+        <Button
+          size="lg"
+          variant="secondary"
+          onClick={() => setShowPartyModal(true)}
+          className="bg-surface hover:bg-card border border-border text-foreground font-semibold"
+        >
+          <Users className="mr-1.5 size-4 text-accent" />
+          Watch Party
+        </Button>
+
+        <StartPartyModal
+          isOpen={showPartyModal}
+          onClose={() => setShowPartyModal(false)}
+          itemId={type === "movie" ? availability.jellyfinItemId : null}
+          seriesId={type === "tv" ? availability.jellyfinItemId : null}
+        />
 
         {type === "tv" && hasMissingSeasons && (
           <Button

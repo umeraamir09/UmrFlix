@@ -17,13 +17,20 @@ type MediaRenamedPayload = {
   series?: { title: string }
 }
 
+import type { PartyMember, PartyState } from "./party/protocol"
+
 export type AppServerEvent =
   | { type: "request:created"; payload: RequestItem }
   | { type: "request:updated"; payload: RequestItem }
-  | { type: "notification:created"; payload: UserNotification }
+  | { type: "notification:created"; payload: UserNotification & { audience?: string[] } }
   | { type: "media:grabbed"; payload: MediaGrabbedPayload }
   | { type: "media:downloaded"; payload: MediaDownloadedPayload }
   | { type: "media:renamed"; payload: MediaRenamedPayload }
+  | { type: "party:state"; payload: { partyId: string; state: PartyState; audience: string[] } }
+  | { type: "party:membership"; payload: { partyId: string; action: "join" | "leave" | "owner-changed" | "ended"; ownerId: string; members: PartyMember[]; audience: string[] } }
+  | { type: "party:invited"; payload: { partyId: string; inviterId: string; inviterName: string; audience: string[] } }
+  | { type: "party:ended"; payload: { partyId: string; audience: string[] } }
+  | { type: "party:item"; payload: { partyId: string; itemId: string; state: PartyState; audience: string[] } }
 
 class AppEventBus extends EventEmitter {
   constructor() {
