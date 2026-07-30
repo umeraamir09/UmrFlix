@@ -18,7 +18,10 @@ import {
   type AudioTrack,
   type ChapterInfo,
   type SubtitleTrack,
+  type TrickplayInfo,
 } from "@/lib/playback-types"
+import { TrickplayPreview, trickplayPreviewDisplaySize } from "./TrickplayPreview"
+import { ChapterImagePreview, chapterPreviewDisplaySize } from "./ChapterImagePreview"
 import type { SubtitleShadowStyle, SubtitleStyle } from "./SubtitleOverlay"
 
 import {
@@ -29,6 +32,7 @@ import {
   IconSubtitles,
   IconSpeed,
   IconFullscreen,
+  IconExitFullscreen,
 } from "@/components/ui/icons"
 
 // ── Seek bar with buffered display, chapter ticks, hover tooltip & scrubbing ──
@@ -38,16 +42,20 @@ function SeekBar({
   duration,
   buffered,
   chapters,
+  itemId,
+  trickplay,
   onSeek,
 }: {
   currentTime: number
   duration: number
   buffered: number
   chapters: ChapterInfo[]
+  itemId: string
+  trickplay: TrickplayInfo | null
   onSeek: (t: number) => void
 }) {
   const barRef = useRef<HTMLDivElement>(null)
-  const [hover, setHover] = useState<{ time: number; x: number } | null>(null)
+  const [hover, setHover] = useState<{ time: number; x: number; barW: number } | null>(null)
   const [scrubTime, setScrubTime] = useState<number | null>(null)
 
   const fraction = (clientX: number) => {
@@ -60,6 +68,21 @@ function SeekBar({
   const playedPct = duration > 0 ? (shownTime / duration) * 100 : 0
   const bufferedPct = duration > 0 ? Math.min(100, (buffered / duration) * 100) : 0
 
+  // Chapter images available as fallback when trickplay is absent?
+  const hasChapterImages = !trickplay && chapters.some((c) => c.imageTag)
+
+  // Keep the preview bubble within the bar so it never clips off-screen
+  const preview = trickplay
+    ? trickplayPreviewDisplaySize(trickplay)
+    : hasChapterImages
+      ? chapterPreviewDisplaySize()
+      : null
+  const previewW = preview ? preview.width + 2 : 0 // + border
+  const clampedHoverX =
+    hover && preview && hover.barW > previewW
+      ? Math.min(Math.max(hover.x, previewW / 2), hover.barW - previewW / 2)
+      : (hover?.x ?? 0)
+
   return (
     <div
       ref={barRef}
@@ -71,10 +94,15 @@ function SeekBar({
         onSeek(t)
       }}
       onPointerMove={(e) => {
-        const f = fraction(e.clientX)
+        const rect = barRef.current?.getBoundingClientRect()
+        const f =
+          rect && rect.width > 0
+            ? Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width))
+            : 0
         setHover({
           time: f * duration,
-          x: e.clientX - (barRef.current?.getBoundingClientRect().left ?? 0),
+          x: e.clientX - (rect?.left ?? 0),
+          barW: rect?.width ?? 0,
         })
         if (scrubTime !== null) {
           const t = f * duration
@@ -116,15 +144,36 @@ function SeekBar({
         style={{ left: `calc(${playedPct}% - 8px)` }}
       />
 
-      {/* hover tooltip */}
-      {hover && (
-        <div
-          className="pointer-events-none absolute -top-9 -translate-x-1/2 rounded border border-white/10 bg-black/90 px-2.5 py-1 text-xs font-semibold tabular-nums text-white shadow-lg"
-          style={{ left: hover.x }}
-        >
-          {formatTimecode(hover.time)}
-        </div>
-      )}
+      {/* hover tooltip: trickplay → chapter images → plain timecode */}
+      {hover &&
+        (trickplay ? (
+          <div
+            className="pointer-events-none absolute bottom-full mb-2 -translate-x-1/2 border border-white/15 bg-black shadow-2xl"
+            style={{ left: clampedHoverX }}
+          >
+            <TrickplayPreview trickplay={trickplay} itemId={itemId} time={hover.time} />
+            <div className="py-1.5 text-center text-xs font-semibold tabular-nums text-white">
+              {formatTimecode(hover.time)}
+            </div>
+          </div>
+        ) : hasChapterImages ? (
+          <div
+            className="pointer-events-none absolute bottom-full mb-2 -translate-x-1/2 border border-white/15 bg-black shadow-2xl"
+            style={{ left: clampedHoverX }}
+          >
+            <ChapterImagePreview chapters={chapters} itemId={itemId} time={hover.time} />
+            <div className="py-1.5 text-center text-xs font-semibold tabular-nums text-white">
+              {formatTimecode(hover.time)}
+            </div>
+          </div>
+        ) : (
+          <div
+            className="pointer-events-none absolute -top-9 -translate-x-1/2 rounded border border-white/10 bg-black/90 px-2.5 py-1 text-xs font-semibold tabular-nums text-white shadow-lg"
+            style={{ left: hover.x }}
+          >
+            {formatTimecode(hover.time)}
+          </div>
+        ))}
     </div>
   )
 }
@@ -376,18 +425,24 @@ const SPEED_OPTIONS = [
 
 function SpeedQualityMenu({
   qualityId,
+  autoResolvedLabel,
   onQualityChange,
   playbackRate,
   onPlaybackRateChange,
 }: {
   qualityId: string
+  autoResolvedLabel?: string
   onQualityChange: (id: string) => void
   playbackRate: number
   onPlaybackRateChange: (rate: number) => void
 }) {
   const [section, setSection] = useState<SpeedQualitySection>("root")
 
-  const qualityLabel = QUALITY_PRESETS.find((q) => q.id === qualityId)?.label ?? "Auto"
+  const baseLabel = QUALITY_PRESETS.find((q) => q.id === qualityId)?.label ?? "Auto"
+  const qualityLabel =
+    qualityId === "auto" && autoResolvedLabel
+      ? `Auto (${autoResolvedLabel})`
+      : baseLabel
   const speedLabel = playbackRate === 1 ? "Normal" : `${playbackRate}x`
 
   return (
@@ -453,6 +508,7 @@ export function PlayerControls({
   volume,
   muted,
   qualityId,
+  autoResolvedLabel,
   audioTracks,
   audioIndex,
   subtitleTracks,
@@ -462,6 +518,8 @@ export function PlayerControls({
   isFullscreen,
   hasNext,
   chapters,
+  itemId,
+  trickplay,
   onTogglePlay,
   onSeek,
   onSkipBy,
@@ -488,6 +546,7 @@ export function PlayerControls({
   volume: number
   muted: boolean
   qualityId: string
+  autoResolvedLabel?: string
   audioTracks: AudioTrack[]
   audioIndex: number | null
   subtitleTracks: SubtitleTrack[]
@@ -497,6 +556,8 @@ export function PlayerControls({
   isFullscreen: boolean
   hasNext: boolean
   chapters: ChapterInfo[]
+  itemId: string
+  trickplay: TrickplayInfo | null
   onTogglePlay: () => void
   onSeek: (t: number) => void
   onSkipBy: (delta: number) => void
@@ -588,6 +649,8 @@ export function PlayerControls({
           duration={duration}
           buffered={buffered}
           chapters={chapters}
+          itemId={itemId}
+          trickplay={trickplay}
           onSeek={onSeek}
         />
 
@@ -720,6 +783,7 @@ export function PlayerControls({
               {speedOpen && (
                 <SpeedQualityMenu
                   qualityId={qualityId}
+                  autoResolvedLabel={autoResolvedLabel}
                   onQualityChange={onQualityChange}
                   playbackRate={playbackRate}
                   onPlaybackRateChange={onPlaybackRateChange}
@@ -743,7 +807,11 @@ export function PlayerControls({
               className="flex items-center justify-center p-1 text-white transition-transform hover:scale-110 active:scale-95"
               aria-label={isFullscreen ? "Exit Fullscreen" : "Fullscreen"}
             >
-              <IconFullscreen className="size-9 sm:size-10" />
+              {isFullscreen ? (
+                <IconExitFullscreen className="size-9 sm:size-10" />
+              ) : (
+                <IconFullscreen className="size-9 sm:size-10" />
+              )}
             </button>
           </div>
         </div>

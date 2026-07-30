@@ -239,3 +239,12 @@ export function IconFullscreen({ className = "size-5", ...props }: IconProps) {
     </svg>
   )
 }
+
+export function IconExitFullscreen({ className = "size-5", ...props }: IconProps) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" className={className} xmlns="http://www.w3.org/2000/svg" {...props}>
+      <path d="M8 3v5H3M16 3v5h5M8 21v-5H3M16 21v-5h5" stroke="currentColor" strokeWidth="2.2" strokeLinecap="square" strokeLinejoin="miter" />
+    </svg>
+  )
+}
+

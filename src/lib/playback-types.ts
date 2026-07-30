@@ -22,7 +22,22 @@ export type SubtitleTrack = {
   url: string | null
 }
 
-export type ChapterInfo = { name: string; startSeconds: number }
+export type ChapterInfo = { name: string; startSeconds: number; imageTag?: string }
+
+/**
+ * Trickplay seek-preview metadata (Jellyfin 10.9+ "trickplay" thumbnails).
+ * Thumbnails live in sprite tiles: tileWidth × tileHeight thumbs per tile
+ * image; interval is the millisecond gap between consecutive thumbnails.
+ * Tile images are proxied via /api/jellyfin/trickplay/{itemId}/{width}/{index}.
+ */
+export type TrickplayInfo = {
+  width: number
+  height: number
+  tileWidth: number
+  tileHeight: number
+  thumbnailCount: number
+  interval: number
+}
 
 export type SegmentMarker = {
   type: "intro" | "recap" | "credits" | "preview"
@@ -53,6 +68,7 @@ export type PlaybackPayload = {
   defaultAudioIndex: number | null
   markers: SegmentMarker[]
   chapters: ChapterInfo[]
+  trickplay: TrickplayInfo | null
   title?: string
   series?: { id: string; name?: string; season?: number; episode?: number } | null
   backdropUrl?: string
