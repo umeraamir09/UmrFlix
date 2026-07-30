@@ -186,6 +186,8 @@ export function MovieDetail({ params }: { params: Promise<{ id: string }> }) {
                   tmdbId={movie.id}
                   title={movie.title}
                   year={movie.release_date ? new Date(movie.release_date).getFullYear() : undefined}
+                  posterPath={movie.poster_path}
+                  backdropPath={movie.backdrop_path}
                   availability={availability}
                   onStatusChange={refresh}
                 />

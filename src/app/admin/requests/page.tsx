@@ -2,20 +2,18 @@
 
 import { useState, useEffect } from "react"
 import Link from "next/link"
+import useSWR from "swr"
 import {
-  ShieldCheck,
-  Clock,
-  CheckCircle2,
-  XCircle,
-  Film,
-  Tv,
   ArrowLeft,
   Loader2,
   Search,
-  Filter,
+  CheckCircle2,
 } from "lucide-react"
 
 import type { RequestItem } from "@/lib/requests-store"
+import { AdminRequestCard, type ProfileMapData } from "@/components/AdminRequestCard"
+
+const fetcher = (url: string) => fetch(url).then((r) => r.json())
 
 type TabType = "all" | "pending" | "approved" | "denied"
 
@@ -29,6 +27,10 @@ export default function AdminRequestsPage() {
   const [targetReqId, setTargetReqId] = useState<string | null>(null)
   const [denialReason, setDenialReason] = useState("")
   const [actionSubmitting, setActionSubmitting] = useState(false)
+
+  // Fetch Radarr & Sonarr profiles to resolve Quality Profile names and Tags
+  const { data: radarrProfiles } = useSWR<ProfileMapData>("/api/radarr/profiles", fetcher)
+  const { data: sonarrProfiles } = useSWR<ProfileMapData>("/api/sonarr/profiles", fetcher)
 
   const fetchAdminRequests = async () => {
     try {
@@ -94,9 +96,11 @@ export default function AdminRequestsPage() {
     })
     .filter((r) => {
       if (!searchQuery) return true
+      const q = searchQuery.toLowerCase()
       return (
-        r.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        r.requestedBy.username.toLowerCase().includes(searchQuery.toLowerCase())
+        r.title.toLowerCase().includes(q) ||
+        r.requestedBy.username.toLowerCase().includes(q) ||
+        r.rootFolderPath.toLowerCase().includes(q)
       )
     })
 
@@ -122,7 +126,7 @@ export default function AdminRequestsPage() {
               Request Approval Queue
             </h1>
             <p className="text-sm text-foreground-muted mt-1">
-              Review media requests submitted by users. Approve to send to Radarr/Sonarr or Deny with notes.
+              Review detailed media requests submitted by users. Inspect requested seasons, quality profile settings, destination folders, and approve or deny.
             </p>
           </div>
         </div>
@@ -152,7 +156,7 @@ export default function AdminRequestsPage() {
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-gray-400" />
             <input
               type="text"
-              placeholder="Search title or username..."
+              placeholder="Search title, user, or path..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="w-full bg-surface border border-border px-3 py-2 pl-9 text-xs text-white placeholder-gray-500 focus:outline-none focus:border-amber-400"
@@ -160,11 +164,11 @@ export default function AdminRequestsPage() {
           </div>
         </div>
 
-        {/* Request Grid */}
+        {/* Request Cards List */}
         {loading ? (
           <div className="flex flex-col items-center justify-center py-20 text-gray-400">
             <Loader2 className="size-8 animate-spin text-amber-400 mb-3" />
-            <p className="text-sm font-medium">Loading requests...</p>
+            <p className="text-sm font-medium">Loading requests & technical specifications...</p>
           </div>
         ) : filteredRequests.length === 0 ? (
           <div className="p-12 border border-border/60 bg-card text-center space-y-3">
@@ -175,68 +179,17 @@ export default function AdminRequestsPage() {
             </p>
           </div>
         ) : (
-          <div className="space-y-3">
+          <div className="space-y-4">
             {filteredRequests.map((req) => (
-              <div
+              <AdminRequestCard
                 key={req.id}
-                className="p-4 border border-border/80 bg-card flex flex-col md:flex-row md:items-center justify-between gap-4 hover:border-gray-500 transition-colors"
-              >
-                <div className="flex items-start gap-4">
-                  <div className="p-3 bg-surface text-amber-400 border border-border shrink-0">
-                    {req.mediaType === "movie" ? <Film className="size-5" /> : <Tv className="size-5" />}
-                  </div>
-                  <div className="space-y-1">
-                    <div className="flex items-center gap-2">
-                      <h3 className="font-bold text-white text-base">{req.title}</h3>
-                      <span className="px-2 py-0.5 text-[10px] font-black uppercase bg-surface text-gray-300 border border-border">
-                        {req.mediaType}
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-2 text-xs text-gray-400">
-                      <span>Requested by <strong className="text-white">{req.requestedBy.username}</strong></span>
-                      <span>&bull;</span>
-                      <span>{new Date(req.requestedAt).toLocaleString()}</span>
-                    </div>
-                    <p className="text-xs text-gray-500 font-mono">Target: {req.rootFolderPath}</p>
-                    {req.denialReason && (
-                      <p className="text-xs text-red-400 font-medium pt-1">Reason: {req.denialReason}</p>
-                    )}
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-3 self-end md:self-center shrink-0">
-                  {req.status === "pending" && (
-                    <>
-                      <button
-                        onClick={() => handleApprove(req.id)}
-                        disabled={actionSubmitting}
-                        className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs uppercase tracking-wider transition-all shadow cursor-pointer disabled:opacity-50"
-                      >
-                        Approve & Dispatch
-                      </button>
-                      <button
-                        onClick={() => openDenyModal(req.id)}
-                        disabled={actionSubmitting}
-                        className="px-4 py-2 bg-red-600 hover:bg-red-500 text-white font-bold text-xs uppercase tracking-wider transition-all shadow cursor-pointer disabled:opacity-50"
-                      >
-                        Deny
-                      </button>
-                    </>
-                  )}
-
-                  {req.status === "approved" && (
-                    <span className="px-3 py-1.5 rounded bg-emerald-500/20 text-emerald-300 font-bold text-xs uppercase border border-emerald-500/40">
-                      Approved ({req.approvedBy})
-                    </span>
-                  )}
-
-                  {req.status === "denied" && (
-                    <span className="px-3 py-1.5 rounded bg-red-500/20 text-red-300 font-bold text-xs uppercase border border-red-500/40">
-                      Denied ({req.deniedBy})
-                    </span>
-                  )}
-                </div>
-              </div>
+                request={req}
+                radarrProfiles={radarrProfiles}
+                sonarrProfiles={sonarrProfiles}
+                onApprove={handleApprove}
+                onDeny={openDenyModal}
+                actionLoading={actionSubmitting}
+              />
             ))}
           </div>
         )}

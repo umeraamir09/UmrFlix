@@ -31,6 +31,11 @@ export function RequestModal({
   onSuccess,
   tvdbId,
   seasonsCount = 10,
+  initialSeasonMode,
+  initialSelectedSeasons,
+  downloadedSeasons,
+  posterPath,
+  backdropPath,
 }: {
   tmdbId: number
   title: string
@@ -40,6 +45,11 @@ export function RequestModal({
   onSuccess: () => void
   tvdbId?: number
   seasonsCount?: number
+  initialSeasonMode?: "first" | "all" | "future" | "custom"
+  initialSelectedSeasons?: number[]
+  downloadedSeasons?: number[]
+  posterPath?: string | null
+  backdropPath?: string | null
 }) {
   const endpoint = type === "movie" ? "/api/radarr/profiles" : "/api/sonarr/profiles"
   const { data, error, isLoading } = useSWR<ProfilesData>(endpoint, fetcher)
@@ -52,8 +62,10 @@ export function RequestModal({
   const [minimumAvailability, setMinimumAvailability] = useState<string>("announced")
   const [selectedTagIds, setSelectedTagIds] = useState<number[]>([])
 
-  // Default season monitoring selection set to "first" (First Season)
-  const [seasonMode, setSeasonMode] = useState<"first" | "all" | "future" | "custom">("first")
+  // Default season monitoring selection set to initialSeasonMode or "first"
+  const [seasonMode, setSeasonMode] = useState<"first" | "all" | "future" | "custom">(
+    initialSeasonMode || (initialSelectedSeasons?.length ? "custom" : "first")
+  )
   const [customSeasons, setCustomSeasons] = useState<Record<number, boolean>>({})
 
   const [submitting, setSubmitting] = useState(false)
@@ -69,15 +81,19 @@ export function RequestModal({
     }
   }, [data, filteredQualityProfiles, qualityProfileId, rootFolderPath])
 
-
   // Initialize custom seasons state if needed
   useEffect(() => {
     const initial: Record<number, boolean> = {}
-    for (let i = 1; i <= (seasonsCount || 10); i++) {
-      initial[i] = i === 1
+    const maxCount = Math.max(seasonsCount || 1, 1)
+    for (let i = 1; i <= maxCount; i++) {
+      if (initialSelectedSeasons && initialSelectedSeasons.length > 0) {
+        initial[i] = initialSelectedSeasons.includes(i)
+      } else {
+        initial[i] = i === 1
+      }
     }
     setCustomSeasons(initial)
-  }, [seasonsCount])
+  }, [seasonsCount, initialSelectedSeasons])
 
   const toggleTag = (tagId: number) => {
     setSelectedTagIds((prev) =>
@@ -134,6 +150,8 @@ export function RequestModal({
           title,
           mediaType: type,
           year: year ?? new Date().getFullYear(),
+          posterPath,
+          backdropPath,
           qualityProfileId,
           rootFolderPath,
           minimumAvailability: type === "movie" ? minimumAvailability : undefined,
@@ -291,20 +309,34 @@ export function RequestModal({
                       </span>
                       <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
                         {Array.from({ length: Math.max(seasonsCount || 1, 1) }, (_, i) => i + 1).map(
-                          (sNum) => (
-                            <label
-                              key={sNum}
-                              className="flex items-center gap-2 text-xs text-gray-300 cursor-pointer hover:text-white"
-                            >
-                              <input
-                                type="checkbox"
-                                checked={Boolean(customSeasons[sNum])}
-                                onChange={() => toggleSeason(sNum)}
-                                className="accent-accent size-3.5"
-                              />
-                              <span>Season {sNum}</span>
-                            </label>
-                          )
+                          (sNum) => {
+                            const isDownloaded = downloadedSeasons?.includes(sNum)
+                            return (
+                              <label
+                                key={sNum}
+                                className="flex flex-col gap-0.5 text-xs text-gray-300 cursor-pointer hover:text-white border border-border/40 p-1.5 bg-surface/40 hover:bg-surface/80"
+                              >
+                                <div className="flex items-center gap-1.5">
+                                  <input
+                                    type="checkbox"
+                                    checked={Boolean(customSeasons[sNum])}
+                                    onChange={() => toggleSeason(sNum)}
+                                    className="accent-accent size-3.5"
+                                  />
+                                  <span className="font-semibold">Season {sNum}</span>
+                                </div>
+                                {downloadedSeasons && (
+                                  <span
+                                    className={`text-[10px] font-bold ml-5 ${
+                                      isDownloaded ? "text-emerald-400" : "text-amber-400"
+                                    }`}
+                                  >
+                                    {isDownloaded ? "In Library" : "Missing"}
+                                  </span>
+                                )}
+                              </label>
+                            )
+                          }
                         )}
                       </div>
                     </div>

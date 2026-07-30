@@ -4,6 +4,7 @@ import { ConvexHttpClient } from "convex/browser"
 import type { FunctionReference } from "convex/server"
 import * as radarr from "./radarr"
 import * as sonarr from "./sonarr"
+import { ensureSonarrSeries } from "./cache"
 import { eventBus } from "./event-bus"
 
 export type RequestStatus = "pending" | "approved" | "denied"
@@ -300,18 +301,40 @@ export async function createRequest(payload: {
           monitored: true,
         }))
 
-      await sonarr.addSeries({
-        tvdbId: resolvedTvdbId,
-        title: payload.title,
-        qualityProfileId: payload.qualityProfileId,
-        rootFolderPath: payload.rootFolderPath,
-        seriesType: payload.seriesType,
-        tags: payload.tags,
-        monitored: true,
-        seasonFolder: true,
-        addOptions: { searchForMissingEpisodes: true },
-        seasons: seasonsPayload,
-      })
+      const seriesMap = await ensureSonarrSeries(() => sonarr.getSeries()).catch(
+        () => new Map<number, sonarr.SonarrSeries>()
+      )
+      const existingSeries = seriesMap.get(resolvedTvdbId)
+
+      if (existingSeries) {
+        const existingSeasonsMap = new Map(
+          (existingSeries.seasons || []).map((s) => [s.seasonNumber, s.monitored])
+        )
+        const updatedSeasons = seasonsPayload.map((s) => ({
+          seasonNumber: s.seasonNumber,
+          monitored: s.monitored || Boolean(existingSeasonsMap.get(s.seasonNumber)),
+        }))
+
+        await sonarr.updateSeries({
+          ...existingSeries,
+          seasons: updatedSeasons,
+          monitored: true,
+        })
+        await sonarr.searchSeries(existingSeries.id).catch(() => {})
+      } else {
+        await sonarr.addSeries({
+          tvdbId: resolvedTvdbId,
+          title: payload.title,
+          qualityProfileId: payload.qualityProfileId,
+          rootFolderPath: payload.rootFolderPath,
+          seriesType: payload.seriesType,
+          tags: payload.tags,
+          monitored: true,
+          seasonFolder: true,
+          addOptions: { searchForMissingEpisodes: true },
+          seasons: seasonsPayload,
+        })
+      }
     }
   }
 
@@ -377,18 +400,40 @@ export async function approveRequest(id: string, adminUsername: string): Promise
         monitored: true,
       }))
 
-    await sonarr.addSeries({
-      tvdbId: resolvedTvdbId,
-      title: req.title,
-      qualityProfileId: req.qualityProfileId,
-      rootFolderPath: req.rootFolderPath,
-      seriesType: req.seriesType,
-      tags: req.tags,
-      monitored: true,
-      seasonFolder: true,
-      addOptions: { searchForMissingEpisodes: true },
-      seasons: seasonsPayload,
-    })
+    const seriesMap = await ensureSonarrSeries(() => sonarr.getSeries()).catch(
+      () => new Map<number, sonarr.SonarrSeries>()
+    )
+    const existingSeries = seriesMap.get(resolvedTvdbId)
+
+    if (existingSeries) {
+      const existingSeasonsMap = new Map(
+        (existingSeries.seasons || []).map((s) => [s.seasonNumber, s.monitored])
+      )
+      const updatedSeasons = seasonsPayload.map((s) => ({
+        seasonNumber: s.seasonNumber,
+        monitored: s.monitored || Boolean(existingSeasonsMap.get(s.seasonNumber)),
+      }))
+
+      await sonarr.updateSeries({
+        ...existingSeries,
+        seasons: updatedSeasons,
+        monitored: true,
+      })
+      await sonarr.searchSeries(existingSeries.id).catch(() => {})
+    } else {
+      await sonarr.addSeries({
+        tvdbId: resolvedTvdbId,
+        title: req.title,
+        qualityProfileId: req.qualityProfileId,
+        rootFolderPath: req.rootFolderPath,
+        seriesType: req.seriesType,
+        tags: req.tags,
+        monitored: true,
+        seasonFolder: true,
+        addOptions: { searchForMissingEpisodes: true },
+        seasons: seasonsPayload,
+      })
+    }
   }
 
 
