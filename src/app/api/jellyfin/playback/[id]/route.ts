@@ -9,6 +9,7 @@ import {
   buildSubtitleUrl,
   buildItemImageUrl,
   ticksToSeconds,
+  pickTrickplayInfo,
   type JellyfinMediaSource,
 } from "@/lib/jellyfin"
 
@@ -191,6 +192,7 @@ export async function GET(
         name: c.Name,
         startSeconds: ticksToSeconds(c.StartPositionTicks),
       })),
+      trickplay: pickTrickplayInfo(detail?.Trickplay, mediaSource.Id),
       title: detail?.Name,
       series: detail?.SeriesId
         ? {

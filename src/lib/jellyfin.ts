@@ -1,6 +1,7 @@
 import { env } from "./env"
 import { getSession } from "./auth"
 import { jellyfinBreaker } from "./circuit-breaker"
+import type { TrickplayInfo } from "./playback-types"
 
 const BASE = env("JELLYFIN_URL")
 const TIMEOUT = 8_000
@@ -334,6 +335,20 @@ export type JellyfinChapter = {
   StartPositionTicks: number
 }
 
+/**
+ * Server-side shape of one trickplay resolution entry as Jellyfin serialises
+ * it (fields=Trickplay). Interval is in milliseconds. Bandwidth is unused.
+ */
+export type JellyfinTrickplayInfo = {
+  Width: number
+  Height: number
+  TileWidth: number
+  TileHeight: number
+  ThumbnailCount: number
+  Interval: number
+  Bandwidth?: number
+}
+
 export type JellyfinItemDetail = {
   Id: string
   Name: string
@@ -348,6 +363,54 @@ export type JellyfinItemDetail = {
   BackdropImageTags?: string[]
   ParentBackdropItemId?: string
   MediaType: string
+  /** Nested: Trickplay[mediaSourceId][width] → TrickplayInfo (verified against Jellyfin 10.11). */
+  Trickplay?: Record<string, Record<string, JellyfinTrickplayInfo>>
+}
+
+const TRICKPLAY_TARGET_WIDTH = 320
+
+/**
+ * Picks the best trickplay resolution for seek-bar previews — the smallest
+ * width >= TRICKPLAY_TARGET_WIDTH, else the largest available. Prefers the
+ * media source actually being played; falls back to any available source.
+ * Returns null when the server hasn't generated trickplay images for the item.
+ */
+export function pickTrickplayInfo(
+  map: Record<string, Record<string, JellyfinTrickplayInfo>> | undefined | null,
+  mediaSourceId?: string,
+): TrickplayInfo | null {
+  if (!map) return null
+  const widthMap =
+    (mediaSourceId ? map[mediaSourceId] : undefined) ?? Object.values(map)[0]
+  if (!widthMap) return null
+  const candidates = Object.entries(widthMap)
+    .map(([width, info]) => ({ width: Number(width), info }))
+    .filter(
+      ({ width, info }) =>
+        Number.isFinite(width) &&
+        width > 0 &&
+        info != null &&
+        info.Width > 0 &&
+        info.Height > 0 &&
+        info.TileWidth > 0 &&
+        info.TileHeight > 0 &&
+        info.ThumbnailCount > 0 &&
+        info.Interval > 0,
+    )
+    .sort((a, b) => a.width - b.width)
+  if (candidates.length === 0) return null
+  const chosen =
+    candidates.find((c) => c.width >= TRICKPLAY_TARGET_WIDTH) ??
+    candidates[candidates.length - 1]
+  const { info } = chosen
+  return {
+    width: info.Width,
+    height: info.Height,
+    tileWidth: info.TileWidth,
+    tileHeight: info.TileHeight,
+    thumbnailCount: info.ThumbnailCount,
+    interval: info.Interval,
+  }
 }
 
 /**
@@ -392,7 +455,7 @@ export async function getPlaybackInfo(itemId: string): Promise<JellyfinPlaybackI
 /** Full detail for one item, including UserData (resume position) and Chapters. */
 export async function getItemDetail(itemId: string): Promise<JellyfinItemDetail | null> {
   const { token, userId } = await authenticate()
-  const params = new URLSearchParams({ fields: "Chapters,Overview,MediaSources" })
+  const params = new URLSearchParams({ fields: "Chapters,Overview,MediaSources,Trickplay" })
   const res = await jellyfinFetch(`${BASE}/Users/${userId}/Items/${itemId}?${params}`, {
     headers: getAuthHeaders(token),
   })

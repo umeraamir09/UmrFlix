@@ -895,6 +895,8 @@ export function CinemaPlayer({
           isFullscreen={isFullscreen}
           hasNext={!!nextEpisode && !!onNextEpisode}
           chapters={payload.chapters}
+          itemId={payload.itemId}
+          trickplay={payload.trickplay}
           onTogglePlay={togglePlay}
           onSeek={seekTo}
           onSkipBy={(d) => {

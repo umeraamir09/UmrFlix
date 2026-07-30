@@ -18,7 +18,9 @@ import {
   type AudioTrack,
   type ChapterInfo,
   type SubtitleTrack,
+  type TrickplayInfo,
 } from "@/lib/playback-types"
+import { TrickplayPreview, trickplayPreviewDisplaySize } from "./TrickplayPreview"
 import type { SubtitleShadowStyle, SubtitleStyle } from "./SubtitleOverlay"
 
 import {
@@ -38,16 +40,20 @@ function SeekBar({
   duration,
   buffered,
   chapters,
+  itemId,
+  trickplay,
   onSeek,
 }: {
   currentTime: number
   duration: number
   buffered: number
   chapters: ChapterInfo[]
+  itemId: string
+  trickplay: TrickplayInfo | null
   onSeek: (t: number) => void
 }) {
   const barRef = useRef<HTMLDivElement>(null)
-  const [hover, setHover] = useState<{ time: number; x: number } | null>(null)
+  const [hover, setHover] = useState<{ time: number; x: number; barW: number } | null>(null)
   const [scrubTime, setScrubTime] = useState<number | null>(null)
 
   const fraction = (clientX: number) => {
@@ -60,6 +66,14 @@ function SeekBar({
   const playedPct = duration > 0 ? (shownTime / duration) * 100 : 0
   const bufferedPct = duration > 0 ? Math.min(100, (buffered / duration) * 100) : 0
 
+  // Keep the trickplay bubble within the bar so it never clips off-screen
+  const preview = trickplay ? trickplayPreviewDisplaySize(trickplay) : null
+  const previewW = preview ? preview.width + 2 : 0 // + border
+  const clampedHoverX =
+    hover && preview && hover.barW > previewW
+      ? Math.min(Math.max(hover.x, previewW / 2), hover.barW - previewW / 2)
+      : (hover?.x ?? 0)
+
   return (
     <div
       ref={barRef}
@@ -71,10 +85,15 @@ function SeekBar({
         onSeek(t)
       }}
       onPointerMove={(e) => {
-        const f = fraction(e.clientX)
+        const rect = barRef.current?.getBoundingClientRect()
+        const f =
+          rect && rect.width > 0
+            ? Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width))
+            : 0
         setHover({
           time: f * duration,
-          x: e.clientX - (barRef.current?.getBoundingClientRect().left ?? 0),
+          x: e.clientX - (rect?.left ?? 0),
+          barW: rect?.width ?? 0,
         })
         if (scrubTime !== null) {
           const t = f * duration
@@ -116,15 +135,26 @@ function SeekBar({
         style={{ left: `calc(${playedPct}% - 8px)` }}
       />
 
-      {/* hover tooltip */}
-      {hover && (
-        <div
-          className="pointer-events-none absolute -top-9 -translate-x-1/2 rounded border border-white/10 bg-black/90 px-2.5 py-1 text-xs font-semibold tabular-nums text-white shadow-lg"
-          style={{ left: hover.x }}
-        >
-          {formatTimecode(hover.time)}
-        </div>
-      )}
+      {/* hover tooltip: trickplay thumbnail when available, plain timecode otherwise */}
+      {hover &&
+        (trickplay ? (
+          <div
+            className="pointer-events-none absolute bottom-full mb-2 -translate-x-1/2 border border-white/15 bg-black shadow-2xl"
+            style={{ left: clampedHoverX }}
+          >
+            <TrickplayPreview trickplay={trickplay} itemId={itemId} time={hover.time} />
+            <div className="py-1.5 text-center text-xs font-semibold tabular-nums text-white">
+              {formatTimecode(hover.time)}
+            </div>
+          </div>
+        ) : (
+          <div
+            className="pointer-events-none absolute -top-9 -translate-x-1/2 rounded border border-white/10 bg-black/90 px-2.5 py-1 text-xs font-semibold tabular-nums text-white shadow-lg"
+            style={{ left: hover.x }}
+          >
+            {formatTimecode(hover.time)}
+          </div>
+        ))}
     </div>
   )
 }
@@ -462,6 +492,8 @@ export function PlayerControls({
   isFullscreen,
   hasNext,
   chapters,
+  itemId,
+  trickplay,
   onTogglePlay,
   onSeek,
   onSkipBy,
@@ -497,6 +529,8 @@ export function PlayerControls({
   isFullscreen: boolean
   hasNext: boolean
   chapters: ChapterInfo[]
+  itemId: string
+  trickplay: TrickplayInfo | null
   onTogglePlay: () => void
   onSeek: (t: number) => void
   onSkipBy: (delta: number) => void
@@ -588,6 +622,8 @@ export function PlayerControls({
           duration={duration}
           buffered={buffered}
           chapters={chapters}
+          itemId={itemId}
+          trickplay={trickplay}
           onSeek={onSeek}
         />
 
