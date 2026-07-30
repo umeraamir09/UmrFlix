@@ -47,7 +47,8 @@ export default defineSchema({
   notifications: defineTable({
     notifId: v.string(),
     userId: v.string(),
-    requestId: v.string(),
+    requestId: v.optional(v.string()),
+    partyId: v.optional(v.string()),
     title: v.string(),
     message: v.string(),
     type: v.string(),

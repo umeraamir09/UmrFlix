@@ -23,7 +23,7 @@ class PartyRoomManager {
 
   private reapStaleRooms() {
     const now = Date.now()
-    const MAX_INACTIVE_MS = 24 * 60 * 60 * 1000 // 24 hours
+    const MAX_INACTIVE_MS = 30 * 60 * 1000 // 30 minutes
 
     for (const [roomId, room] of this.rooms.entries()) {
       let newestActivity = room.createdAt
@@ -117,6 +117,7 @@ class PartyRoomManager {
       partyId: room.id,
       ownerId: room.ownerId,
       isOwner: room.ownerId === currentUserId,
+      userId: currentUserId,
       createdAt: room.createdAt,
       state: room.state,
       members: membersArray,
@@ -158,6 +159,7 @@ class PartyRoomManager {
       payload: {
         partyId,
         action: "join",
+        ownerId: room.ownerId,
         members: membersArray,
         audience,
       },
@@ -198,6 +200,7 @@ class PartyRoomManager {
       payload: {
         partyId,
         action: newOwnerId ? "owner-changed" : "leave",
+        ownerId: room.ownerId,
         members: membersArray,
         audience,
       },
@@ -251,12 +254,28 @@ class PartyRoomManager {
       },
     })
 
+    eventBus.emitEvent({
+      type: "party:membership",
+      payload: {
+        partyId,
+        action: "ended",
+        ownerId,
+        members: [],
+        audience,
+      },
+    })
+
     return true
   }
 
   public applyCommand(partyId: string, userId: string, cmd: PartyCommand): PartyState | null {
     const room = this.rooms.get(partyId)
     if (!room || !room.members.has(userId)) return null
+
+    // Only owner can change playback rate
+    if (cmd.type === "rate" && room.ownerId !== userId) {
+      return room.state
+    }
 
     // Check if anyone is buffering before allowing manual play command
     if (cmd.type === "play") {
@@ -356,6 +375,13 @@ class PartyRoomManager {
 
     const member = room.members.get(userId)!
     member.buffering = buffering
+    member.lastSeenAt = Date.now()
+    room.lastSeenAt.set(userId, member.lastSeenAt)
+
+    // Buffering timeout: auto-evacuate member who buffers >30s
+    if (buffering) {
+      this.evictStuckBuffering(partyId, userId)
+    }
 
     if (!room.state) return null
 
@@ -365,7 +391,6 @@ class PartyRoomManager {
     let newState: PartyState | null = null
 
     if (isAnyBuffering && room.state.playing) {
-      // Pause everyone on buffer start
       const currentPos = positionSec ?? (
         room.state.playing
           ? room.state.positionSec + ((now - room.state.updatedAt) / 1000) * room.state.playbackRate
@@ -381,7 +406,7 @@ class PartyRoomManager {
         reason: "buffer-pause",
       }
     } else if (!isAnyBuffering && !room.state.playing && room.state.reason === "buffer-pause") {
-      // Resume everyone when buffering clears
+      // Resume everyone when buffering clears (with cooldown — handled by caller debounce)
       newState = {
         ...room.state,
         playing: true,
@@ -405,6 +430,84 @@ class PartyRoomManager {
     }
 
     return room.state
+  }
+
+  private evictStuckBuffering(partyId: string, userId: string) {
+    const room = this.rooms.get(partyId)
+    if (!room) return
+
+    // Schedule an eviction check 30s in the future
+    setTimeout(() => {
+      const stillRoom = this.rooms.get(partyId)
+      if (!stillRoom) return
+      const stillMember = stillRoom.members.get(userId)
+      if (!stillMember || !stillMember.buffering) return
+
+      // Remove the stuck member
+      stillRoom.members.delete(userId)
+      stillRoom.lastSeenAt.delete(userId)
+
+      const audience = Array.from(stillRoom.members.keys())
+      const membersArray = Array.from(stillRoom.members.values()).sort(
+        (a, b) => a.joinedAt - b.joinedAt
+      )
+
+      // Transfer ownership if needed
+      if (stillRoom.ownerId === userId && stillRoom.members.size > 0) {
+        stillRoom.ownerId = membersArray[0].userId
+        eventBus.emitEvent({
+          type: "party:membership",
+          payload: {
+            partyId,
+            action: "owner-changed",
+            ownerId: stillRoom.ownerId,
+            members: membersArray,
+            audience,
+          },
+        })
+      } else if (stillRoom.members.size === 0) {
+        this.rooms.delete(partyId)
+        eventBus.emitEvent({
+          type: "party:ended",
+          payload: { partyId, audience: [userId] },
+        })
+        return
+      }
+
+      // Emit membership update so clients see the member removed
+      eventBus.emitEvent({
+        type: "party:membership",
+        payload: {
+          partyId,
+          action: "leave",
+          ownerId: stillRoom.ownerId,
+          members: membersArray,
+          audience,
+        },
+      })
+
+      // Emit updated state in case this unblocks a buffer-pause
+      if (stillRoom.state && stillRoom.state.reason === "buffer-pause") {
+        const isAnyStillBuffering = membersArray.some((m) => m.buffering)
+        if (!isAnyStillBuffering) {
+          stillRoom.state = {
+            ...stillRoom.state,
+            playing: true,
+            updatedAt: Date.now(),
+            version: stillRoom.state.version + 1,
+            reason: "buffer-resume",
+          }
+          eventBus.emitEvent({
+            type: "party:state",
+            payload: {
+              partyId,
+              state: stillRoom.state,
+              audience,
+            },
+          })
+        }
+      }
+    }, 30_000)
   }
 
   public getUserParties(userId: string): {

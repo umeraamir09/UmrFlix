@@ -23,6 +23,7 @@ Browse millions of movies and TV shows, see what's already in your library, requ
 - **Download progress** — polls queue status so you see real-time % progress instead of a dead "requested" state
 - **Streaming** — full Jellyfin-powered playback with HLS, ASS/SSA subtitle support, and audio track selection
 - **Continue watching** — resumes in-progress titles from where you left off
+- **Watch Party** — synchronized multi-viewer playback with zero DB overhead, in-memory room management, drift correction, pause-for-everyone buffering, and user invites
 - **Library** — browse everything you already own, unified across movies and TV
 
 ## Tech Stack

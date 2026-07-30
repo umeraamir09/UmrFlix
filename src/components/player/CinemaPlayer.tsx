@@ -30,6 +30,8 @@ import { canBrowserPlayNatively } from "./codec-probe"
 import { PlayerDebugHud } from "./PlayerDebugHud"
 import { BandwidthEstimator, attachHlsBandwidthMonitor } from "./bandwidth-estimator"
 import { applyStreamParams, maskUrl } from "@/lib/url-utils"
+import { usePartySync } from "./use-party-sync"
+import { PartyBar } from "@/components/party/PartyBar"
 
 const TICKS_PER_SECOND = 10_000_000
 const CONTROLS_HIDE_DELAY = 3_500
@@ -50,6 +52,10 @@ export type CinemaPlayerProps = {
   onBack?: () => void
   onReport?: () => void
   className?: string
+  party?: { partyId: string; isOwner: boolean }
+  startAtSec?: number
+  onPartyItemChange?: (itemId: string) => void
+  onPartyEnded?: () => void
 }
 
 export function CinemaPlayer({
@@ -65,6 +71,10 @@ export function CinemaPlayer({
   onBack,
   onReport,
   className = "",
+  party,
+  startAtSec,
+  onPartyItemChange,
+  onPartyEnded,
 }: CinemaPlayerProps) {
   // ── Refs ──
   const containerRef = useRef<HTMLDivElement>(null)
@@ -78,6 +88,29 @@ export function CinemaPlayer({
   // Tracks whether a stream has ever been attached — used to preserve the
   // playhead across stream rebuilds (quality / track / subtitle-mode changes)
   const hadStreamRef = useRef(false)
+
+  const clientId = useMemo(() => `tab_${Math.random().toString(36).substring(2, 9)}`, [])
+
+  const seekToFn = useCallback((t: number) => {
+    const video = videoRef.current
+    if (!video) return
+    video.currentTime = t
+  }, [])
+
+  const partySync = usePartySync({
+    partyId: party?.partyId,
+    clientId,
+    videoRef,
+    seekTo: seekToFn,
+    onItemChange: onPartyItemChange,
+    onPartyEnded,
+  })
+
+  useEffect(() => {
+    if (typeof startAtSec === "number" && startAtSec > 0) {
+      seekTargetRef.current = startAtSec
+    }
+  }, [startAtSec])
 
   // ── User preferences (navbar settings) ──
   const [playerSettings] = usePlayerSettings()
@@ -128,12 +161,27 @@ export function CinemaPlayer({
   const [playbackRate, setPlaybackRate] = useState(1)
   const [reportToast, setReportToast] = useState(false)
 
-  const handlePlaybackRateChange = useCallback((rate: number) => {
-    setPlaybackRate(rate)
-    if (videoRef.current) {
-      videoRef.current.playbackRate = rate
-    }
-  }, [])
+  // In party mode, show the party's authoritative playback rate
+  const displayPlaybackRate = party?.partyId
+    ? (partySync.partyState?.playbackRate ?? playbackRate)
+    : playbackRate
+
+  const handlePlaybackRateChange = useCallback(
+    (rate: number) => {
+      // In party mode, only the host can change speed
+      if (party?.partyId && !party.isOwner) {
+        return
+      }
+      setPlaybackRate(rate)
+      if (videoRef.current) {
+        videoRef.current.playbackRate = rate
+      }
+      if (party?.partyId) {
+        partySync.sendCommand("rate", undefined, rate)
+      }
+    },
+    [party?.partyId, party?.isOwner, partySync]
+  )
 
   const handleReport = useCallback(() => {
     if (onReport) {
@@ -685,19 +733,32 @@ export function CinemaPlayer({
   const togglePlay = useCallback(() => {
     const video = videoRef.current
     if (!video) return
+
+    if (party?.partyId) {
+      const isPaused = video.paused
+      partySync.sendCommand(isPaused ? "play" : "pause", video.currentTime)
+    }
+
     if (video.paused) {
       setNeedsManualPlay(false)
       video.play().catch(() => setNeedsManualPlay(true))
     } else {
       video.pause()
     }
-  }, [])
+  }, [party?.partyId, partySync])
 
-  const seekTo = useCallback((t: number) => {
-    const video = videoRef.current
-    if (!video) return
-    video.currentTime = t
-  }, [])
+  const seekTo = useCallback(
+    (t: number) => {
+      const video = videoRef.current
+      if (!video) return
+      video.currentTime = t
+
+      if (party?.partyId) {
+        partySync.sendCommand("seek", t)
+      }
+    },
+    [party?.partyId, partySync]
+  )
 
   const rebuildAtPosition = useCallback((apply: () => void) => {
     seekTargetRef.current = videoRef.current?.currentTime ?? 0
@@ -944,6 +1005,16 @@ export function CinemaPlayer({
         }}
       />
 
+      {/* Watch Party overlay bar */}
+      {party?.partyId && (
+        <PartyBar
+          partyId={party.partyId}
+          isOwner={partySync.isOwner}
+          members={partySync.members}
+          bufferingUsers={partySync.bufferingUsers}
+        />
+      )}
+
       {/* Custom subtitle overlay renderer */}
       <SubtitleOverlay
         cues={cues}
@@ -1009,7 +1080,7 @@ export function CinemaPlayer({
           subtitleTracks={payload.subtitles}
           subtitleIndex={subtitleIndex}
           subStyle={subStyle}
-          playbackRate={playbackRate}
+          playbackRate={displayPlaybackRate}
           isFullscreen={isFullscreen}
           hasNext={!!nextEpisode && !!onNextEpisode}
           chapters={payload.chapters}

@@ -32,6 +32,7 @@ export type PartyRoomSnapshot = {
   partyId: string
   ownerId: string
   isOwner: boolean
+  userId: string
   createdAt: number
   state: PartyState | null
   members: PartyMember[]

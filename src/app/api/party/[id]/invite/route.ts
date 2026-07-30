@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server"
 import { getSession } from "@/lib/auth"
 import { roomManager } from "@/lib/party/room-manager"
+import { eventBus } from "@/lib/event-bus"
+import { addPartyInviteNotification, type UserNotification } from "@/lib/requests-store"
 
 export const dynamic = "force-dynamic"
 
@@ -22,15 +24,27 @@ export async function POST(
       return NextResponse.json({ error: "userIds array required" }, { status: 400 })
     }
 
-    const success = roomManager.inviteUsers(
-      id,
-      session.userId,
-      session.username || "A user",
-      userIds
-    )
+    const inviterName = session.username || "A user"
+    const success = roomManager.inviteUsers(id, session.userId, inviterName, userIds)
 
     if (!success) {
       return NextResponse.json({ error: "Room not found" }, { status: 404 })
+    }
+
+    // Create notifications for each invited user
+    const now = new Date().toISOString()
+    for (const targetUserId of userIds) {
+      const notif: UserNotification = {
+        id: `notif_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+        userId: targetUserId,
+        partyId: id,
+        title: "Watch Party Invitation",
+        message: `${inviterName} invited you to join a Watch Party!`,
+        type: "party_invite",
+        read: false,
+        createdAt: now,
+      }
+      await addPartyInviteNotification(notif)
     }
 
     return NextResponse.json({ success: true, invitedCount: userIds.length })

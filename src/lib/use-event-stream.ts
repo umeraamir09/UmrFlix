@@ -71,9 +71,17 @@ export function useEventStream() {
       }
     }
 
-    const notificationCreated = () => {
-      mutate("/api/notifications")
-      notifyReFetch()
+    const notificationCreated = (e: MessageEvent) => {
+      try {
+        const data = JSON.parse(e.data)
+        mutate("/api/notifications")
+        notifyReFetch()
+        if (data.type === "party_invite") {
+          toast("You've been invited to a Watch Party! Check your notifications.", "info")
+        }
+      } catch {
+        // ignore parse errors - already revalidating
+      }
     }
 
     const mediaGrabbed = (e: MessageEvent) => {
