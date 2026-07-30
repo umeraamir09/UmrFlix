@@ -68,8 +68,8 @@ export function MovieCard({
           fill
           sizes="(max-width: 640px) 50vw, (max-width: 1024px) 25vw, 16vw"
           className="object-cover"
-          unoptimized
         />
+
 
         {/* Top Badges (Visible when not hovering) */}
         <div className="absolute inset-x-2 top-2 z-10 flex items-center justify-end gap-1 pointer-events-none group-hover:opacity-0 transition-opacity">

@@ -1,31 +1,25 @@
 import { env } from "./env"
+import { resilientFetch } from "./resilient-fetch"
+import { radarrBreaker } from "./circuit-breaker"
 
 const BASE = env("RADARR_URL")
 const KEY = env("RADARR_API_KEY")
 const TIMEOUT = 8_000
 
-async function radarrFetch<T>(path: string, options?: RequestInit): Promise<T> {
+function radarrFetch<T>(path: string, options?: RequestInit): Promise<T> {
   const url = `${BASE}/api/v3${path}`
-  const controller = new AbortController()
-  const id = setTimeout(() => controller.abort(), TIMEOUT)
-  try {
-    const res = await fetch(url, {
-      ...options,
-      signal: controller.signal,
-      headers: {
-        "X-Api-Key": KEY,
-        "Content-Type": "application/json",
-        ...options?.headers,
-      },
-    })
-    if (!res.ok) {
-      throw new Error(`Radarr API error: ${res.status} ${res.statusText}`)
-    }
-    return res.json()
-  } finally {
-    clearTimeout(id)
-  }
+  return resilientFetch<T>(url, {
+    ...options,
+    timeoutMs: TIMEOUT,
+    breaker: radarrBreaker,
+    headers: {
+      "X-Api-Key": KEY,
+      "Content-Type": "application/json",
+      ...options?.headers,
+    },
+  })
 }
+
 
 export type RadarrMovie = {
   id: number

@@ -1,4 +1,6 @@
 import { env } from "./env"
+import { resilientFetch } from "./resilient-fetch"
+import { tmdbBreaker } from "./circuit-breaker"
 
 export async function tmdbFetch<T>(path: string, params?: Record<string, string>): Promise<T> {
   const BASE = env("TMDB_API_BASE") || "https://api.themoviedb.org/3"
@@ -11,12 +13,13 @@ export async function tmdbFetch<T>(path: string, params?: Record<string, string>
       url.searchParams.set(k, v)
     }
   }
-  const res = await fetch(url.toString())
-  if (!res.ok) {
-    throw new Error(`TMDB API error: ${res.status} ${res.statusText}`)
-  }
-  return res.json()
+  return resilientFetch<T>(url.toString(), {
+    breaker: tmdbBreaker,
+    timeoutMs: 6_000,
+    retries: 2,
+  })
 }
+
 
 export type TmdbMovie = {
   id: number

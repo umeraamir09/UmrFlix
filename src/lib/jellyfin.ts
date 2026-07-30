@@ -1,20 +1,34 @@
 import { env } from "./env"
 import { getSession } from "./auth"
+import { jellyfinBreaker } from "./circuit-breaker"
 
 const BASE = env("JELLYFIN_URL")
 const TIMEOUT = 8_000
 
 async function jellyfinFetch(url: string, options?: RequestInit): Promise<Response> {
+  if (!jellyfinBreaker.canExecute()) {
+    throw new Error(`Jellyfin service is currently unavailable (circuit open).`)
+  }
+
   const controller = new AbortController()
   const id = setTimeout(() => controller.abort(), TIMEOUT)
   try {
     const res = await fetch(url, { ...options, signal: controller.signal })
     if (res.status === 401) cachedToken = null // re-auth next time
+    if (res.ok || res.status < 500) {
+      jellyfinBreaker.recordSuccess()
+    } else {
+      jellyfinBreaker.recordFailure()
+    }
     return res
+  } catch (err) {
+    jellyfinBreaker.recordFailure()
+    throw err
   } finally {
     clearTimeout(id)
   }
 }
+
 
 export type JellyfinAuthResponse = {
   AccessToken: string

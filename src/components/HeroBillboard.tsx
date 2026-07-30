@@ -74,8 +74,8 @@ export function HeroBillboard({ items }: { items: BillboardItem[] }) {
           className={`object-cover object-center ${
             direction === "next" ? "animate-backdrop-right" : "animate-backdrop-left"
           }`}
-          unoptimized
         />
+
         {/* Dark Vignette Gradients */}
         <div className="absolute inset-0 bg-gradient-to-t from-background via-background/50 to-transparent" />
         <div className="absolute inset-0 bg-gradient-to-r from-background via-background/80 to-transparent w-full md:w-3/4" />
@@ -103,8 +103,8 @@ export function HeroBillboard({ items }: { items: BillboardItem[] }) {
                 alt={title}
                 fill
                 className="object-contain object-left drop-shadow-xl"
-                unoptimized
               />
+
             </div>
           ) : (
             <h1 className="text-3xl sm:text-5xl md:text-6xl font-black uppercase tracking-tight text-white leading-tight drop-shadow-lg">

@@ -56,5 +56,18 @@ export default defineSchema({
   })
     .index("by_user", ["userId"])
     .index("by_user_read", ["userId", "read"]),
+
+  cacheStore: defineTable({
+    key: v.string(),
+    dataJson: v.string(),
+    updatedAt: v.number(),
+  }).index("by_key", ["key"]),
+
+  tmdbToTvdb: defineTable({
+    tmdbId: v.number(),
+    tvdbId: v.number(),
+    updatedAt: v.number(),
+  }).index("by_tmdb", ["tmdbId"]),
 })
+
 
