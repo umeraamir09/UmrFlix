@@ -59,6 +59,7 @@ export type JellyfinItemsResponse = {
 }
 
 let cachedToken: { token: string; userId: string; serverUrl?: string } | null = null
+let authPromise: Promise<{ token: string; userId: string; serverUrl?: string }> | null = null
 
 export async function authenticate(): Promise<{ token: string; userId: string; serverUrl?: string }> {
   // Check active user session first (server-side)
@@ -77,29 +78,43 @@ export async function authenticate(): Promise<{ token: string; userId: string; s
 
   if (cachedToken) return cachedToken
 
-  const serverUrl = BASE || "http://localhost:8096"
-  const res = await jellyfinFetch(`${serverUrl}/Users/AuthenticateByName`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Emby-Authorization":
-        'MediaBrowser Client="UmrFlix", Device="UmrFlixServer", DeviceId="umrflix-server-001", Version="1.0.0"',
-    },
-    body: JSON.stringify({
-      Username: env("JELLYFIN_USERNAME"),
-      Pw: env("JELLYFIN_PASSWORD"),
-    }),
-  })
+  if (authPromise) return authPromise
 
-  if (!res.ok) {
-    const body = await res.text().catch(() => "(no body)")
-    console.error(`Jellyfin auth error: ${res.status}`, body)
-    throw new Error(`Jellyfin auth error: ${res.status}`)
-  }
+  authPromise = (async () => {
+    try {
+      const serverUrl = BASE || "http://localhost:8096"
+      const res = await jellyfinFetch(`${serverUrl}/Users/AuthenticateByName`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Emby-Authorization":
+            'MediaBrowser Client="UmrFlix", Device="UmrFlixServer", DeviceId="umrflix-server-001", Version="1.0.0"',
+        },
+        body: JSON.stringify({
+          Username: env("JELLYFIN_USERNAME"),
+          Pw: env("JELLYFIN_PASSWORD"),
+        }),
+      })
 
-  const data: JellyfinAuthResponse = await res.json()
-  cachedToken = { token: data.AccessToken, userId: data.User.Id, serverUrl }
-  return cachedToken
+      if (!res.ok) {
+        const body = await res.text().catch(() => "(no body)")
+        console.error(`Jellyfin auth error: ${res.status}`, body)
+        cachedToken = null
+        throw new Error(`Jellyfin auth error: ${res.status}`)
+      }
+
+      const data: JellyfinAuthResponse = await res.json()
+      cachedToken = { token: data.AccessToken, userId: data.User.Id, serverUrl }
+      return cachedToken
+    } catch (err) {
+      cachedToken = null
+      throw err
+    } finally {
+      authPromise = null
+    }
+  })()
+
+  return authPromise
 }
 
 
@@ -133,12 +148,13 @@ export async function getItemsByProviderIds(
 }
 
 export function getDirectStreamUrl(itemId: string, token: string): string {
-  return `${BASE}/Videos/${itemId}/stream?static=true&api_key=${token}`
+  return `/api/jellyfin/stream/${itemId}?static=true`
 }
 
 export function getHlsMasterUrl(itemId: string, token: string): string {
-  return `${BASE}/Videos/${itemId}/master.m3u8?api_key=${token}`
+  return `/api/jellyfin/stream/${itemId}`
 }
+
 
 export async function getAllItems(token: string, userId: string): Promise<JellyfinItem[]> {
   const all: JellyfinItem[] = []
@@ -213,60 +229,52 @@ export type JellyfinResumeResponse = {
 export async function getResumeItems(
   limit = 12,
 ): Promise<JellyfinResumeItem[]> {
-  const { token, userId } = await authenticate()
+  try {
+    const { token, userId } = await authenticate()
 
-  const params = new URLSearchParams({
-    limit: String(limit),
-    recursive: "true",
-    fields: "ProviderIds,Overview",
-    enableImageTypes: "Primary,Backdrop,Thumb",
-    imageTypeLimit: "1",
-    mediaTypes: "Video",
-  })
+    const params = new URLSearchParams({
+      limit: String(limit),
+      recursive: "true",
+      fields: "ProviderIds,Overview",
+      enableImageTypes: "Primary,Backdrop,Thumb",
+      imageTypeLimit: "1",
+      mediaTypes: "Video",
+    })
 
-  const res = await jellyfinFetch(
-    `${BASE}/Users/${userId}/Items/Resume?${params}`,
-    { headers: getAuthHeaders(token) },
-  )
+    const res = await jellyfinFetch(
+      `${BASE}/Users/${userId}/Items/Resume?${params}`,
+      { headers: getAuthHeaders(token) },
+    )
 
-  if (!res.ok) {
-    console.error(`Jellyfin resume fetch error: ${res.status}`)
+    if (!res.ok) {
+      console.error(`Jellyfin resume fetch error: ${res.status}`)
+      return []
+    }
+
+    const data: JellyfinResumeResponse = await res.json()
+    return data.Items ?? []
+  } catch (err) {
+    console.error("Failed to fetch Jellyfin resume items:", err)
     return []
   }
-
-  const data: JellyfinResumeResponse = await res.json()
-  return data.Items ?? []
 }
 
 /**
  * Build a working image URL for a Jellyfin item.
- * Prefers the item's own Primary image, then falls back to backdrop, then
- * series-level backdrop for episodes.
+ * Routes images through the secured `/api/jellyfin/image/[id]` proxy.
  */
 export function buildJellyfinImageUrl(
   item: JellyfinResumeItem,
   type: "Primary" | "Backdrop" | "Thumb" = "Backdrop",
 ): string {
-  const { token } = cachedToken ?? { token: "" }
-
-  // Try item's own backdrop first
-  if (type === "Backdrop" && item.BackdropImageTags && item.BackdropImageTags.length > 0) {
-    return `${BASE}/Items/${item.Id}/Images/Backdrop?api_key=${token}`
-  }
-
-  // For episodes, try the parent (series) backdrop
+  // For episodes, try the parent (series) backdrop item if applicable
   if (type === "Backdrop" && item.ParentBackdropItemId && item.ParentBackdropImageTags && item.ParentBackdropImageTags.length > 0) {
-    return `${BASE}/Items/${item.ParentBackdropItemId}/Images/Backdrop?api_key=${token}`
+    return `/api/jellyfin/image/${item.ParentBackdropItemId}?type=Backdrop`
   }
 
-  // Primary image fallback
-  if (item.ImageTags?.Primary) {
-    return `${BASE}/Items/${item.Id}/Images/Primary?api_key=${token}`
-  }
-
-  // Absolute fallback – transparent placeholder
-  return `${BASE}/Items/${item.Id}/Images/Primary?api_key=${token}`
+  return `/api/jellyfin/image/${item.Id}?type=${type}`
 }
+
 
 // ────────────────────────────────────────────────────────────
 // Phase 2 — Production Media Engine

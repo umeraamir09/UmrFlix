@@ -195,10 +195,10 @@ The core MVP foundation has been fully built and verified:
 
 ---
 
-## Phase 5: Persistent Cache & High-Performance Architecture
+## Phase 5: Persistent Cache & High-Performance Architecture (Completed)
 
 ### 5.1 Convex Database Integration
-- [ ] **Convex Backend (convex/*):**
+- [x] **Convex Backend (convex/*):**
   - Replace in-memory maps in `cache.ts` with Convex for persistent, reactive storage.
   - Define Convex schemas for TMDB metadata, TMDB↔TVDB mappings, Jellyfin item indices, and user request history.
   - Use Convex mutations/queries for all CRUD operations, replacing manual cache logic.
@@ -206,15 +206,16 @@ The core MVP foundation has been fully built and verified:
   - Remove SQLite/Prisma/Redis dependencies in favor of Convex's built-in reactive data layer.
 
 ### 5.2 Next.js Image Optimization & Asset Proxying
-- [ ] **Optimized Media Delivery:**
+- [x] **Optimized Media Delivery:**
   - Use `next/image` for TMDB posters and fanart (`image.tmdb.org`).
   - Secure proxy route for Jellyfin image assets (`/api/jellyfin/image/:id`) with token authorization and browser caching headers.
 
 ### 5.3 Resilient API Middleware & Circuit Breakers
-- [ ] **Fault Tolerance:**
+- [x] **Fault Tolerance:**
   - Circuit breaker for external services (Radarr, Sonarr, Jellyfin, TMDB).
   - Fallback UI states when any self-hosted service goes offline (e.g., graceful message "Radarr unavailable, browsing remains active").
   - Retry logic with exponential backoff for external API calls.
+
 
 ---
 

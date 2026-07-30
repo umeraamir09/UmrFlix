@@ -42,16 +42,25 @@ export async function resilientFetch<T>(
       clearTimeout(timeoutId)
 
       if (res.ok) {
-        breaker?.recordSuccess()
-        if (res.status === 204) return {} as T
+        if (res.status === 204) {
+          breaker?.recordSuccess()
+          return {} as T
+        }
         const text = await res.text()
-        if (!text || text.trim() === "") return {} as T
+        if (!text || text.trim() === "") {
+          breaker?.recordSuccess()
+          return {} as T
+        }
         try {
-          return JSON.parse(text) as T
+          const parsed = JSON.parse(text) as T
+          breaker?.recordSuccess()
+          return parsed
         } catch {
+          breaker?.recordSuccess()
           return text as unknown as T
         }
       }
+
 
 
       // If server responds with 5xx, treat as service failure

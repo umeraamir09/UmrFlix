@@ -9,11 +9,8 @@ const nextConfig: NextConfig = {
       { protocol: "https", hostname: "themoviedb.org" },
       { protocol: "https", hostname: "artworks.thetvdb.com" },
       { protocol: "https", hostname: "static.tvmaze.com" },
-      { protocol: "http", hostname: "**" },
-      { protocol: "https", hostname: "**" },
     ],
   },
 }
 
 export default nextConfig
-

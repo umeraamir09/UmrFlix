@@ -25,9 +25,9 @@ export interface BillboardItem {
 export function HeroBillboard({ items }: { items: BillboardItem[] }) {
   const [currentIndex, setCurrentIndex] = useState(0)
   const [direction, setDirection] = useState<"next" | "prev">("next")
-  const [isBookmarked, setIsBookmarked] = useState(false)
 
   const activeItem = items[currentIndex] || items[0]
+
 
   const nextSlide = useCallback(() => {
     setDirection("next")

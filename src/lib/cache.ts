@@ -19,9 +19,6 @@ function isFresh(entry: CacheEntry<unknown>): boolean {
   return Date.now() - entry.timestamp < TTL_MS
 }
 
-function isStale(entry: CacheEntry<unknown>): boolean {
-  return !isFresh(entry)
-}
 
 
 function getConvexClient(): ConvexHttpClient | null {
@@ -77,7 +74,7 @@ export function setRadarrMovies(movies: RadarrMovie[]) {
 }
 
 export function getRadarrMovies(): Map<number, RadarrMovie> | null {
-  return isStale(radarrMoviesCache) ? null : radarrMoviesCache.data
+  return !isFresh(radarrMoviesCache) ? null : radarrMoviesCache.data
 }
 
 export async function ensureRadarrMovies(fetchFn: () => Promise<RadarrMovie[]>): Promise<Map<number, RadarrMovie>> {
@@ -86,7 +83,7 @@ export async function ensureRadarrMovies(fetchFn: () => Promise<RadarrMovie[]>):
   return SingleFlight.execute("ensureRadarrMovies", async () => {
     // Try L2 Convex store first if fresh
     const convex = getConvexClient()
-    if (convex && isStale(radarrMoviesCache)) {
+    if (convex && !isFresh(radarrMoviesCache)) {
       try {
         const entry = await convex.query(api.cache.getCacheEntry, { key: "radarr_movies" })
 
@@ -136,7 +133,7 @@ export function setSonarrSeries(series: SonarrSeries[]) {
 }
 
 export function getSonarrSeries(): Map<number, SonarrSeries> | null {
-  return isStale(sonarrSeriesCache) ? null : sonarrSeriesCache.data
+  return !isFresh(sonarrSeriesCache) ? null : sonarrSeriesCache.data
 }
 
 export async function ensureSonarrSeries(fetchFn: () => Promise<SonarrSeries[]>): Promise<Map<number, SonarrSeries>> {
@@ -144,7 +141,7 @@ export async function ensureSonarrSeries(fetchFn: () => Promise<SonarrSeries[]>)
 
   return SingleFlight.execute("ensureSonarrSeries", async () => {
     const convex = getConvexClient()
-    if (convex && isStale(sonarrSeriesCache)) {
+    if (convex && !isFresh(sonarrSeriesCache)) {
       try {
         const entry = await convex.query(api.cache.getCacheEntry, { key: "sonarr_series" })
 
@@ -188,15 +185,15 @@ export function setTmdbToTvdbMapping(tmdbId: number, tvdbId: number) {
 }
 
 export function getTmdbToTvdbMapping(tmdbId: number): number | undefined {
-  const cachedL1 = tmdbToTvdbCache.data.get(tmdbId)
-  if (cachedL1 !== undefined) return cachedL1
-
-  return undefined
+  if (!isFresh(tmdbToTvdbCache)) return undefined
+  return tmdbToTvdbCache.data.get(tmdbId)
 }
 
 export async function fetchTmdbToTvdbMappingL2(tmdbId: number): Promise<number | null> {
-  const cachedL1 = tmdbToTvdbCache.data.get(tmdbId)
-  if (cachedL1 !== undefined) return cachedL1
+  if (isFresh(tmdbToTvdbCache)) {
+    const cachedL1 = tmdbToTvdbCache.data.get(tmdbId)
+    if (cachedL1 !== undefined) return cachedL1
+  }
 
   const convex = getConvexClient()
   if (convex) {
@@ -204,6 +201,7 @@ export async function fetchTmdbToTvdbMappingL2(tmdbId: number): Promise<number |
       const tvdbId = await convex.query(api.cache.getTmdbToTvdb, { tmdbId })
       if (tvdbId !== null) {
         tmdbToTvdbCache.data.set(tmdbId, tvdbId)
+        tmdbToTvdbCache.timestamp = Date.now()
         return tvdbId
       }
     } catch {
@@ -213,6 +211,7 @@ export async function fetchTmdbToTvdbMappingL2(tmdbId: number): Promise<number |
 
   return null
 }
+
 
 // ── Jellyfin item index cache ──
 
@@ -238,7 +237,7 @@ export function setJellyfinIndex(items: JellyfinItem[]) {
 }
 
 export function getJellyfinIndex(): Map<string, string> | null {
-  return isStale(jellyfinIndexCache) ? null : jellyfinIndexCache.data
+  return !isFresh(jellyfinIndexCache) ? null : jellyfinIndexCache.data
 }
 
 export async function ensureJellyfinIndex(fetchFn: () => Promise<JellyfinItem[]>): Promise<Map<string, string>> {
@@ -246,7 +245,8 @@ export async function ensureJellyfinIndex(fetchFn: () => Promise<JellyfinItem[]>
 
   return SingleFlight.execute("ensureJellyfinIndex", async () => {
     const convex = getConvexClient()
-    if (convex && isStale(jellyfinIndexCache)) {
+    if (convex && !isFresh(jellyfinIndexCache)) {
+
       try {
         const entry = await convex.query(api.cache.getCacheEntry, { key: "jellyfin_index" })
 

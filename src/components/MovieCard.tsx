@@ -158,9 +158,19 @@ export function MovieCard({
             variant="icon"
             className="!p-1.5 border-none bg-transparent hover:bg-white/10"
           />
-          <div className="text-accent hover:scale-110 transition-transform cursor-pointer" title="Add to Library">
+          <button
+            className="text-accent hover:scale-110 transition-transform cursor-pointer"
+            title="Request / Add to Library"
+            aria-label="Request or Add to Library"
+            onClick={(e) => {
+              e.preventDefault()
+              e.stopPropagation()
+              router.push(href)
+            }}
+          >
             <IconAdd className="size-5" />
-          </div>
+          </button>
+
         </div>
       </div>
     </Link>
