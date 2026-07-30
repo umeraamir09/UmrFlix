@@ -77,15 +77,24 @@ export const clearStaleCache = mutation({
   args: { olderThanMs: v.number() },
   handler: async (ctx, args) => {
     const cutoff = Date.now() - args.olderThanMs
-    const entries = await ctx.db.query("cacheStore").collect()
     let deletedCount = 0
+    let paginationCursor: string | null = null
+    const PAGE_SIZE = 100
 
-    for (const entry of entries) {
-      if (entry.updatedAt < cutoff) {
+    do {
+      const page = await ctx.db
+        .query("cacheStore")
+        .withIndex("by_updatedAt")
+        .filter((q) => q.lt(q.field("updatedAt"), cutoff))
+        .paginate({ numItems: PAGE_SIZE, cursor: paginationCursor ?? undefined })
+
+      for (const entry of page.page) {
         await ctx.db.delete(entry._id)
         deletedCount++
       }
-    }
+      paginationCursor = page.continueCursor ?? null
+    } while (paginationCursor)
+
     return deletedCount
   },
 })

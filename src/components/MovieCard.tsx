@@ -6,8 +6,8 @@ import { useRouter } from "next/navigation"
 import { getImageUrl, formatYear, formatRating } from "@/lib/utils"
 import { AvailabilityBadge } from "@/components/AvailabilityBadge"
 import { BookmarkButton } from "@/components/BookmarkButton"
-import { Star, Bookmark } from "lucide-react"
-import { IconPlay, IconDownloadNav, IconAdd } from "@/components/ui/icons"
+import { Star } from "lucide-react"
+import { IconPlay, IconAdd } from "@/components/ui/icons"
 import type { AvailabilityResult } from "@/app/api/availability/route"
 
 export type MovieCardItem = {

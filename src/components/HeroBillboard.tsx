@@ -3,8 +3,8 @@
 import { useState, useEffect, useCallback } from "react"
 import Image from "next/image"
 import Link from "next/link"
-import { ChevronLeft, ChevronRight, Info, Check } from "lucide-react"
-import { IconPlay, IconDownloadNav } from "@/components/ui/icons"
+import { ChevronLeft, ChevronRight } from "lucide-react"
+import { IconPlay } from "@/components/ui/icons"
 import { BookmarkButton } from "@/components/BookmarkButton"
 
 export interface BillboardItem {
@@ -34,10 +34,10 @@ export function HeroBillboard({ items }: { items: BillboardItem[] }) {
     setCurrentIndex((prev) => (prev + 1) % items.length)
   }, [items.length])
 
-  const prevSlide = () => {
+  const prevSlide = useCallback(() => {
     setDirection("prev")
     setCurrentIndex((prev) => (prev - 1 + items.length) % items.length)
-  }
+  }, [items.length])
 
   const handleIndicatorClick = (idx: number) => {
     if (idx === currentIndex) return

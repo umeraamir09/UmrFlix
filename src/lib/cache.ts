@@ -83,7 +83,7 @@ export async function ensureRadarrMovies(fetchFn: () => Promise<RadarrMovie[]>):
   return SingleFlight.execute("ensureRadarrMovies", async () => {
     // Try L2 Convex store first if fresh
     const convex = getConvexClient()
-    if (convex && !isFresh(radarrMoviesCache)) {
+    if (convex) {
       try {
         const entry = await convex.query(api.cache.getCacheEntry, { key: "radarr_movies" })
 
@@ -141,7 +141,7 @@ export async function ensureSonarrSeries(fetchFn: () => Promise<SonarrSeries[]>)
 
   return SingleFlight.execute("ensureSonarrSeries", async () => {
     const convex = getConvexClient()
-    if (convex && !isFresh(sonarrSeriesCache)) {
+    if (convex) {
       try {
         const entry = await convex.query(api.cache.getCacheEntry, { key: "sonarr_series" })
 
@@ -245,7 +245,7 @@ export async function ensureJellyfinIndex(fetchFn: () => Promise<JellyfinItem[]>
 
   return SingleFlight.execute("ensureJellyfinIndex", async () => {
     const convex = getConvexClient()
-    if (convex && !isFresh(jellyfinIndexCache)) {
+    if (convex) {
 
       try {
         const entry = await convex.query(api.cache.getCacheEntry, { key: "jellyfin_index" })
