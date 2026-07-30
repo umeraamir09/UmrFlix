@@ -15,7 +15,6 @@ const NAV_LINKS = [
   { href: "/popular", label: "Popular" },
   { href: "/movies", label: "Movies" },
   { href: "/tv-shows", label: "Tv Shows" },
-  { href: "/my-list", label: "My List" },
 ]
 
 const QUICK_LINKS = [
@@ -82,11 +81,10 @@ export function Navbar() {
                 <Link
                   key={link.href}
                   href={link.href}
-                  className={`h-full flex items-center px-4 text-sm font-medium transition-colors ${
-                    isActive
+                  className={`h-full flex items-center px-4 text-sm font-medium transition-colors ${isActive
                       ? "bg-surface text-white"
                       : "text-foreground-muted hover:bg-surface-hover hover:text-white"
-                  }`}
+                    }`}
                 >
                   {link.label}
                 </Link>
@@ -98,17 +96,15 @@ export function Navbar() {
               <button
                 onMouseEnter={() => setCategoriesOpen(true)}
                 onClick={() => setCategoriesOpen(!categoriesOpen)}
-                className={`h-full flex items-center gap-1.5 px-4 text-sm font-medium transition-colors ${
-                  categoriesOpen
+                className={`h-full flex items-center gap-1.5 px-4 text-sm font-medium transition-colors ${categoriesOpen
                     ? "bg-surface-hover text-white"
                     : "text-foreground-muted hover:bg-surface-hover hover:text-white"
-                }`}
+                  }`}
               >
                 <span>Categories</span>
                 <ChevronDown
-                  className={`size-4 transition-transform duration-200 ${
-                    categoriesOpen ? "rotate-180 text-white" : "text-foreground-muted"
-                  }`}
+                  className={`size-4 transition-transform duration-200 ${categoriesOpen ? "rotate-180 text-white" : "text-foreground-muted"
+                    }`}
                 />
               </button>
 
@@ -158,12 +154,20 @@ export function Navbar() {
 
             {/* My Library */}
             <Link
-              href="/library"
-              className={`h-full flex items-center px-4 text-sm font-medium transition-colors ${
-                pathname === "/library"
+              href="/my-list"
+              className={`h-full flex items-center px-4 text-sm font-medium transition-colors ${pathname === "/library"
                   ? "bg-surface text-white"
                   : "text-foreground-muted hover:bg-surface-hover hover:text-white"
-              }`}
+                }`}
+            >
+              My List
+            </Link>
+            <Link
+              href="/library"
+              className={`h-full flex items-center px-4 text-sm font-medium transition-colors ${pathname === "/library"
+                  ? "bg-surface text-white"
+                  : "text-foreground-muted hover:bg-surface-hover hover:text-white"
+                }`}
             >
               My Library
             </Link>
