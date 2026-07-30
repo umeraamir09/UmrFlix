@@ -14,15 +14,16 @@ export async function GET(
 ) {
   try {
     const { id } = await params
-    if (!id || typeof id !== "string" || !/^[a-zA-Z0-9_-]+$/.test(id)) {
+    if (!id || typeof id !== "string" || !/^[a-zA-Z0-9._-]+$/.test(id)) {
       return new NextResponse("Invalid item ID", { status: 400 })
     }
 
     const session = await getSession()
-    // Allow request if valid session OR server has credentials
-    if (!session && !env("JELLYFIN_URL")) {
+    // Require session in production unless running under server-side rendering proxy
+    if (!session && process.env.NODE_ENV === "production" && !process.env.ALLOW_PUBLIC_IMAGES) {
       return new NextResponse("Unauthorized", { status: 401 })
     }
+
 
     const { searchParams } = new URL(req.url)
     const rawType = searchParams.get("type") || "Primary"

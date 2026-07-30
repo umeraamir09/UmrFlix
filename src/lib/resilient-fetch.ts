@@ -43,8 +43,16 @@ export async function resilientFetch<T>(
 
       if (res.ok) {
         breaker?.recordSuccess()
-        return res.json() as Promise<T>
+        if (res.status === 204) return {} as T
+        const text = await res.text()
+        if (!text || text.trim() === "") return {} as T
+        try {
+          return JSON.parse(text) as T
+        } catch {
+          return text as unknown as T
+        }
       }
+
 
       // If server responds with 5xx, treat as service failure
       if (res.status >= 500) {

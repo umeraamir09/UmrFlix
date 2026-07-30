@@ -3,7 +3,7 @@ import { SonarrSeries } from "./sonarr"
 import { JellyfinItem } from "./jellyfin"
 import { SingleFlight } from "./circuit-breaker"
 import { ConvexHttpClient } from "convex/browser"
-import type { FunctionReference } from "convex/server"
+import { api } from "../../convex/_generated/api"
 
 type CacheEntry<T> = { data: T; timestamp: number }
 
@@ -23,13 +23,6 @@ function isStale(entry: CacheEntry<unknown>): boolean {
   return !isFresh(entry)
 }
 
-type QueryRef<Args extends Record<string, unknown>, Ret> = FunctionReference<"query", "public", Args, Ret>
-type MutationRef<Args extends Record<string, unknown>, Ret> = FunctionReference<"mutation", "public", Args, Ret>
-
-const getCacheEntryRef = "cache:getCacheEntry" as unknown as QueryRef<{ key: string }, { dataJson: string; updatedAt: number } | null>
-const setCacheEntryRef = "cache:setCacheEntry" as unknown as MutationRef<{ key: string; dataJson: string }, string>
-const getTmdbToTvdbRef = "cache:getTmdbToTvdb" as unknown as QueryRef<{ tmdbId: number }, number | null>
-const setTmdbToTvdbRef = "cache:setTmdbToTvdb" as unknown as MutationRef<{ tmdbId: number; tvdbId: number }, string>
 
 function getConvexClient(): ConvexHttpClient | null {
   const url =
@@ -75,7 +68,8 @@ export function setRadarrMovies(movies: RadarrMovie[]) {
   if (convex) {
     try {
       const dataJson = JSON.stringify(movies)
-      convex.mutation(setCacheEntryRef, { key: "radarr_movies", dataJson }).catch(() => {})
+      convex.mutation(api.cache.setCacheEntry, { key: "radarr_movies", dataJson }).catch(() => {})
+
     } catch {
       /* ignore background L2 error */
     }
@@ -94,7 +88,8 @@ export async function ensureRadarrMovies(fetchFn: () => Promise<RadarrMovie[]>):
     const convex = getConvexClient()
     if (convex && isStale(radarrMoviesCache)) {
       try {
-        const entry = await convex.query(getCacheEntryRef, { key: "radarr_movies" })
+        const entry = await convex.query(api.cache.getCacheEntry, { key: "radarr_movies" })
+
         if (entry && Date.now() - entry.updatedAt < TTL_MS) {
           const movies: RadarrMovie[] = JSON.parse(entry.dataJson)
           const map = new Map<number, RadarrMovie>()
@@ -133,7 +128,7 @@ export function setSonarrSeries(series: SonarrSeries[]) {
   if (convex) {
     try {
       const dataJson = JSON.stringify(series)
-      convex.mutation(setCacheEntryRef, { key: "sonarr_series", dataJson }).catch(() => {})
+      convex.mutation(api.cache.setCacheEntry, { key: "sonarr_series", dataJson }).catch(() => {})
     } catch {
       /* ignore background L2 error */
     }
@@ -151,7 +146,8 @@ export async function ensureSonarrSeries(fetchFn: () => Promise<SonarrSeries[]>)
     const convex = getConvexClient()
     if (convex && isStale(sonarrSeriesCache)) {
       try {
-        const entry = await convex.query(getCacheEntryRef, { key: "sonarr_series" })
+        const entry = await convex.query(api.cache.getCacheEntry, { key: "sonarr_series" })
+
         if (entry && Date.now() - entry.updatedAt < TTL_MS) {
           const series: SonarrSeries[] = JSON.parse(entry.dataJson)
           const map = new Map<number, SonarrSeries>()
@@ -184,7 +180,7 @@ export function setTmdbToTvdbMapping(tmdbId: number, tvdbId: number) {
   const convex = getConvexClient()
   if (convex) {
     try {
-      convex.mutation(setTmdbToTvdbRef, { tmdbId, tvdbId }).catch(() => {})
+      convex.mutation(api.cache.setTmdbToTvdb, { tmdbId, tvdbId }).catch(() => {})
     } catch {
       /* ignore background L2 error */
     }
@@ -205,7 +201,7 @@ export async function fetchTmdbToTvdbMappingL2(tmdbId: number): Promise<number |
   const convex = getConvexClient()
   if (convex) {
     try {
-      const tvdbId = await convex.query(getTmdbToTvdbRef, { tmdbId })
+      const tvdbId = await convex.query(api.cache.getTmdbToTvdb, { tmdbId })
       if (tvdbId !== null) {
         tmdbToTvdbCache.data.set(tmdbId, tvdbId)
         return tvdbId
@@ -234,7 +230,7 @@ export function setJellyfinIndex(items: JellyfinItem[]) {
   if (convex) {
     try {
       const dataJson = JSON.stringify(Array.from(map.entries()))
-      convex.mutation(setCacheEntryRef, { key: "jellyfin_index", dataJson }).catch(() => {})
+      convex.mutation(api.cache.setCacheEntry, { key: "jellyfin_index", dataJson }).catch(() => {})
     } catch {
       /* ignore background L2 error */
     }
@@ -252,7 +248,8 @@ export async function ensureJellyfinIndex(fetchFn: () => Promise<JellyfinItem[]>
     const convex = getConvexClient()
     if (convex && isStale(jellyfinIndexCache)) {
       try {
-        const entry = await convex.query(getCacheEntryRef, { key: "jellyfin_index" })
+        const entry = await convex.query(api.cache.getCacheEntry, { key: "jellyfin_index" })
+
         if (entry && Date.now() - entry.updatedAt < TTL_MS) {
           const entries: [string, string][] = JSON.parse(entry.dataJson)
           jellyfinIndexCache.data = new Map(entries)
