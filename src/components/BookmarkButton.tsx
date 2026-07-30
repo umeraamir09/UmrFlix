@@ -155,7 +155,7 @@ export function BookmarkButton({
       <button
         onClick={handleToggle}
         disabled={loading}
-        className={`flex items-center gap-1.5 rounded-none px-3 py-1.5 text-[11px] font-extrabold uppercase tracking-wider transition-all border ${
+        className={`inline-flex items-center justify-center gap-1.5 rounded-none px-3 py-1.5 text-xs font-bold uppercase tracking-wider transition-all shrink-0 border ${
           bookmarked
             ? "bg-accent/20 text-accent border-accent"
             : "bg-surface hover:bg-surface-hover text-white border-border"
@@ -177,7 +177,7 @@ export function BookmarkButton({
     <button
       onClick={handleToggle}
       disabled={loading}
-      className={`flex items-center justify-center gap-2 rounded-none border px-5 py-3 text-xs font-bold uppercase tracking-wider transition-all active:scale-95 ${
+      className={`inline-flex items-center justify-center gap-2 rounded-none border px-5 sm:px-6 py-3 text-xs sm:text-sm font-bold uppercase tracking-wider transition-all active:scale-95 shrink-0 ${
         bookmarked
           ? "border-accent bg-accent/20 text-accent hover:bg-accent/30"
           : "border-gray-500 bg-black/40 text-white hover:border-white hover:bg-black/60"

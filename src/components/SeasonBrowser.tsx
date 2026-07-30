@@ -2,7 +2,7 @@
 
 import Image from "next/image"
 import { useRouter } from "next/navigation"
-import { useMemo, useState } from "react"
+import { useMemo, useState, useEffect } from "react"
 import useSWR from "swr"
 import {
   Calendar,
@@ -13,6 +13,8 @@ import {
   Info,
   MoreVertical,
   ArrowUpDown,
+  Plus,
+  Layers,
 } from "lucide-react"
 import { getImageUrl, formatDate } from "@/lib/utils"
 
@@ -109,6 +111,12 @@ interface SeasonBrowserProps {
   }[]
   seriesId?: string
   tvdbId?: number
+  onRequestSeason?: (seasonNumber?: number) => void
+  onSeasonsStateChange?: (state: {
+    downloadedSeasons: number[]
+    missingSeasons: number[]
+    hasMissingSeasons: boolean
+  }) => void
 }
 
 export function SeasonBrowser({
@@ -117,6 +125,8 @@ export function SeasonBrowser({
   tmdbSeasons = [],
   seriesId,
   tvdbId,
+  onRequestSeason,
+  onSeasonsStateChange,
 }: SeasonBrowserProps) {
   // Jellyfin Episodes SWR
   const { data: jellyfinData } = useSWR<JellyfinEpisodesResponse>(
@@ -149,6 +159,53 @@ export function SeasonBrowser({
 
   const [isSeasonMenuOpen, setIsSeasonMenuOpen] = useState(false)
   const [isSortAscending, setIsSortAscending] = useState(true)
+
+  // Calculate downloaded vs missing seasons across all TMDB seasons
+  const { downloadedSeasons, missingSeasons, hasMissingSeasons } = useMemo(() => {
+    const dl = new Set<number>()
+    const miss = new Set<number>()
+
+    const tmdbSeasonNums = (tmdbSeasons || [])
+      .filter((s) => s.season_number > 0)
+      .map((s) => s.season_number)
+
+    if (jellyfinData?.episodes && jellyfinData.episodes.length > 0) {
+      const episodesBySeason = new Map<number, EpisodeInfo[]>()
+      jellyfinData.episodes.forEach((ep) => {
+        if (ep.seasonNumber > 0) {
+          const arr = episodesBySeason.get(ep.seasonNumber) || []
+          arr.push(ep)
+          episodesBySeason.set(ep.seasonNumber, arr)
+        }
+      })
+
+      tmdbSeasonNums.forEach((sNum) => {
+        const eps = episodesBySeason.get(sNum)
+        if (eps && eps.length > 0) {
+          const inLibCount = eps.filter((e) => e.status === "in_library").length
+          if (inLibCount === eps.length) {
+            dl.add(sNum)
+          } else {
+            miss.add(sNum)
+          }
+        } else {
+          miss.add(sNum)
+        }
+      })
+    } else if (tmdbSeasonNums.length > 0) {
+      tmdbSeasonNums.forEach((sNum) => miss.add(sNum))
+    }
+
+    return {
+      downloadedSeasons: Array.from(dl),
+      missingSeasons: Array.from(miss),
+      hasMissingSeasons: miss.size > 0,
+    }
+  }, [tmdbSeasons, jellyfinData])
+
+  useEffect(() => {
+    onSeasonsStateChange?.({ downloadedSeasons, missingSeasons, hasMissingSeasons })
+  }, [downloadedSeasons, missingSeasons, hasMissingSeasons, onSeasonsStateChange])
 
   // TMDB Season Detail SWR
   const { data: tmdbSeasonData, isLoading: isTmdbLoading } = useSWR<TmdbSeasonResponse>(
@@ -213,6 +270,7 @@ export function SeasonBrowser({
 
   // Current active season info
   const activeSeasonInfo = seasons.find((s) => s.seasonNumber === currentSeason) || seasons[0]
+  const isCurrentSeasonMissing = missingSeasons.includes(currentSeason)
 
   const playEpisode = (ep: EpisodeInfo) => {
     if (ep.jellyfinItemId) router.push(`/watch?id=${ep.jellyfinItemId}`)
@@ -220,8 +278,8 @@ export function SeasonBrowser({
 
   return (
     <section className="mt-8 space-y-6">
-      {/* ── Top Header Control Bar (Matching Crunchyroll Style) ── */}
-      <div className="relative flex items-center justify-between border-b border-border/80 pb-3">
+      {/* ── Top Header Control Bar ── */}
+      <div className="relative flex flex-wrap items-center justify-between border-b border-border/80 pb-3 gap-3">
         {/* Left Side: Season Dropdown Selector Button */}
         <div className="relative">
           <button
@@ -241,9 +299,10 @@ export function SeasonBrowser({
                 className="fixed inset-0 z-30"
                 onClick={() => setIsSeasonMenuOpen(false)}
               />
-              <div className="absolute left-0 top-full mt-2 z-40 w-72 bg-[#181a20] border border-border shadow-2xl divide-y divide-border/40 py-1 rounded-none animate-in fade-in slide-in-from-top-2 duration-150">
+              <div className="absolute left-0 top-full mt-2 z-40 w-80 bg-[#181a20] border border-border shadow-2xl divide-y divide-border/40 py-1 rounded-none animate-in fade-in slide-in-from-top-2 duration-150">
                 {seasons.map((s) => {
                   const isSelected = s.seasonNumber === currentSeason
+                  const isMissing = missingSeasons.includes(s.seasonNumber)
                   return (
                     <button
                       key={s.id}
@@ -257,7 +316,18 @@ export function SeasonBrowser({
                           : "text-gray-300 hover:bg-surface hover:text-white"
                       }`}
                     >
-                      <span className="text-sm font-bold uppercase tracking-wider">{s.name}</span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-bold uppercase tracking-wider">{s.name}</span>
+                        {isMissing ? (
+                          <span className="text-[9px] font-extrabold uppercase px-1.5 py-0.5 bg-amber-500/20 text-amber-400 border border-amber-500/30">
+                            Missing
+                          </span>
+                        ) : (
+                          <span className="text-[9px] font-extrabold uppercase px-1.5 py-0.5 bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                            In Library
+                          </span>
+                        )}
+                      </div>
                       <span className="text-xs font-medium text-gray-500">
                         {s.episodeCount || 0} Episodes
                       </span>
@@ -269,8 +339,17 @@ export function SeasonBrowser({
           )}
         </div>
 
-        {/* Right Side: Sort & Options Bar */}
-        <div className="flex items-center gap-4 text-xs font-extrabold tracking-wider text-gray-400 uppercase">
+        {/* Right Side: Sort & Request Button */}
+        <div className="flex items-center gap-3 text-xs font-extrabold tracking-wider text-gray-400 uppercase">
+          {onRequestSeason && (
+            <button
+              onClick={() => onRequestSeason()}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-surface hover:bg-card border border-border text-accent hover:text-white transition-colors"
+            >
+              <Plus className="size-3.5" />
+              <span>REQUEST MORE SEASONS</span>
+            </button>
+          )}
           <button
             onClick={() => setIsSortAscending(!isSortAscending)}
             className="flex items-center gap-1.5 hover:text-white transition-colors"
@@ -280,6 +359,32 @@ export function SeasonBrowser({
           </button>
         </div>
       </div>
+
+      {/* Missing Season Notice Banner */}
+      {isCurrentSeasonMissing && (
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 bg-accent/10 border border-accent/30 rounded-none mb-4 animate-in fade-in duration-200">
+          <div className="flex items-center gap-3">
+            <Layers className="size-5 text-accent shrink-0" />
+            <div>
+              <p className="text-sm font-bold text-white uppercase tracking-wider">
+                Season {currentSeason} is not fully in your Jellyfin library
+              </p>
+              <p className="text-xs text-gray-400">
+                Request Season {currentSeason} to monitor and download its missing episodes.
+              </p>
+            </div>
+          </div>
+          {onRequestSeason && (
+            <button
+              onClick={() => onRequestSeason(currentSeason)}
+              className="px-3.5 py-1.5 bg-accent hover:bg-accent/90 text-white font-bold text-xs uppercase tracking-wider flex items-center gap-1.5 shrink-0 transition-colors shadow-lg"
+            >
+              <Plus className="size-4" />
+              Request Season {currentSeason}
+            </button>
+          )}
+        </div>
+      )}
 
       {/* ── Episodes Loading Skeleton ── */}
       {isTmdbLoading && (

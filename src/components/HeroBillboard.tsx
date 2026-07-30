@@ -127,7 +127,7 @@ export function HeroBillboard({ items }: { items: BillboardItem[] }) {
                   ? `/watch?id=${activeItem.jellyfinItemId}${activeItem.media_type === "tv" ? "&type=tv" : ""}`
                   : `/${activeItem.media_type}/${activeItem.id}`
               }
-              className="flex items-center gap-2 rounded-none bg-accent px-6 py-3 text-xs sm:text-sm font-bold uppercase tracking-wider text-white shadow-xl hover:bg-accent-hover transition-all active:scale-95"
+              className="inline-flex items-center justify-center gap-2 rounded-none border border-transparent bg-accent px-5 sm:px-6 py-3 text-xs sm:text-sm font-bold uppercase tracking-wider text-white shadow-xl hover:bg-accent-hover transition-all active:scale-95 shrink-0"
             >
               <IconPlay className="size-4 fill-white" />
               {activeItem.inLibrary ? "WATCH NOW" : "EXPLORE & REQUEST"}

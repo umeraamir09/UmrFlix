@@ -31,6 +31,7 @@ export type SonarrSeries = {
   rootFolderPath: string
   year: number
   seasonCount: number
+  seasons?: { seasonNumber: number; monitored: boolean }[]
   images: { coverType: string; url: string }[]
 }
 
@@ -131,8 +132,26 @@ export type SonarrDiskSpaceItem = {
   totalSpace: number
 }
 
+export function updateSeries(payload: SonarrSeries & Record<string, unknown>): Promise<SonarrSeries> {
+  return sonarrFetch(`/series/${payload.id}`, {
+    method: "PUT",
+    body: JSON.stringify(payload),
+  })
+}
+
+export function searchSeries(seriesId: number): Promise<unknown> {
+  return sonarrFetch("/command", {
+    method: "POST",
+    body: JSON.stringify({
+      name: "SeriesSearch",
+      seriesId,
+    }),
+  })
+}
+
 export function getDiskSpace(): Promise<SonarrDiskSpaceItem[]> {
   return sonarrFetch("/diskspace")
 }
+
 
 

@@ -21,8 +21,13 @@ import {
   ExternalLink,
 } from "lucide-react"
 
+import useSWR from "swr"
+
 import type { RequestItem } from "@/lib/requests-store"
 import { useEventStream, onReFetch } from "@/lib/use-event-stream"
+import { AdminRequestCard, type ProfileMapData } from "@/components/AdminRequestCard"
+
+const fetcher = (url: string) => fetch(url).then((r) => r.json())
 
 type TorrentItem = {
   hash: string
@@ -67,6 +72,10 @@ export default function AdminDashboardPage() {
   const [storage, setStorage] = useState<StorageData | null>(null)
   const [loading, setLoading] = useState(true)
   const [actionLoading, setActionLoading] = useState<string | null>(null)
+
+  // Fetch profiles for quality profile and tag resolution
+  const { data: radarrProfiles } = useSWR<ProfileMapData>("/api/radarr/profiles", fetcher)
+  const { data: sonarrProfiles } = useSWR<ProfileMapData>("/api/sonarr/profiles", fetcher)
 
   const fetchData = async () => {
     try {
@@ -327,40 +336,17 @@ export default function AdminDashboardPage() {
               No pending requests requiring approval.
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-4">
               {pendingRequests.map((req) => (
-                <div key={req.id} className="p-4 border border-border/80 bg-card flex items-start justify-between gap-4">
-                  <div className="space-y-1">
-                    <div className="flex items-center gap-2">
-                      <span className="px-2 py-0.5 text-[10px] font-black uppercase bg-accent/20 text-accent">
-                        {req.mediaType}
-                      </span>
-                      <h3 className="font-bold text-white text-sm">{req.title}</h3>
-                    </div>
-                    <p className="text-xs text-gray-400">
-                      Requested by <span className="text-white font-semibold">{req.requestedBy.username}</span> &bull;{" "}
-                      {new Date(req.requestedAt).toLocaleDateString()}
-                    </p>
-                    <p className="text-xs text-gray-500 font-mono truncate max-w-[260px]">{req.rootFolderPath}</p>
-                  </div>
-
-                  <div className="flex items-center gap-2 shrink-0">
-                    <button
-                      onClick={() => handleApprove(req.id)}
-                      disabled={actionLoading === req.id}
-                      className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs uppercase transition-all shadow cursor-pointer disabled:opacity-50"
-                    >
-                      {actionLoading === req.id ? <Loader2 className="size-3.5 animate-spin" /> : "Approve"}
-                    </button>
-                    <button
-                      onClick={() => handleDeny(req.id)}
-                      disabled={actionLoading === req.id}
-                      className="px-3 py-1.5 bg-red-600 hover:bg-red-500 text-white font-bold text-xs uppercase transition-all shadow cursor-pointer disabled:opacity-50"
-                    >
-                      Deny
-                    </button>
-                  </div>
-                </div>
+                <AdminRequestCard
+                  key={req.id}
+                  request={req}
+                  radarrProfiles={radarrProfiles}
+                  sonarrProfiles={sonarrProfiles}
+                  onApprove={handleApprove}
+                  onDeny={handleDeny}
+                  actionLoading={actionLoading === req.id}
+                />
               ))}
             </div>
           )}

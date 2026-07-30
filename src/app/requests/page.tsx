@@ -32,6 +32,7 @@ type RequestItem = {
   status: "pending" | "approved" | "denied"
   qualityProfileId: number
   rootFolderPath: string
+  seasons?: { seasonNumber: number; monitored: boolean }[]
   denialReason?: string
   approvedAt?: string
   approvedBy?: string
@@ -241,7 +242,19 @@ export default function MyRequestsPage() {
                 </div>
 
                 {/* Details Footer */}
-                <div className="p-3 bg-surface/50 border border-border/40 text-xs text-gray-300 space-y-1">
+                <div className="p-3 bg-surface/50 border border-border/40 text-xs text-gray-300 space-y-1.5">
+                  {req.mediaType === "tv" && req.seasons && req.seasons.length > 0 && (
+                    <div className="flex justify-between items-start">
+                      <span className="text-foreground-muted">Seasons:</span>
+                      <span className="font-semibold text-amber-300 text-right">
+                        {req.seasons.filter((s) => s.monitored).length === req.seasons.length
+                          ? `All Seasons (1–${req.seasons.length})`
+                          : req.seasons.filter((s) => s.monitored).length === 0
+                          ? "Future Only"
+                          : `Seasons ${req.seasons.filter((s) => s.monitored).map((s) => s.seasonNumber).join(", ")}`}
+                      </span>
+                    </div>
+                  )}
                   <div className="flex justify-between">
                     <span className="text-foreground-muted">Target Path:</span>
                     <span className="font-mono text-gray-200 truncate max-w-[200px]">{req.rootFolderPath}</span>
