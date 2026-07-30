@@ -34,7 +34,7 @@ export async function GET() {
   await Promise.allSettled([
     probeService(radarrUrl ? `${radarrUrl}/api/v3/system/status` : "", radarrBreaker),
     probeService(sonarrUrl ? `${sonarrUrl}/api/v3/system/status` : "", sonarrBreaker),
-    probeService(jellyfinUrl, jellyfinBreaker),
+    probeService(jellyfinUrl ?? "", jellyfinBreaker),
     tmdbKey
       ? probeService(
           `https://api.themoviedb.org/3/configuration?api_key=${tmdbKey}`,
