@@ -2,6 +2,7 @@ import { env } from "./env"
 import { getSession } from "./auth"
 import { jellyfinBreaker } from "./circuit-breaker"
 import type { TrickplayInfo } from "./playback-types"
+import { applyStreamParams, type StreamOptions } from "./url-utils"
 
 const BASE = env("JELLYFIN_URL")
 const TIMEOUT = 8_000
@@ -148,15 +149,6 @@ export async function getItemsByProviderIds(
   return data.Items ?? []
 }
 
-export function getDirectStreamUrl(itemId: string, token: string): string {
-  return `/api/jellyfin/stream/${itemId}?static=true`
-}
-
-export function getHlsMasterUrl(itemId: string, token: string): string {
-  return `/api/jellyfin/stream/${itemId}`
-}
-
-
 export async function getAllItems(token: string, userId: string): Promise<JellyfinItem[]> {
   const all: JellyfinItem[] = []
   let startIndex = 0
@@ -183,11 +175,6 @@ export async function getAllItems(token: string, userId: string): Promise<Jellyf
   }
 
   return all
-}
-
-export async function getItemImageUrl(itemId: string, imageType = "Primary"): Promise<string> {
-  const token = (await authenticate()).token
-  return `${BASE}/Items/${itemId}/Images/${imageType}?api_key=${token}`
 }
 
 // --- Continue Watching / Resume Items ---
@@ -531,48 +518,10 @@ export async function markItemUnplayed(itemId: string): Promise<void> {
 
 // ── Stream URL builders (quality / track aware) ──
 
-export type StreamOptions = {
-  mediaSourceId?: string
-  playSessionId?: string
-  audioStreamIndex?: number
-  subtitleStreamIndex?: number
-  maxStreamingBitrate?: number
-  maxWidth?: number
-  maxHeight?: number
-  startTimeTicks?: number
-  videoCodec?: string
-  audioCodec?: string
-}
-
-function applyStreamParams(params: URLSearchParams, opts: StreamOptions) {
-  if (opts.mediaSourceId) params.set("mediaSourceId", opts.mediaSourceId)
-  if (opts.playSessionId) params.set("playSessionId", opts.playSessionId)
-  if (opts.audioStreamIndex != null) params.set("audioStreamIndex", String(opts.audioStreamIndex))
-  if (opts.subtitleStreamIndex != null) params.set("subtitleStreamIndex", String(opts.subtitleStreamIndex))
-  if (opts.maxStreamingBitrate) {
-    const b = String(opts.maxStreamingBitrate)
-    params.set("maxStreamingBitrate", b)
-    params.set("videoBitrate", b)
-    params.set("VideoBitrate", b)
-  }
-  if (opts.maxWidth) {
-    const w = String(opts.maxWidth)
-    params.set("maxWidth", w)
-    params.set("maxVideoWidth", w)
-    params.set("MaxVideoWidth", w)
-  }
-  if (opts.maxHeight) {
-    const h = String(opts.maxHeight)
-    params.set("maxHeight", h)
-    params.set("maxVideoHeight", h)
-    params.set("MaxVideoHeight", h)
-  }
-  if (opts.startTimeTicks) params.set("startTimeTicks", String(opts.startTimeTicks))
-}
-
-/** Transcoded HLS master playlist URL (adaptive + quality-limited). */
-export function buildHlsStreamUrl(itemId: string, token: string, opts: StreamOptions = {}): string {
-  const params = new URLSearchParams({ api_key: token })
+/** Transcoded HLS master playlist URL (adaptive + quality-limited).
+ *  Returns a same-origin proxy URL — token is added server-side. */
+export function buildHlsStreamUrl(itemId: string, _token: string, opts: StreamOptions = {}): string {
+  const params = new URLSearchParams()
   params.set("videoCodec", opts.videoCodec ?? "h264")
   // Only MSE-friendly audio codecs — if the source carries EAC3/DTS the
   // server must transcode to AAC. Allowing AC3/EAC3 here makes Jellyfin
@@ -581,14 +530,15 @@ export function buildHlsStreamUrl(itemId: string, token: string, opts: StreamOpt
   params.set("audioCodec", opts.audioCodec ?? "aac,mp3")
   params.set("segmentContainer", "ts")
   applyStreamParams(params, opts)
-  return `${BASE}/Videos/${itemId}/master.m3u8?${params}`
+  return `/api/jellyfin/proxy/Videos/${itemId}/master.m3u8?${params}`
 }
 
-/** Direct-play URL; audioStreamIndex only takes effect when remuxing. */
-export function buildDirectStreamUrl(itemId: string, token: string, opts: StreamOptions = {}): string {
-  const params = new URLSearchParams({ api_key: token, static: "true" })
+/** Direct-play URL; audioStreamIndex only takes effect when remuxing.
+ *  Returns a same-origin proxy URL — token is added server-side. */
+export function buildDirectStreamUrl(itemId: string, _token: string, opts: StreamOptions = {}): string {
+  const params = new URLSearchParams({ static: "true" })
   applyStreamParams(params, opts)
-  return `${BASE}/Videos/${itemId}/stream?${params}`
+  return `/api/jellyfin/proxy/Videos/${itemId}/stream?${params}`
 }
 
 /**
@@ -605,10 +555,10 @@ export function buildSubtitleUrl(
   return `/api/jellyfin/subtitles/${itemId}/${mediaSourceId}/${streamIndex}?format=${format}`
 }
 
-export function buildItemImageUrl(itemId: string, token: string, type = "Thumb", maxWidth?: number): string {
-  const params = new URLSearchParams({ api_key: token })
+export function buildItemImageUrl(itemId: string, _token: string, type = "Thumb", maxWidth?: number): string {
+  const params = new URLSearchParams()
   if (maxWidth) params.set("maxWidth", String(maxWidth))
-  return `${BASE}/Items/${itemId}/Images/${type}?${params}`
+  return `/api/jellyfin/proxy/Items/${itemId}/Images/${type}?${params}`
 }
 
 // ── Intro Skipper plugin markers ──
@@ -725,7 +675,7 @@ export async function getUserFavorites(overrideUserId?: string, overrideToken?: 
   return data.Items ?? []
 }
 
-export async function toggleFavoriteItem(
+export async function setFavoriteItem(
   itemId: string,
   isFavorite: boolean,
   overrideUserId?: string,

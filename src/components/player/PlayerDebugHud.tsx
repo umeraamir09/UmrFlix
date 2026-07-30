@@ -4,6 +4,7 @@ import { useEffect, useState, useSyncExternalStore } from "react"
 import { ClipboardCopy, X } from "lucide-react"
 import { getDebugEntries, subscribeDebugEntries } from "./player-debug"
 import type { PlaybackPayload } from "@/lib/playback-types"
+import { maskUrl } from "@/lib/url-utils"
 
 const READY_STATE: Record<number, string> = {
   0: "HAVE_NOTHING",
@@ -86,7 +87,7 @@ export function PlayerDebugHud({
     const text = [
       `engine=${engine} quality=${qualityId}`,
       `probe: ${probeReason}`,
-      `streamUrl: ${streamUrl}`,
+      `streamUrl: ${maskUrl(streamUrl)}`,
       payload
         ? `payload: container=${payload.container} vcodec=${payload.videoCodec} canDirectPlay=${payload.canDirectPlay} supportsTranscoding=${payload.supportsTranscoding} audio=${payload.audio.map((a) => `[${a.index}]${a.codec}`).join(",")} subs=${payload.subtitles.map((s) => `[${s.index}]${s.codec}${s.isImageBased ? "(img)" : ""}`).join(",")}`
         : "payload: (none)",
@@ -164,7 +165,7 @@ export function PlayerDebugHud({
             </p>
           )}
           <p>
-            <span className="text-white/50">stream       </span> {streamUrl}
+            <span className="text-white/50">stream       </span> {maskUrl(streamUrl)}
           </p>
         </div>
 

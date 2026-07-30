@@ -42,7 +42,9 @@ const SAFETY_FACTOR = 0.75            // use 75% of estimated bandwidth for qual
 const UPGRADE_COOLDOWN_MS = 30_000    // don't upgrade within 30s of a downgrade
 const DOWNGRADE_COOLDOWN_MS = 10_000  // don't downgrade more than once per 10s
 
-// Ordered by bitrate ascending for easy binary searching
+// Ordered by bitrate ascending for easy binary searching.
+// Auto preset has no maxStreamingBitrate — it's a no-op placeholder, not a
+// real quality tier, so it's intentionally excluded from bandwidth decisions.
 const SORTED_PRESETS = QUALITY_PRESETS
   .filter(q => q.maxStreamingBitrate != null)
   .sort((a, b) => (a.maxStreamingBitrate ?? 0) - (b.maxStreamingBitrate ?? 0))
@@ -53,7 +55,9 @@ export class BandwidthEstimator {
   private sampleCount = 0
   private lastDowngradeTime = 0
   private lastUpgradeTime = 0
-  private bufferHealthHistory: number[] = []
+  private bufferRing: number[] = new Array(10)
+  private bufferRingIdx = 0
+  private bufferRingCount = 0
 
   constructor() {
     this.reset()
@@ -72,10 +76,11 @@ export class BandwidthEstimator {
     this.sampleCount++
   }
 
-  /** Record current buffer-ahead seconds for trend analysis. */
+  /** Record current buffer-ahead seconds for trend analysis (ring buffer, O(1)). */
   recordBufferHealth(bufferAheadSeconds: number) {
-    this.bufferHealthHistory.push(bufferAheadSeconds)
-    if (this.bufferHealthHistory.length > 10) this.bufferHealthHistory.shift()
+    this.bufferRing[this.bufferRingIdx] = bufferAheadSeconds
+    this.bufferRingIdx = (this.bufferRingIdx + 1) % 10
+    if (this.bufferRingCount < 10) this.bufferRingCount++
   }
 
   /** Estimated bandwidth in bits/second (conservative — uses the slower EWMA). */
@@ -97,10 +102,11 @@ export class BandwidthEstimator {
 
   /** Is the buffer health trending downward? */
   private isBufferDeclining(): boolean {
-    const h = this.bufferHealthHistory
-    if (h.length < 3) return false
-    const recent = h.slice(-3)
-    return recent[2] < recent[1] && recent[1] < recent[0]
+    if (this.bufferRingCount < 3) return false
+    const i0 = (this.bufferRingIdx - 1 + 10) % 10
+    const i1 = (i0 - 1 + 10) % 10
+    const i2 = (i1 - 1 + 10) % 10
+    return this.bufferRing[i2] > this.bufferRing[i1] && this.bufferRing[i1] > this.bufferRing[i0]
   }
 
   /**
@@ -237,7 +243,9 @@ export class BandwidthEstimator {
     this.sampleCount = 0
     this.lastDowngradeTime = 0
     this.lastUpgradeTime = 0
-    this.bufferHealthHistory = []
+    this.bufferRing = new Array(10)
+    this.bufferRingIdx = 0
+    this.bufferRingCount = 0
   }
 }
 

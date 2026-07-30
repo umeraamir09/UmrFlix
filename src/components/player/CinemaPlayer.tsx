@@ -29,10 +29,7 @@ import { playerLog } from "./player-debug"
 import { canBrowserPlayNatively } from "./codec-probe"
 import { PlayerDebugHud } from "./PlayerDebugHud"
 import { BandwidthEstimator, attachHlsBandwidthMonitor } from "./bandwidth-estimator"
-
-function maskUrl(url: string): string {
-  return url.replace(/api_key=[^&]+/, "api_key=***")
-}
+import { applyStreamParams, maskUrl } from "@/lib/url-utils"
 
 const TICKS_PER_SECOND = 10_000_000
 const CONTROLS_HIDE_DELAY = 3_500
@@ -168,31 +165,27 @@ export function CinemaPlayer({
   // ── Fetch playback payload ──
   useEffect(() => {
     let cancelled = false
-    // Deferred so no state is set synchronously inside the effect body
-    queueMicrotask(() => {
-      if (cancelled) return
-      setPayload(null)
-      setLoadError(null)
-      setCueState(null)
-      setAudioIndex(null)
-      setSubtitleIndex(null)
-      setEndpointReady(false)
-      setNextPrompt(null)
-      setCreditsPillDismissed(false)
-      setNeedsManualPlay(false)
-      setBuffering(false)
-      setPlaying(false)
-      setCurrentTime(0)
-      setDuration(0)
-      setBuffered(0)
-      watchedReportedRef.current = false
-      seekTargetRef.current = 0
-      hadStreamRef.current = false
-      playIntentRef.current = autoPlay
-      estimatorRef.current.reset()
-      setAutoResolvedId(null)
-      setEstimatedBw(0)
-    })
+    setPayload(null)
+    setLoadError(null)
+    setCueState(null)
+    setAudioIndex(null)
+    setSubtitleIndex(null)
+    setEndpointReady(false)
+    setNextPrompt(null)
+    setCreditsPillDismissed(false)
+    setNeedsManualPlay(false)
+    setBuffering(false)
+    setPlaying(false)
+    setCurrentTime(0)
+    setDuration(0)
+    setBuffered(0)
+    watchedReportedRef.current = false
+    seekTargetRef.current = 0
+    hadStreamRef.current = false
+    playIntentRef.current = autoPlay
+    estimatorRef.current.reset()
+    setAutoResolvedId(null)
+    setEstimatedBw(0)
 
     fetch(`/api/jellyfin/playback/${itemId}`)
       .then(async (r) => {
@@ -260,7 +253,10 @@ export function CinemaPlayer({
   }, [clientSideSubtitle, selectedSubtitle])
 
   // ── Engine selection: direct play vs transcoded HLS ──
-  const quality = QUALITY_PRESETS.find((q) => q.id === qualityId) ?? QUALITY_PRESETS[0]
+  const quality = QUALITY_PRESETS.find((q) => q.id === qualityId) ?? (() => {
+    if (payload) console.warn(`Unknown qualityId "${qualityId}" — falling back to Auto`)
+    return QUALITY_PRESETS[0]
+  })()
 
   // Probe the real browser for container+codec support — the server can
   // only gate on the file, not on what this device can decode.
@@ -299,9 +295,7 @@ export function CinemaPlayer({
   // Log engine decisions once they settle
   useEffect(() => {
     if (!payload) return
-    queueMicrotask(() =>
-      playerLog.info("engine", `decision: ${engine.toUpperCase()} — ${engineReason}`),
-    )
+    playerLog.info("engine", `decision: ${engine.toUpperCase()} — ${engineReason}`)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [payload, engine])
 
@@ -321,40 +315,19 @@ export function CinemaPlayer({
         : quality
 
     if (effectiveQuality.maxStreamingBitrate) {
-      const b = String(effectiveQuality.maxStreamingBitrate)
-      params.set("maxStreamingBitrate", b)
-      params.set("videoBitrate", b)
-      params.set("VideoBitrate", b)
-      const w = String(effectiveQuality.maxWidth)
-      params.set("maxWidth", w)
-      params.set("maxVideoWidth", w)
-      params.set("MaxVideoWidth", w)
-      const h = String(effectiveQuality.maxHeight)
-      params.set("maxHeight", h)
-      params.set("maxVideoHeight", h)
-      params.set("MaxVideoHeight", h)
+      applyStreamParams(params, effectiveQuality)
     } else if (engine === "hls") {
       const sourceBitrate = payload.bitrate ?? 0
       const sourceW = payload.width ?? 1920
       const sourceH = payload.height ?? 1080
-      const autoBitrate =
-        sourceBitrate > 0
-          ? Math.min(Math.round(sourceBitrate * 1.2), 120_000_000)
-          : 40_000_000
-      const autoW = Math.min(sourceW, 3840)
-      const autoH = Math.min(sourceH, 2160)
-      const b = String(autoBitrate)
-      params.set("maxStreamingBitrate", b)
-      params.set("videoBitrate", b)
-      params.set("VideoBitrate", b)
-      const w = String(autoW)
-      params.set("maxWidth", w)
-      params.set("maxVideoWidth", w)
-      params.set("MaxVideoWidth", w)
-      const h = String(autoH)
-      params.set("maxHeight", h)
-      params.set("maxVideoHeight", h)
-      params.set("MaxVideoHeight", h)
+      applyStreamParams(params, {
+        maxStreamingBitrate:
+          sourceBitrate > 0
+            ? Math.min(Math.round(sourceBitrate * 1.2), 120_000_000)
+            : 40_000_000,
+        maxWidth: Math.min(sourceW, 3840),
+        maxHeight: Math.min(sourceH, 2160),
+      })
     }
 
     const base = engine === "direct" ? payload.directUrl : payload.hlsUrl
@@ -905,7 +878,7 @@ export function CinemaPlayer({
       onKeyDown={handleKeyDown}
       onMouseMove={pokeControls}
       onTouchStart={pokeControls}
-      className={`group relative select-none overflow-hidden bg-black outline-none [container-type:size] ${
+      className={`group relative select-none overflow-hidden bg-black outline-none [container-type:inline-size] ${
         fill ? "h-dvh w-screen rounded-none" : "aspect-video w-full rounded-lg"
       } ${!controlsVisible && playing ? "cursor-none" : ""} ${className}`}
     >

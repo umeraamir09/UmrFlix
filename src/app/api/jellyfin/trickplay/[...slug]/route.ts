@@ -47,7 +47,8 @@ export async function GET(
 
     const { token } = await authenticate()
     const upstream = await fetch(
-      `${BASE()}/Videos/${itemId}/Trickplay/${width}/${index}.jpg?api_key=${token}`,
+      `${BASE()}/Videos/${itemId}/Trickplay/${width}/${index}.jpg`,
+      { headers: { "X-Emby-Token": token } },
     )
 
     if (!upstream.ok) {

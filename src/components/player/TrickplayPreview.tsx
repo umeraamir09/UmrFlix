@@ -1,7 +1,7 @@
 "use client"
 
-import { useEffect, useState } from "react"
 import type { TrickplayInfo } from "@/lib/playback-types"
+import { usePreloadedImage } from "./use-preloaded-image"
 
 /** Displayed preview width (cap — never upscale, tiles are small JPEGs). */
 export const TRICKPLAY_PREVIEW_WIDTH = 224
@@ -17,35 +17,7 @@ export function trickplayPreviewDisplaySize(trickplay: TrickplayInfo): {
   }
 }
 
-// Module-level cache of preloaded sprite tiles — revisiting a tile while
-// scrubbing is instant and the browser keeps no duplicate requests.
-const loadedTiles = new Set<string>()
 
-function useLoadedTile(url: string): boolean {
-  // Tracks WHICH tile finished loading — on url change the new tile is
-  // simply not loaded yet, no reset needed.
-  const [loadedUrl, setLoadedUrl] = useState<string | null>(() =>
-    loadedTiles.has(url) ? url : null,
-  )
-  useEffect(() => {
-    if (loadedTiles.has(url)) {
-      // Deferred so no state is set synchronously inside the effect body
-      queueMicrotask(() => setLoadedUrl(url))
-      return
-    }
-    let cancelled = false
-    const img = new Image()
-    img.onload = () => {
-      loadedTiles.add(url)
-      if (!cancelled) setLoadedUrl(url)
-    }
-    img.src = url
-    return () => {
-      cancelled = true
-    }
-  }, [url])
-  return loadedUrl === url
-}
 
 export function trickplayTileUrl(itemId: string, width: number, tileIndex: number): string {
   return `/api/jellyfin/trickplay/${itemId}/${width}/${tileIndex}`
@@ -77,7 +49,7 @@ export function TrickplayPreview({
   const row = Math.floor(inTile / trickplay.tileWidth)
 
   const tileUrl = trickplayTileUrl(itemId, trickplay.width, tileIndex)
-  const loaded = useLoadedTile(tileUrl)
+  const loaded = usePreloadedImage(tileUrl)
 
   const scale = Math.min(1, TRICKPLAY_PREVIEW_WIDTH / trickplay.width)
   const { width: displayW, height: displayH } = trickplayPreviewDisplaySize(trickplay)

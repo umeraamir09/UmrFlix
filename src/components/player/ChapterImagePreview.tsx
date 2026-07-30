@@ -1,7 +1,7 @@
 "use client"
 
-import { useEffect, useState, useMemo } from "react"
 import type { ChapterInfo } from "@/lib/playback-types"
+import { usePreloadedImage } from "./use-preloaded-image"
 
 /** Displayed preview width — matches trickplay for visual consistency. */
 export const CHAPTER_PREVIEW_WIDTH = 224
@@ -18,32 +18,7 @@ export function chapterPreviewDisplaySize(): {
   }
 }
 
-// Module-level cache — mirrors TrickplayPreview's loadedTiles set.
-const loadedChapterImages = new Set<string>()
 
-function useLoadedImage(url: string | null): boolean {
-  const [loadedUrl, setLoadedUrl] = useState<string | null>(() =>
-    url && loadedChapterImages.has(url) ? url : null,
-  )
-  useEffect(() => {
-    if (!url) return
-    if (loadedChapterImages.has(url)) {
-      queueMicrotask(() => setLoadedUrl(url))
-      return
-    }
-    let cancelled = false
-    const img = new Image()
-    img.onload = () => {
-      loadedChapterImages.add(url)
-      if (!cancelled) setLoadedUrl(url)
-    }
-    img.src = url
-    return () => {
-      cancelled = true
-    }
-  }, [url])
-  return url !== null && loadedUrl === url
-}
 
 export function chapterImageUrl(
   itemId: string,
@@ -57,17 +32,26 @@ export function chapterImageUrl(
 }
 
 /**
- * Given sorted chapters and a time, find the active chapter index.
- * Returns -1 if no chapter with an imageTag covers this time.
+ * Given sorted chapters and a time, find the active chapter index via binary search.
+ * Returns the last chapter whose startSeconds <= time, or 0.
  */
 function findChapterIndex(
   chapters: ChapterInfo[],
   time: number,
 ): number {
-  for (let i = chapters.length - 1; i >= 0; i--) {
-    if (chapters[i].startSeconds <= time) return i
+  let lo = 0
+  let hi = chapters.length - 1
+  let result = 0
+  while (lo <= hi) {
+    const mid = (lo + hi) >>> 1
+    if (chapters[mid].startSeconds <= time) {
+      result = mid
+      lo = mid + 1
+    } else {
+      hi = mid - 1
+    }
   }
-  return 0
+  return result
 }
 
 /**
@@ -84,11 +68,6 @@ export function ChapterImagePreview({
   itemId: string
   time: number
 }) {
-  const chaptersWithImages = useMemo(
-    () => chapters.filter((c) => c.imageTag),
-    [chapters],
-  )
-
   const idx = findChapterIndex(chapters, time)
   const chapter = chapters[idx]
   const hasImage = chapter?.imageTag
@@ -96,7 +75,7 @@ export function ChapterImagePreview({
   const url = hasImage
     ? chapterImageUrl(itemId, idx, chapter.imageTag)
     : null
-  const loaded = useLoadedImage(url)
+  const loaded = usePreloadedImage(url)
 
   const { width: displayW, height: displayH } =
     chapterPreviewDisplaySize()

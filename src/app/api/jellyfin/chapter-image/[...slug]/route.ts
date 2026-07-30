@@ -41,12 +41,14 @@ export async function GET(
     const { token } = await authenticate()
 
     const { searchParams } = new URL(request.url)
-    const tag = searchParams.get("tag") || ""
-    const tagParam = tag ? `&tag=${encodeURIComponent(tag)}` : ""
+    const upstreamUrl = new URL(`${BASE()}/Items/${itemId}/Images/Chapter/${index}`)
+    upstreamUrl.searchParams.set("maxWidth", "320")
+    const tag = searchParams.get("tag")
+    if (tag) upstreamUrl.searchParams.set("tag", tag)
 
-    const upstream = await fetch(
-      `${BASE()}/Items/${itemId}/Images/Chapter/${index}?maxWidth=320&api_key=${token}${tagParam}`,
-    )
+    const upstream = await fetch(upstreamUrl.toString(), {
+      headers: { "X-Emby-Token": token },
+    })
 
     if (!upstream.ok) {
       return NextResponse.json(

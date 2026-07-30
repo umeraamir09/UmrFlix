@@ -2,7 +2,7 @@ import fs from "fs/promises"
 import path from "path"
 import { ConvexHttpClient } from "convex/browser"
 import type { FunctionReference } from "convex/server"
-import { toggleFavoriteItem } from "@/lib/jellyfin"
+import { setFavoriteItem } from "@/lib/jellyfin"
 
 export type MyListItem = {
   id: string // deterministic composite key e.g. "tmdb:movie:550", "tmdb:tv:1399", "jellyfin:abc123"
@@ -210,7 +210,7 @@ export async function addToMyList(
 
   // Centralized Hybrid Jellyfin Sync (Issue #13)
   if (item.jellyfinId) {
-    toggleFavoriteItem(item.jellyfinId, true).catch((err) =>
+    setFavoriteItem(item.jellyfinId, true).catch((err) =>
       console.warn("Failed to sync favorite to Jellyfin server:", err)
     )
   }
@@ -265,7 +265,7 @@ export async function removeFromMyList(
 
   // Centralized Hybrid Jellyfin Sync (Issue #13)
   if (target.jellyfinId) {
-    toggleFavoriteItem(target.jellyfinId, false).catch((err) =>
+    setFavoriteItem(target.jellyfinId, false).catch((err) =>
       console.warn("Failed to unsync favorite from Jellyfin server:", err)
     )
   }
