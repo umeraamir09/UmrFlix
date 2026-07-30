@@ -169,7 +169,7 @@ export function CinemaPlayer({
   const handlePlaybackRateChange = useCallback(
     (rate: number) => {
       // In party mode, only the host can change speed
-      if (party?.partyId && !party.isOwner) {
+      if (party?.partyId && !partySync.isOwner) {
         return
       }
       setPlaybackRate(rate)
@@ -180,7 +180,7 @@ export function CinemaPlayer({
         partySync.sendCommand("rate", undefined, rate)
       }
     },
-    [party?.partyId, party?.isOwner, partySync]
+    [party?.partyId, partySync]
   )
 
   const handleReport = useCallback(() => {

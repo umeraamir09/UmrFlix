@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react"
 import { useToast } from "@/components/Toast"
+import { acquireSharedEventSource } from "@/lib/use-event-stream"
 import {
   DRIFT_THRESHOLDS,
   PartyCommand,
@@ -62,8 +63,10 @@ export function usePartySync({
   const partyEndedRef = useRef<boolean>(false)
 
   // Keep refs synchronized
-  partyStateRef.current = partyState
-  serverOffsetRef.current = serverOffset
+  useEffect(() => {
+    partyStateRef.current = partyState
+    serverOffsetRef.current = serverOffset
+  }, [partyState, serverOffset])
 
   // Fetch latest snapshot from server
   const refreshSnapshot = useCallback(async () => {
@@ -189,7 +192,9 @@ export function usePartySync({
   useEffect(() => {
     if (!partyId) return
 
-    const eventSource = new EventSource("/api/events")
+    const { es: eventSource, release } = acquireSharedEventSource(() => {
+      refreshSnapshot()
+    })
 
     const handlePartyState = (e: MessageEvent) => {
       try {
@@ -263,7 +268,7 @@ export function usePartySync({
       }
     }
 
-    const handlePartyEnded = (_e: MessageEvent) => {
+    const handlePartyEnded = () => {
       if (!partyEndedRef.current) {
         partyEndedRef.current = true
         toast("This watch party has ended", "info")
@@ -292,19 +297,14 @@ export function usePartySync({
     eventSource.addEventListener("party:ended", handlePartyEnded as EventListener)
     eventSource.addEventListener("party:item", handlePartyItem as EventListener)
 
-    // Re-fetch snapshot on SSE reconnect
-    eventSource.onopen = () => {
-      refreshSnapshot()
-    }
-
     return () => {
       eventSource.removeEventListener("party:state", handlePartyState as EventListener)
       eventSource.removeEventListener("party:membership", handlePartyMembership as EventListener)
       eventSource.removeEventListener("party:ended", handlePartyEnded as EventListener)
       eventSource.removeEventListener("party:item", handlePartyItem as EventListener)
-      eventSource.close()
+      release()
     }
-  }, [partyId, clientId, onItemChange, onPartyEnded, refreshSnapshot])
+  }, [partyId, clientId, onItemChange, onPartyEnded, refreshSnapshot, toast])
 
   // Heartbeat ping every 60s to keep presence alive
   useEffect(() => {

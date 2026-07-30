@@ -71,6 +71,16 @@ export default defineSchema({
     tvdbId: v.number(),
     updatedAt: v.number(),
   }).index("by_tmdb", ["tmdbId"]),
+
+  partyRooms: defineTable({
+    partyId: v.string(),
+    ownerId: v.string(),
+    createdAt: v.number(),
+    stateJson: v.optional(v.string()),
+    membersJson: v.string(),
+    pendingInvitesJson: v.string(),
+    updatedAt: v.number(),
+  }).index("by_party_id", ["partyId"]),
 })
 
 

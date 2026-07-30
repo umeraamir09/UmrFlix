@@ -2,6 +2,8 @@ import { NextResponse } from "next/server"
 import { getSession } from "@/lib/auth"
 import { roomManager } from "@/lib/party/room-manager"
 import type { PartyCommand } from "@/lib/party/protocol"
+import { apiError } from "@/lib/api-response"
+import { checkRateLimit, PARTY_RATE_LIMITS } from "@/lib/rate-limit"
 
 export const dynamic = "force-dynamic"
 
@@ -12,27 +14,28 @@ export async function POST(
 ) {
   const session = await getSession()
   if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+    return apiError("Unauthorized", 401, "UNAUTHORIZED")
+  }
+
+  if (!checkRateLimit(`cmd:${session.userId}`, PARTY_RATE_LIMITS.COMMAND)) {
+    return apiError("Command rate limit exceeded", 429, "RATE_LIMITED")
   }
 
   const { id } = await params
   try {
     const cmd: PartyCommand = await req.json()
     if (!cmd || !cmd.type || !cmd.clientId || !cmd.commandId) {
-      return NextResponse.json({ error: "Invalid command structure" }, { status: 400 })
+      return apiError("Invalid command payload structure", 400, "INVALID_COMMAND")
     }
 
     const state = roomManager.applyCommand(id, session.userId, cmd)
     if (!state) {
-      return NextResponse.json(
-        { error: "Party room not found or member not in party" },
-        { status: 404 }
-      )
+      return apiError("Party room not found or user is not a member", 404, "ROOM_OR_MEMBER_NOT_FOUND")
     }
 
     return NextResponse.json({ success: true, state })
   } catch (err) {
     console.error("[Party API] Error applying command:", err)
-    return NextResponse.json({ error: "Internal Server Error" }, { status: 500 })
+    return apiError("Failed to apply party command", 500, "COMMAND_FAILED", String(err))
   }
 }

@@ -40,19 +40,20 @@ export function PartyLobby({
   const [episodes, setEpisodes] = useState<EpisodeItem[]>([])
   const [loadingEpisodes, setLoadingEpisodes] = useState(false)
 
-  const handleSearch = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!searchQuery.trim()) return
+  const [searchLimit, setSearchLimit] = useState(30)
+  const [totalRecordCount, setTotalRecordCount] = useState(0)
 
+  const fetchSearchResults = async (queryStr: string, limit: number) => {
     setSearching(true)
     try {
       const res = await fetch(
         `/api/jellyfin/proxy/Items?searchTerm=${encodeURIComponent(
-          searchQuery
-        )}&includeItemTypes=Movie,Episode,Series&recursive=true&limit=10`
+          queryStr
+        )}&includeItemTypes=Movie,Episode,Series&recursive=true&limit=${limit}`
       )
       if (res.ok) {
         const data = await res.json()
+        setTotalRecordCount(data.TotalRecordCount || 0)
         const items = (data.Items || []).map((item: any) => ({
           id: item.Id,
           title: item.Name,
@@ -66,6 +67,19 @@ export function PartyLobby({
     } finally {
       setSearching(false)
     }
+  }
+
+  const handleSearch = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!searchQuery.trim()) return
+    setSearchLimit(30)
+    await fetchSearchResults(searchQuery, 30)
+  }
+
+  const handleLoadMore = async () => {
+    const newLimit = searchLimit + 30
+    setSearchLimit(newLimit)
+    await fetchSearchResults(searchQuery, newLimit)
   }
 
   const loadEpisodesForSeries = async (seriesId: string, seriesTitle: string) => {
@@ -263,27 +277,39 @@ export function PartyLobby({
               </form>
 
               {searchResults.length > 0 && (
-                <div className="max-h-60 overflow-y-auto divide-y divide-border/40 border border-border bg-surface">
-                  {searchResults.map((item) => (
-                    <div
-                      key={item.id}
-                      onClick={() => handleSearchResultClick(item)}
-                      className="flex items-center justify-between p-3 cursor-pointer hover:bg-surface-hover transition-colors"
-                    >
-                      <div className="flex items-center gap-3">
-                        <Film className="size-4 text-accent" />
-                        <div>
-                          <p className="text-xs font-bold text-white">{item.title}</p>
-                          <p className="text-[10px] text-gray-400 uppercase">
-                            {item.type === "Series" ? "Series" : item.type}
-                          </p>
+                <div className="space-y-2">
+                  <div className="max-h-60 overflow-y-auto divide-y divide-border/40 border border-border bg-surface">
+                    {searchResults.map((item) => (
+                      <div
+                        key={item.id}
+                        onClick={() => handleSearchResultClick(item)}
+                        className="flex items-center justify-between p-3 cursor-pointer hover:bg-surface-hover transition-colors"
+                      >
+                        <div className="flex items-center gap-3">
+                          <Film className="size-4 text-accent" />
+                          <div>
+                            <p className="text-xs font-bold text-white">{item.title}</p>
+                            <p className="text-[10px] text-gray-400 uppercase">
+                              {item.type === "Series" ? "Series" : item.type}
+                            </p>
+                          </div>
                         </div>
+                        <button className="bg-accent/20 hover:bg-accent text-accent hover:text-white px-3 py-1 text-xs font-bold transition-colors">
+                          {item.type === "Series" ? "Browse Episodes" : "Play For Group"}
+                        </button>
                       </div>
-                      <button className="bg-accent/20 hover:bg-accent text-accent hover:text-white px-3 py-1 text-xs font-bold transition-colors">
-                        {item.type === "Series" ? "Browse Episodes" : "Play For Group"}
-                      </button>
-                    </div>
-                  ))}
+                    ))}
+                  </div>
+                  {searchResults.length < totalRecordCount && (
+                    <button
+                      onClick={handleLoadMore}
+                      disabled={searching}
+                      className="w-full py-2 bg-surface hover:bg-surface-hover border border-border text-xs font-bold uppercase tracking-wider text-accent transition-colors flex items-center justify-center gap-2"
+                    >
+                      {searching && <Loader2 className="size-3.5 animate-spin text-accent" />}
+                      Load More Results ({searchResults.length} of {totalRecordCount})
+                    </button>
+                  )}
                 </div>
               )}
             </div>

@@ -19,6 +19,28 @@ function notifyReFetch() {
   reFetchCallbacks.forEach((cb) => cb())
 }
 
+export function acquireSharedEventSource(onOpen?: () => void): {
+  es: EventSource
+  release: () => void
+} {
+  subscriberCount++
+  const es = getSharedEventSource()
+  let openHandler: (() => void) | null = null
+  if (onOpen) {
+    openHandler = () => onOpen()
+    es.addEventListener("open", openHandler)
+  }
+  return {
+    es,
+    release: () => {
+      if (openHandler && es) {
+        es.removeEventListener("open", openHandler)
+      }
+      closeSharedEventSource()
+    },
+  }
+}
+
 function getSharedEventSource(): EventSource {
   if (!sharedEventSource) {
     sharedEventSource = new EventSource("/api/events")

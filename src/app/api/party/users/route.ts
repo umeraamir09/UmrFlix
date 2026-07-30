@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import { getSession } from "@/lib/auth"
 import { getJellyfinUsers } from "@/lib/jellyfin"
+import { apiError } from "@/lib/api-response"
 
 export const dynamic = "force-dynamic"
 
@@ -8,7 +9,7 @@ export const dynamic = "force-dynamic"
 export async function GET() {
   const session = await getSession()
   if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+    return apiError("Unauthorized", 401, "UNAUTHORIZED")
   }
 
   try {
@@ -28,6 +29,6 @@ export async function GET() {
     return NextResponse.json({ users })
   } catch (err) {
     console.error("[Party API] Error fetching users:", err)
-    return NextResponse.json({ error: "Internal Server Error" }, { status: 500 })
+    return apiError("Failed to fetch user list", 500, "FETCH_USERS_FAILED", String(err))
   }
 }

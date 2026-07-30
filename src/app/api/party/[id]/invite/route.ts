@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server"
 import { getSession } from "@/lib/auth"
 import { roomManager } from "@/lib/party/room-manager"
-import { eventBus } from "@/lib/event-bus"
 import { addPartyInviteNotification, type UserNotification } from "@/lib/requests-store"
+import { apiError } from "@/lib/api-response"
 
 export const dynamic = "force-dynamic"
 
@@ -13,7 +13,7 @@ export async function POST(
 ) {
   const session = await getSession()
   if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+    return apiError("Unauthorized", 401, "UNAUTHORIZED")
   }
 
   const { id } = await params
@@ -21,14 +21,14 @@ export async function POST(
     const body = await req.json()
     const { userIds } = body
     if (!Array.isArray(userIds) || userIds.length === 0) {
-      return NextResponse.json({ error: "userIds array required" }, { status: 400 })
+      return apiError("userIds array required", 400, "INVALID_INVITE_PAYLOAD")
     }
 
     const inviterName = session.username || "A user"
     const success = roomManager.inviteUsers(id, session.userId, inviterName, userIds)
 
     if (!success) {
-      return NextResponse.json({ error: "Room not found" }, { status: 404 })
+      return apiError("Room not found or invite capacity reached", 404, "ROOM_NOT_FOUND_OR_FULL")
     }
 
     // Create notifications for each invited user
@@ -50,6 +50,6 @@ export async function POST(
     return NextResponse.json({ success: true, invitedCount: userIds.length })
   } catch (err) {
     console.error("[Party API] Error inviting users:", err)
-    return NextResponse.json({ error: "Internal Server Error" }, { status: 500 })
+    return apiError("Failed to send party invitations", 500, "INVITE_FAILED", String(err))
   }
 }

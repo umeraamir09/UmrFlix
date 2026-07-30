@@ -190,10 +190,12 @@ export function StartPartyModal({
     )
   }, [episodes])
 
+  const [origin] = useState(() => (typeof window !== "undefined" ? window.location.origin : ""))
+
   if (!isOpen) return null
 
   const shareableUrl = partyId
-    ? `${typeof window !== "undefined" ? window.location.origin : ""}/party/join/${partyId}`
+    ? `${origin || ""}/party/join/${partyId}`
     : "Link will generate on copy or launch"
 
   const selectedEpisode = episodes.find((e) => e.id === selectedEpisodeId)

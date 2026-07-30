@@ -10,6 +10,8 @@ export async function GET() {
   }
 
   const encoder = new TextEncoder()
+  let unbind: (() => void) | undefined
+  let heartbeatInterval: NodeJS.Timeout | undefined
 
   const stream = new ReadableStream({
     start(controller) {
@@ -21,7 +23,7 @@ export async function GET() {
       controller.enqueue(encoder.encode(initialMessage))
 
       // Event listener for AppServerEvent
-      const unbind = eventBus.onEvent((event: AppServerEvent) => {
+      unbind = eventBus.onEvent((event: AppServerEvent) => {
         try {
           const payload = event.payload as { audience?: string[] } | undefined
           if (payload?.audience && Array.isArray(payload.audience)) {
@@ -37,19 +39,17 @@ export async function GET() {
       })
 
       // Send periodic heartbeat every 20 seconds to prevent connection timeout
-      const heartbeatInterval = setInterval(() => {
+      heartbeatInterval = setInterval(() => {
         try {
           controller.enqueue(encoder.encode(`event: ping\ndata: ${JSON.stringify({ time: Date.now() })}\n\n`))
         } catch {
           clearInterval(heartbeatInterval)
         }
       }, 20_000)
-
-      // Cleanup on stream close
-      return () => {
-        unbind()
-        clearInterval(heartbeatInterval)
-      }
+    },
+    cancel() {
+      if (unbind) unbind()
+      if (heartbeatInterval) clearInterval(heartbeatInterval)
     },
   })
 

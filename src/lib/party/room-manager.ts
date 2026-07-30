@@ -1,5 +1,10 @@
 import { eventBus } from "../event-bus"
 import type { PartyCommand, PartyMember, PartyRoomSnapshot, PartyState } from "./protocol"
+import {
+  persistRoomToConvex,
+  deleteRoomFromConvex,
+  loadAllRoomsFromConvex,
+} from "./party-convex-store"
 
 export type PartyRoom = {
   id: string
@@ -9,15 +14,64 @@ export type PartyRoom = {
   members: Map<string, PartyMember>
   pendingInvites: Set<string>
   lastSeenAt: Map<string, number>
+  bufferingTimers: Map<string, NodeJS.Timeout>
+}
+
+export const ROOM_LIMITS = {
+  MAX_ROOMS_PER_USER: 5,
+  MAX_ROOM_CAPACITY: 50,
+  MAX_TOTAL_ROOMS: 100,
+  MAX_INVITES_PER_ROOM: 50,
 }
 
 class PartyRoomManager {
   private rooms = new Map<string, PartyRoom>()
+  private isHydrated = false
 
   constructor() {
     // Background garbage collection every 5 minutes
     if (typeof window === "undefined") {
       setInterval(() => this.reapStaleRooms(), 5 * 60 * 1000)
+      // Hydrate from Convex database on server startup
+      void this.hydrateFromConvex()
+    }
+  }
+
+  private async hydrateFromConvex() {
+    if (this.isHydrated) return
+    try {
+      const storedRooms = await loadAllRoomsFromConvex()
+      for (const room of storedRooms) {
+        if (!this.rooms.has(room.id)) {
+          this.rooms.set(room.id, room)
+        }
+      }
+      this.isHydrated = true
+    } catch (err) {
+      console.error("[PartyRoomManager] Failed to hydrate from Convex:", err)
+    }
+  }
+
+  private syncToConvex(room: PartyRoom) {
+    void persistRoomToConvex(room)
+  }
+
+  private removeFromConvex(partyId: string) {
+    void deleteRoomFromConvex(partyId)
+  }
+
+  private clearAllBufferingTimers(room: PartyRoom) {
+    for (const timer of room.bufferingTimers.values()) {
+      clearTimeout(timer)
+    }
+    room.bufferingTimers.clear()
+  }
+
+  private clearBufferingTimer(room: PartyRoom, userId: string) {
+    const existing = room.bufferingTimers.get(userId)
+    if (existing) {
+      clearTimeout(existing)
+      room.bufferingTimers.delete(userId)
     }
   }
 
@@ -32,7 +86,9 @@ class PartyRoomManager {
       }
 
       if (room.members.size === 0 || now - newestActivity > MAX_INACTIVE_MS) {
+        this.clearAllBufferingTimers(room)
         this.rooms.delete(roomId)
+        this.removeFromConvex(roomId)
         eventBus.emitEvent({
           type: "party:ended",
           payload: {
@@ -45,6 +101,9 @@ class PartyRoomManager {
   }
 
   private generateId(): string {
+    if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+      return `party_${crypto.randomUUID()}`
+    }
     return `party_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`
   }
 
@@ -53,7 +112,22 @@ class PartyRoomManager {
     ownerUsername: string,
     ownerAvatarUrl?: string,
     itemId: string | null = null
-  ): PartyRoomSnapshot {
+  ): PartyRoomSnapshot | null {
+    // Capacity checks
+    if (this.rooms.size >= ROOM_LIMITS.MAX_TOTAL_ROOMS) {
+      console.warn("[PartyRoomManager] Create room rejected: MAX_TOTAL_ROOMS reached")
+      return null
+    }
+
+    let userOwnedCount = 0
+    for (const r of this.rooms.values()) {
+      if (r.ownerId === ownerId) userOwnedCount++
+    }
+    if (userOwnedCount >= ROOM_LIMITS.MAX_ROOMS_PER_USER) {
+      console.warn(`[PartyRoomManager] Create room rejected: user ${ownerId} hit MAX_ROOMS_PER_USER`)
+      return null
+    }
+
     const partyId = this.generateId()
     const now = Date.now()
 
@@ -86,10 +160,11 @@ class PartyRoomManager {
       members: new Map([[ownerId, ownerMember]]),
       pendingInvites: new Set(),
       lastSeenAt: new Map([[ownerId, now]]),
+      bufferingTimers: new Map(),
     }
 
-    this.rooms.get(partyId) // check
     this.rooms.set(partyId, room)
+    this.syncToConvex(room)
 
     return this.getSnapshot(partyId, ownerId)!
   }
@@ -98,16 +173,20 @@ class PartyRoomManager {
     return this.rooms.get(partyId)
   }
 
+  public touchPresence(partyId: string, userId: string): void {
+    const room = this.rooms.get(partyId)
+    if (!room) return
+    const member = room.members.get(userId)
+    if (member) {
+      const now = Date.now()
+      member.lastSeenAt = now
+      room.lastSeenAt.set(userId, now)
+    }
+  }
+
   public getSnapshot(partyId: string, currentUserId: string): PartyRoomSnapshot | null {
     const room = this.rooms.get(partyId)
     if (!room) return null
-
-    // Update presence for requesting user if member
-    const member = room.members.get(currentUserId)
-    if (member) {
-      member.lastSeenAt = Date.now()
-      room.lastSeenAt.set(currentUserId, member.lastSeenAt)
-    }
 
     const membersArray = Array.from(room.members.values()).sort(
       (a, b) => a.joinedAt - b.joinedAt
@@ -134,6 +213,11 @@ class PartyRoomManager {
   ): PartyRoomSnapshot | null {
     const room = this.rooms.get(partyId)
     if (!room) return null
+
+    if (room.members.size >= ROOM_LIMITS.MAX_ROOM_CAPACITY && !room.members.has(userId)) {
+      console.warn(`[PartyRoomManager] Join room rejected: MAX_ROOM_CAPACITY reached for ${partyId}`)
+      return null
+    }
 
     const now = Date.now()
     const member: PartyMember = {
@@ -165,6 +249,7 @@ class PartyRoomManager {
       },
     })
 
+    this.syncToConvex(room)
     return this.getSnapshot(partyId, userId)
   }
 
@@ -172,11 +257,14 @@ class PartyRoomManager {
     const room = this.rooms.get(partyId)
     if (!room) return { roomEnded: false }
 
+    this.clearBufferingTimer(room, userId)
     room.members.delete(userId)
     room.lastSeenAt.delete(userId)
 
     if (room.members.size === 0) {
+      this.clearAllBufferingTimers(room)
       this.rooms.delete(partyId)
+      this.removeFromConvex(partyId)
       return { roomEnded: true }
     }
 
@@ -206,6 +294,7 @@ class PartyRoomManager {
       },
     })
 
+    this.syncToConvex(room)
     return { roomEnded: false, newOwnerId }
   }
 
@@ -217,6 +306,11 @@ class PartyRoomManager {
   ): boolean {
     const room = this.rooms.get(partyId)
     if (!room) return false
+
+    if (room.pendingInvites.size >= ROOM_LIMITS.MAX_INVITES_PER_ROOM) {
+      console.warn(`[PartyRoomManager] Invite users rejected: MAX_INVITES_PER_ROOM reached for ${partyId}`)
+      return false
+    }
 
     for (const id of userIds) {
       if (!room.members.has(id)) {
@@ -236,6 +330,7 @@ class PartyRoomManager {
       },
     })
 
+    this.syncToConvex(room)
     return true
   }
 
@@ -244,23 +339,15 @@ class PartyRoomManager {
     if (!room || room.ownerId !== ownerId) return false
 
     const audience = Array.from(room.members.keys())
+    this.clearAllBufferingTimers(room)
     this.rooms.delete(partyId)
+    this.removeFromConvex(partyId)
 
+    // party:ended is the single canonical event for room destruction
     eventBus.emitEvent({
       type: "party:ended",
       payload: {
         partyId,
-        audience,
-      },
-    })
-
-    eventBus.emitEvent({
-      type: "party:membership",
-      payload: {
-        partyId,
-        action: "ended",
-        ownerId,
-        members: [],
         audience,
       },
     })
@@ -320,6 +407,7 @@ class PartyRoomManager {
       },
     })
 
+    this.syncToConvex(room)
     return newState
   }
 
@@ -361,6 +449,7 @@ class PartyRoomManager {
       },
     })
 
+    this.syncToConvex(room)
     return newState
   }
 
@@ -378,7 +467,8 @@ class PartyRoomManager {
     member.lastSeenAt = Date.now()
     room.lastSeenAt.set(userId, member.lastSeenAt)
 
-    // Buffering timeout: auto-evacuate member who buffers >30s
+    // Manage buffering eviction timer cleanly
+    this.clearBufferingTimer(room, userId)
     if (buffering) {
       this.evictStuckBuffering(partyId, userId)
     }
@@ -406,7 +496,7 @@ class PartyRoomManager {
         reason: "buffer-pause",
       }
     } else if (!isAnyBuffering && !room.state.playing && room.state.reason === "buffer-pause") {
-      // Resume everyone when buffering clears (with cooldown — handled by caller debounce)
+      // Resume everyone when buffering clears
       newState = {
         ...room.state,
         playing: true,
@@ -429,6 +519,7 @@ class PartyRoomManager {
       })
     }
 
+    this.syncToConvex(room)
     return room.state
   }
 
@@ -436,10 +527,10 @@ class PartyRoomManager {
     const room = this.rooms.get(partyId)
     if (!room) return
 
-    // Schedule an eviction check 30s in the future
-    setTimeout(() => {
+    const timer = setTimeout(() => {
       const stillRoom = this.rooms.get(partyId)
       if (!stillRoom) return
+      stillRoom.bufferingTimers.delete(userId)
       const stillMember = stillRoom.members.get(userId)
       if (!stillMember || !stillMember.buffering) return
 
@@ -466,7 +557,9 @@ class PartyRoomManager {
           },
         })
       } else if (stillRoom.members.size === 0) {
+        this.clearAllBufferingTimers(stillRoom)
         this.rooms.delete(partyId)
+        this.removeFromConvex(partyId)
         eventBus.emitEvent({
           type: "party:ended",
           payload: { partyId, audience: [userId] },
@@ -507,7 +600,11 @@ class PartyRoomManager {
           })
         }
       }
+
+      this.syncToConvex(stillRoom)
     }, 30_000)
+
+    room.bufferingTimers.set(userId, timer)
   }
 
   public getUserParties(userId: string): {

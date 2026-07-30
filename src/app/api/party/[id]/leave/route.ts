@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import { getSession } from "@/lib/auth"
 import { roomManager } from "@/lib/party/room-manager"
+import { apiError } from "@/lib/api-response"
 
 export const dynamic = "force-dynamic"
 
@@ -11,7 +12,7 @@ export async function POST(
 ) {
   const session = await getSession()
   if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+    return apiError("Unauthorized", 401, "UNAUTHORIZED")
   }
 
   const { id } = await params
@@ -20,6 +21,6 @@ export async function POST(
     return NextResponse.json({ success: true, ...result })
   } catch (err) {
     console.error("[Party API] Error leaving room:", err)
-    return NextResponse.json({ error: "Internal Server Error" }, { status: 500 })
+    return apiError("Failed to leave party room", 500, "LEAVE_ROOM_FAILED", String(err))
   }
 }
