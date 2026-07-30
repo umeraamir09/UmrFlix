@@ -1,0 +1,439 @@
+import { eventBus } from "../event-bus"
+import type { PartyCommand, PartyMember, PartyRoomSnapshot, PartyState } from "./protocol"
+
+export type PartyRoom = {
+  id: string
+  ownerId: string
+  createdAt: number
+  state: PartyState | null
+  members: Map<string, PartyMember>
+  pendingInvites: Set<string>
+  lastSeenAt: Map<string, number>
+}
+
+class PartyRoomManager {
+  private rooms = new Map<string, PartyRoom>()
+
+  constructor() {
+    // Background garbage collection every 5 minutes
+    if (typeof window === "undefined") {
+      setInterval(() => this.reapStaleRooms(), 5 * 60 * 1000)
+    }
+  }
+
+  private reapStaleRooms() {
+    const now = Date.now()
+    const MAX_INACTIVE_MS = 24 * 60 * 60 * 1000 // 24 hours
+
+    for (const [roomId, room] of this.rooms.entries()) {
+      let newestActivity = room.createdAt
+      for (const timestamp of room.lastSeenAt.values()) {
+        if (timestamp > newestActivity) newestActivity = timestamp
+      }
+
+      if (room.members.size === 0 || now - newestActivity > MAX_INACTIVE_MS) {
+        this.rooms.delete(roomId)
+        eventBus.emitEvent({
+          type: "party:ended",
+          payload: {
+            partyId: roomId,
+            audience: Array.from(room.members.keys()),
+          },
+        })
+      }
+    }
+  }
+
+  private generateId(): string {
+    return `party_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`
+  }
+
+  public createRoom(
+    ownerId: string,
+    ownerUsername: string,
+    ownerAvatarUrl?: string,
+    itemId: string | null = null
+  ): PartyRoomSnapshot {
+    const partyId = this.generateId()
+    const now = Date.now()
+
+    const ownerMember: PartyMember = {
+      userId: ownerId,
+      username: ownerUsername,
+      avatarUrl: ownerAvatarUrl,
+      joinedAt: now,
+      buffering: false,
+      lastSeenAt: now,
+    }
+
+    const initialState: PartyState | null = itemId
+      ? {
+          itemId,
+          playing: true,
+          positionSec: 0,
+          updatedAt: now,
+          playbackRate: 1.0,
+          version: 1,
+          reason: "item",
+        }
+      : null
+
+    const room: PartyRoom = {
+      id: partyId,
+      ownerId,
+      createdAt: now,
+      state: initialState,
+      members: new Map([[ownerId, ownerMember]]),
+      pendingInvites: new Set(),
+      lastSeenAt: new Map([[ownerId, now]]),
+    }
+
+    this.rooms.get(partyId) // check
+    this.rooms.set(partyId, room)
+
+    return this.getSnapshot(partyId, ownerId)!
+  }
+
+  public getRoom(partyId: string): PartyRoom | undefined {
+    return this.rooms.get(partyId)
+  }
+
+  public getSnapshot(partyId: string, currentUserId: string): PartyRoomSnapshot | null {
+    const room = this.rooms.get(partyId)
+    if (!room) return null
+
+    // Update presence for requesting user if member
+    const member = room.members.get(currentUserId)
+    if (member) {
+      member.lastSeenAt = Date.now()
+      room.lastSeenAt.set(currentUserId, member.lastSeenAt)
+    }
+
+    const membersArray = Array.from(room.members.values()).sort(
+      (a, b) => a.joinedAt - b.joinedAt
+    )
+
+    return {
+      partyId: room.id,
+      ownerId: room.ownerId,
+      isOwner: room.ownerId === currentUserId,
+      createdAt: room.createdAt,
+      state: room.state,
+      members: membersArray,
+      pendingInvites: Array.from(room.pendingInvites),
+      serverNow: Date.now(),
+    }
+  }
+
+  public joinRoom(
+    partyId: string,
+    userId: string,
+    username: string,
+    avatarUrl?: string
+  ): PartyRoomSnapshot | null {
+    const room = this.rooms.get(partyId)
+    if (!room) return null
+
+    const now = Date.now()
+    const member: PartyMember = {
+      userId,
+      username,
+      avatarUrl,
+      joinedAt: room.members.get(userId)?.joinedAt ?? now,
+      buffering: false,
+      lastSeenAt: now,
+    }
+
+    room.members.set(userId, member)
+    room.pendingInvites.delete(userId)
+    room.lastSeenAt.set(userId, now)
+
+    const audience = Array.from(room.members.keys())
+    const membersArray = Array.from(room.members.values()).sort(
+      (a, b) => a.joinedAt - b.joinedAt
+    )
+
+    eventBus.emitEvent({
+      type: "party:membership",
+      payload: {
+        partyId,
+        action: "join",
+        members: membersArray,
+        audience,
+      },
+    })
+
+    return this.getSnapshot(partyId, userId)
+  }
+
+  public leaveRoom(partyId: string, userId: string): { roomEnded: boolean; newOwnerId?: string } {
+    const room = this.rooms.get(partyId)
+    if (!room) return { roomEnded: false }
+
+    room.members.delete(userId)
+    room.lastSeenAt.delete(userId)
+
+    if (room.members.size === 0) {
+      this.rooms.delete(partyId)
+      return { roomEnded: true }
+    }
+
+    let newOwnerId: string | undefined = undefined
+    if (room.ownerId === userId) {
+      // Transfer ownership to oldest member
+      const remainingMembers = Array.from(room.members.values()).sort(
+        (a, b) => a.joinedAt - b.joinedAt
+      )
+      newOwnerId = remainingMembers[0].userId
+      room.ownerId = newOwnerId
+    }
+
+    const audience = Array.from(room.members.keys())
+    const membersArray = Array.from(room.members.values()).sort(
+      (a, b) => a.joinedAt - b.joinedAt
+    )
+
+    eventBus.emitEvent({
+      type: "party:membership",
+      payload: {
+        partyId,
+        action: newOwnerId ? "owner-changed" : "leave",
+        members: membersArray,
+        audience,
+      },
+    })
+
+    return { roomEnded: false, newOwnerId }
+  }
+
+  public inviteUsers(
+    partyId: string,
+    inviterId: string,
+    inviterName: string,
+    userIds: string[]
+  ): boolean {
+    const room = this.rooms.get(partyId)
+    if (!room) return false
+
+    for (const id of userIds) {
+      if (!room.members.has(id)) {
+        room.pendingInvites.add(id)
+      }
+    }
+
+    const audience = Array.from(new Set([...userIds, ...room.members.keys()]))
+
+    eventBus.emitEvent({
+      type: "party:invited",
+      payload: {
+        partyId,
+        inviterId,
+        inviterName,
+        audience,
+      },
+    })
+
+    return true
+  }
+
+  public endRoom(partyId: string, ownerId: string): boolean {
+    const room = this.rooms.get(partyId)
+    if (!room || room.ownerId !== ownerId) return false
+
+    const audience = Array.from(room.members.keys())
+    this.rooms.delete(partyId)
+
+    eventBus.emitEvent({
+      type: "party:ended",
+      payload: {
+        partyId,
+        audience,
+      },
+    })
+
+    return true
+  }
+
+  public applyCommand(partyId: string, userId: string, cmd: PartyCommand): PartyState | null {
+    const room = this.rooms.get(partyId)
+    if (!room || !room.members.has(userId)) return null
+
+    // Check if anyone is buffering before allowing manual play command
+    if (cmd.type === "play") {
+      const bufferingMember = Array.from(room.members.values()).find((m) => m.buffering)
+      if (bufferingMember) {
+        // Reject play command while a member is buffering
+        return room.state
+      }
+    }
+
+    const now = Date.now()
+    const currentPos = room.state
+      ? room.state.playing
+        ? room.state.positionSec + ((now - room.state.updatedAt) / 1000) * room.state.playbackRate
+        : room.state.positionSec
+      : 0
+
+    const newPos = cmd.positionSec ?? currentPos
+    const newRate = cmd.playbackRate ?? room.state?.playbackRate ?? 1.0
+    const isPlaying = cmd.type === "play" ? true : cmd.type === "pause" ? false : room.state?.playing ?? true
+
+    const newState: PartyState = {
+      itemId: room.state?.itemId ?? null,
+      playing: isPlaying,
+      positionSec: newPos,
+      updatedAt: now,
+      playbackRate: newRate,
+      version: (room.state?.version ?? 0) + 1,
+      senderClientId: cmd.clientId,
+      reason: "command",
+    }
+
+    room.state = newState
+
+    const audience = Array.from(room.members.keys())
+    eventBus.emitEvent({
+      type: "party:state",
+      payload: {
+        partyId,
+        state: newState,
+        audience,
+      },
+    })
+
+    return newState
+  }
+
+  public applyItem(partyId: string, ownerId: string, itemId: string): PartyState | null {
+    const room = this.rooms.get(partyId)
+    if (!room || room.ownerId !== ownerId) return null
+
+    const now = Date.now()
+    const newState: PartyState = {
+      itemId,
+      playing: true,
+      positionSec: 0,
+      updatedAt: now,
+      playbackRate: 1.0,
+      version: (room.state?.version ?? 0) + 1,
+      reason: "item",
+    }
+
+    room.state = newState
+
+    const audience = Array.from(room.members.keys())
+
+    eventBus.emitEvent({
+      type: "party:item",
+      payload: {
+        partyId,
+        itemId,
+        state: newState,
+        audience,
+      },
+    })
+
+    eventBus.emitEvent({
+      type: "party:state",
+      payload: {
+        partyId,
+        state: newState,
+        audience,
+      },
+    })
+
+    return newState
+  }
+
+  public setBuffering(
+    partyId: string,
+    userId: string,
+    buffering: boolean,
+    positionSec?: number
+  ): PartyState | null {
+    const room = this.rooms.get(partyId)
+    if (!room || !room.members.has(userId)) return null
+
+    const member = room.members.get(userId)!
+    member.buffering = buffering
+
+    if (!room.state) return null
+
+    const now = Date.now()
+    const isAnyBuffering = Array.from(room.members.values()).some((m) => m.buffering)
+
+    let newState: PartyState | null = null
+
+    if (isAnyBuffering && room.state.playing) {
+      // Pause everyone on buffer start
+      const currentPos = positionSec ?? (
+        room.state.playing
+          ? room.state.positionSec + ((now - room.state.updatedAt) / 1000) * room.state.playbackRate
+          : room.state.positionSec
+      )
+
+      newState = {
+        ...room.state,
+        playing: false,
+        positionSec: currentPos,
+        updatedAt: now,
+        version: room.state.version + 1,
+        reason: "buffer-pause",
+      }
+    } else if (!isAnyBuffering && !room.state.playing && room.state.reason === "buffer-pause") {
+      // Resume everyone when buffering clears
+      newState = {
+        ...room.state,
+        playing: true,
+        updatedAt: now,
+        version: room.state.version + 1,
+        reason: "buffer-resume",
+      }
+    }
+
+    if (newState) {
+      room.state = newState
+      const audience = Array.from(room.members.keys())
+      eventBus.emitEvent({
+        type: "party:state",
+        payload: {
+          partyId,
+          state: newState,
+          audience,
+        },
+      })
+    }
+
+    return room.state
+  }
+
+  public getUserParties(userId: string): {
+    active: PartyRoomSnapshot[]
+    invites: PartyRoomSnapshot[]
+  } {
+    const active: PartyRoomSnapshot[] = []
+    const invites: PartyRoomSnapshot[] = []
+
+    for (const room of this.rooms.values()) {
+      if (room.members.has(userId)) {
+        const snap = this.getSnapshot(room.id, userId)
+        if (snap) active.push(snap)
+      } else if (room.pendingInvites.has(userId)) {
+        const snap = this.getSnapshot(room.id, userId)
+        if (snap) invites.push(snap)
+      }
+    }
+
+    return { active, invites }
+  }
+}
+
+const globalForPartyRoomManager = globalThis as unknown as {
+  partyRoomManager: PartyRoomManager | undefined
+}
+
+export const roomManager = globalForPartyRoomManager.partyRoomManager ?? new PartyRoomManager()
+
+if (process.env.NODE_ENV !== "production") {
+  globalForPartyRoomManager.partyRoomManager = roomManager
+}

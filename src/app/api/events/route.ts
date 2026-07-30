@@ -23,6 +23,12 @@ export async function GET() {
       // Event listener for AppServerEvent
       const unbind = eventBus.onEvent((event: AppServerEvent) => {
         try {
+          const payload = event.payload as { audience?: string[] } | undefined
+          if (payload?.audience && Array.isArray(payload.audience)) {
+            if (!payload.audience.includes(session.userId)) {
+              return // Skip event for user outside of target audience
+            }
+          }
           const sseChunk = `event: ${event.type}\ndata: ${JSON.stringify(event.payload)}\n\n`
           controller.enqueue(encoder.encode(sseChunk))
         } catch {
