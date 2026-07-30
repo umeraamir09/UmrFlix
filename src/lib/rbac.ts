@@ -3,7 +3,7 @@ import { UserSession } from "./auth"
 export const DEFAULT_KIDS_PARENTAL_RATING = "PG-13"
 export const DAILY_REQUEST_LIMIT = 5
 
-export function isAdminUser(session: UserSession | null): boolean {
+export function isAdminUser(session: UserSession | null): session is UserSession {
   if (!session) return false
   return session.isAdmin === true
 }

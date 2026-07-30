@@ -219,8 +219,17 @@ export function UserProfileMenu() {
             </Link>
           </div>
 
-          {/* Group 2: Watchlist & Library / History */}
+          {/* Group 2: Requests, Watchlist & Library / History */}
           <div className="py-1 border-b border-border/80">
+            <Link
+              href="/requests"
+              onClick={() => setOpen(false)}
+              className="flex items-center gap-3.5 px-4 py-3 text-gray-200 hover:bg-surface-hover hover:text-white transition-colors font-medium"
+            >
+              <History className="size-4 text-accent" />
+              <span className="text-sm">My Requests</span>
+            </Link>
+
             <Link
               href="/my-list"
               onClick={() => setOpen(false)}
@@ -238,6 +247,17 @@ export function UserProfileMenu() {
               <History className="size-4 text-gray-400" />
               <span className="text-sm">My Library & History</span>
             </Link>
+
+            {user.isAdmin && (
+              <Link
+                href="/admin"
+                onClick={() => setOpen(false)}
+                className="flex items-center gap-3.5 px-4 py-3 text-amber-400 hover:bg-amber-500/10 transition-colors font-bold border-t border-border/40"
+              >
+                <ShieldCheck className="size-4 text-amber-400" />
+                <span className="text-sm">Admin Dashboard</span>
+              </Link>
+            )}
           </div>
 
           {/* Group 3: Notifications

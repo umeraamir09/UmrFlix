@@ -186,9 +186,11 @@ export function TvDetail({ params }: { params: Promise<{ id: string }> }) {
                   title={show.name}
                   year={show.first_air_date ? new Date(show.first_air_date).getFullYear() : undefined}
                   tvdbId={tvdbId}
+                  seasonsCount={show.seasons?.length || show.number_of_seasons}
                   availability={availability}
                   onStatusChange={refresh}
                 />
+
 
                 <BookmarkButton
                   itemId={availability?.jellyfinItemId || String(show.id)}

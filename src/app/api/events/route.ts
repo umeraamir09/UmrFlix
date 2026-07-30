@@ -1,0 +1,58 @@
+import { eventBus, AppServerEvent } from "@/lib/event-bus"
+import { getSession } from "@/lib/auth"
+
+export const dynamic = "force-dynamic"
+
+export async function GET() {
+  const session = await getSession()
+  if (!session) {
+    return new Response("Unauthorized", { status: 401 })
+  }
+
+  const encoder = new TextEncoder()
+
+  const stream = new ReadableStream({
+    start(controller) {
+      // Send initial connection handshake
+      const initialMessage = `event: connected\ndata: ${JSON.stringify({
+        status: "connected",
+        timestamp: new Date().toISOString(),
+      })}\n\n`
+      controller.enqueue(encoder.encode(initialMessage))
+
+      // Event listener for AppServerEvent
+      const unbind = eventBus.onEvent((event: AppServerEvent) => {
+        try {
+          const sseChunk = `event: ${event.type}\ndata: ${JSON.stringify(event.payload)}\n\n`
+          controller.enqueue(encoder.encode(sseChunk))
+        } catch {
+          /* Stream closed by client */
+        }
+      })
+
+      // Send periodic heartbeat every 20 seconds to prevent connection timeout
+      const heartbeatInterval = setInterval(() => {
+        try {
+          controller.enqueue(encoder.encode(`event: ping\ndata: ${JSON.stringify({ time: Date.now() })}\n\n`))
+        } catch {
+          clearInterval(heartbeatInterval)
+        }
+      }, 20_000)
+
+      // Cleanup on stream close
+      return () => {
+        unbind()
+        clearInterval(heartbeatInterval)
+      }
+    },
+  })
+
+  return new Response(stream, {
+    headers: {
+      "Content-Type": "text/event-stream; charset=utf-8",
+      "Cache-Control": "no-cache, no-transform",
+      Connection: "keep-alive",
+      "X-Accel-Buffering": "no",
+    },
+  })
+}

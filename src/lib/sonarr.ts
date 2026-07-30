@@ -74,6 +74,12 @@ export type SonarrRootFolder = {
   id: number
   path: string
   accessible: boolean
+  freeSpace?: number
+}
+
+export type SonarrTag = {
+  id: number
+  label: string
 }
 
 export function getSeries(): Promise<SonarrSeries[]> {
@@ -85,14 +91,22 @@ export function addSeries(payload: {
   title: string
   qualityProfileId: number
   rootFolderPath: string
-  monitored: boolean
-  seasonFolder: boolean
-  addOptions: { searchForMissingEpisodes: boolean }
-  seasons: { seasonNumber: number; monitored: boolean }[]
+  monitored?: boolean
+  seriesType?: string
+  tags?: number[]
+  seasonFolder?: boolean
+  addOptions?: { searchForMissingEpisodes?: boolean }
+  seasons?: { seasonNumber: number; monitored: boolean }[]
 }): Promise<SonarrSeries> {
   return sonarrFetch("/series", {
     method: "POST",
-    body: JSON.stringify(payload),
+    body: JSON.stringify({
+      ...payload,
+      monitored: payload.monitored ?? true,
+      seasonFolder: payload.seasonFolder ?? true,
+      seriesType: payload.seriesType ?? "standard",
+      addOptions: { searchForMissingEpisodes: true, ...payload.addOptions },
+    }),
   })
 }
 
@@ -111,3 +125,20 @@ export function getQualityProfiles(): Promise<SonarrQualityProfile[]> {
 export function getRootFolders(): Promise<SonarrRootFolder[]> {
   return sonarrFetch("/rootfolder")
 }
+
+export function getTags(): Promise<SonarrTag[]> {
+  return sonarrFetch("/tag")
+}
+
+export type SonarrDiskSpaceItem = {
+  path: string
+  label?: string
+  freeSpace: number
+  totalSpace: number
+}
+
+export function getDiskSpace(): Promise<SonarrDiskSpaceItem[]> {
+  return sonarrFetch("/diskspace")
+}
+
+

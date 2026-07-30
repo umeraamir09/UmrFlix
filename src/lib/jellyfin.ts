@@ -642,3 +642,61 @@ export async function toggleFavoriteItem(
   return Boolean(res && res.ok)
 }
 
+// ── Active Sessions & Stream Monitoring ──
+
+export type JellyfinSession = {
+  Id: string
+  UserId?: string
+  UserName?: string
+  Client?: string
+  DeviceName?: string
+  NowPlayingItem?: {
+    Id: string
+    Name: string
+    SeriesName?: string
+    Type: string
+    RunTimeTicks?: number
+    MediaType?: string
+  }
+  PlayState?: {
+    PositionTicks?: number
+    IsPaused?: boolean
+  }
+  TranscodingInfo?: {
+    AudioCodec?: string
+    VideoCodec?: string
+    IsVideoDirect?: boolean
+    IsAudioDirect?: boolean
+    Bitrate?: number
+    TranscodeReason?: string
+  }
+}
+
+export async function getActiveSessions(): Promise<JellyfinSession[]> {
+  try {
+    const { token } = await authenticate()
+    const res = await jellyfinFetch(`${BASE}/Sessions`, {
+      headers: getAuthHeaders(token),
+    })
+    if (!res.ok) return []
+    const data: JellyfinSession[] = await res.json()
+    return data.filter((s) => s.NowPlayingItem != null)
+  } catch {
+    return []
+  }
+}
+
+export async function stopSession(sessionId: string): Promise<boolean> {
+  try {
+    const { token } = await authenticate()
+    const res = await jellyfinFetch(`${BASE}/Sessions/${sessionId}/Stop`, {
+      method: "POST",
+      headers: getAuthHeaders(token),
+    })
+    return res.ok
+  } catch {
+    return false
+  }
+}
+
+
