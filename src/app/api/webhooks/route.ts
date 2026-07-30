@@ -30,19 +30,15 @@ export async function POST(req: NextRequest) {
       eventBus.emitEvent({
         type: mappedType,
         payload: {
-          eventType,
-          movie: payload.movie,
-          series: payload.series,
-          episodes: payload.episodes,
-          release: payload.release,
-          timestamp: new Date().toISOString(),
+          ...(payload.movie ? { movie: { title: payload.movie.title } } : {}),
+          ...(payload.series ? { series: { title: payload.series.title } } : {}),
         },
       })
     } else {
       // General fall-through event broadcast
       eventBus.emitEvent({
         type: "media:downloaded",
-        payload: { eventType, ...payload },
+        payload: {},
       })
     }
 

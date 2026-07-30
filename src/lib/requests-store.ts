@@ -110,7 +110,7 @@ function ensureFileExists(): StoreData {
     try {
       fs.mkdirSync(DATA_DIR, { recursive: true })
     } catch {
-      /* read-only filesystem on Vercel */
+      console.warn("[RequestsStore] Cannot create data directory (read-only filesystem)")
     }
   }
   if (!fs.existsSync(FILE_PATH)) {
@@ -118,7 +118,7 @@ function ensureFileExists(): StoreData {
     try {
       fs.writeFileSync(FILE_PATH, JSON.stringify(initial, null, 2), "utf-8")
     } catch {
-      /* read-only filesystem */
+      console.warn("[RequestsStore] Cannot write initial file (read-only filesystem)")
     }
     return initial
   }
@@ -126,6 +126,7 @@ function ensureFileExists(): StoreData {
     const content = fs.readFileSync(FILE_PATH, "utf-8")
     return JSON.parse(content) as StoreData
   } catch {
+    console.warn("[RequestsStore] Failed to read or parse requests file, returning empty store")
     return { requests: [], notifications: [] }
   }
 }
@@ -137,7 +138,7 @@ function saveStore(data: StoreData) {
     }
     fs.writeFileSync(FILE_PATH, JSON.stringify(data, null, 2), "utf-8")
   } catch {
-    /* read-only filesystem on Vercel */
+    console.warn("[RequestsStore] Cannot save store (read-only filesystem)")
   }
 }
 
@@ -251,7 +252,7 @@ export async function createRequest(payload: {
   requestedBy: { userId: string; username: string }
   autoApprove?: boolean
 }): Promise<RequestItem> {
-  const id = `req_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`
+  const id = `req_${Date.now()}_${crypto.randomUUID?.() ?? Math.random().toString(36).substring(2, 15)}`
   const status: RequestStatus = payload.autoApprove ? "approved" : "pending"
 
   const newRequest: RequestItem = {
@@ -333,10 +334,10 @@ export async function createRequest(payload: {
         rootFolderPath: payload.rootFolderPath,
         seasonsJson: payload.seasons ? JSON.stringify(payload.seasons) : undefined,
       })
+      return newRequest
     } catch (err) {
-      if (process.env.NODE_ENV === "development") {
-        console.warn("[Convex] createRequest mutation failed, using local store:", err)
-      }
+      console.error("[Convex] createRequest mutation failed:", err)
+      throw new Error("Failed to save request to database")
     }
   } else {
     const store = ensureFileExists()
@@ -396,7 +397,7 @@ export async function approveRequest(id: string, adminUsername: string): Promise
   req.approvedAt = approvedAt
   req.approvedBy = adminUsername
 
-  const notifId = `notif_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`
+  const notifId = `notif_${Date.now()}_${crypto.randomUUID?.()?.slice(0, 8) ?? Math.random().toString(36).substring(2, 9)}`
 
   const notifPayload = {
     id: notifId,
@@ -427,10 +428,10 @@ export async function approveRequest(id: string, adminUsername: string): Promise
         message: notifPayload.message,
         type: "approved",
       })
+      return req
     } catch (err) {
-      if (process.env.NODE_ENV === "development") {
-        console.warn("[Convex] approveRequest mutation failed, falling back to local store:", err)
-      }
+      console.error("[Convex] approveRequest mutation failed:", err)
+      throw new Error("Failed to update request status in database")
     }
   } else {
     const store = ensureFileExists()
@@ -461,7 +462,7 @@ export async function denyRequest(id: string, adminUsername: string, reason?: st
   req.deniedBy = adminUsername
   req.denialReason = denialReason
 
-  const notifId = `notif_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`
+  const notifId = `notif_${Date.now()}_${crypto.randomUUID?.()?.slice(0, 8) ?? Math.random().toString(36).substring(2, 9)}`
   const message = `Your request for "${req.title}" was denied by ${adminUsername}.${reason ? ` Reason: ${reason}` : ""}`
 
   const notifPayload = {
@@ -494,10 +495,10 @@ export async function denyRequest(id: string, adminUsername: string, reason?: st
         message,
         type: "denied",
       })
+      return req
     } catch (err) {
-      if (process.env.NODE_ENV === "development") {
-        console.warn("[Convex] denyRequest mutation failed, using local store:", err)
-      }
+      console.error("[Convex] denyRequest mutation failed:", err)
+      throw new Error("Failed to update request status in database")
     }
   } else {
     const store = ensureFileExists()

@@ -101,10 +101,10 @@ export function addSeries(payload: {
   return sonarrFetch("/series", {
     method: "POST",
     body: JSON.stringify({
-      monitored: true,
-      seasonFolder: true,
-      seriesType: "standard",
       ...payload,
+      monitored: payload.monitored ?? true,
+      seasonFolder: payload.seasonFolder ?? true,
+      seriesType: payload.seriesType ?? "standard",
       addOptions: { searchForMissingEpisodes: true, ...payload.addOptions },
     }),
   })

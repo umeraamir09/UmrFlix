@@ -54,7 +54,7 @@ export default function MyRequestsPage() {
         setRequests(data || [])
       }
     } catch {
-      /* silent error */
+      console.error("[RequestsPage] Failed to fetch user requests")
     } finally {
       setLoading(false)
     }

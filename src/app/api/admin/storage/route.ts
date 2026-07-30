@@ -81,7 +81,7 @@ export async function GET() {
     // Fallback if Radarr/Sonarr diskspace is completely unavailable
     if (qbitFreeSpace && totalCapacity === 0) {
       totalFree = qbitFreeSpace
-      totalCapacity = qbitFreeSpace * 2
+      totalCapacity = 0
     }
 
     const usedBytes = Math.max(0, totalCapacity - totalFree)
@@ -96,16 +96,6 @@ export async function GET() {
     })
   } catch (e) {
     const message = e instanceof Error ? e.message : "Failed to fetch storage info"
-    return NextResponse.json(
-      {
-        totalFreeBytes: 0,
-        totalCapacityBytes: 0,
-        usedBytes: 0,
-        usedPercentage: 0,
-        disks: [],
-        error: message,
-      },
-      { status: 200 }
-    )
+    return NextResponse.json({ error: message }, { status: 500 })
   }
 }

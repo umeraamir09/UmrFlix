@@ -91,9 +91,9 @@ export function addMovie(payload: {
   return radarrFetch("/movie", {
     method: "POST",
     body: JSON.stringify({
-      monitored: true,
-      minimumAvailability: "announced",
       ...payload,
+      monitored: payload.monitored ?? true,
+      minimumAvailability: payload.minimumAvailability ?? "announced",
       addOptions: { searchForMovie: true, ...payload.addOptions },
     }),
   })

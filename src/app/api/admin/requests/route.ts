@@ -34,9 +34,9 @@ export async function PATCH(request: NextRequest) {
 
     let updated
     if (action === "approve") {
-      updated = await approveRequest(requestId, session!.username)
+      updated = await approveRequest(requestId, session.username)
     } else if (action === "deny") {
-      updated = await denyRequest(requestId, session!.username, reason)
+      updated = await denyRequest(requestId, session.username, reason)
     } else {
       return NextResponse.json({ error: "Invalid action. Must be approve or deny." }, { status: 400 })
     }

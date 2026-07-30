@@ -15,25 +15,7 @@ import {
   Filter,
 } from "lucide-react"
 
-type RequestItem = {
-  id: string
-  tmdbId: number
-  tvdbId?: number
-  title: string
-  mediaType: "movie" | "tv"
-  year?: number
-  requestedBy: {
-    userId: string
-    username: string
-  }
-  requestedAt: string
-  status: "pending" | "approved" | "denied"
-  qualityProfileId: number
-  rootFolderPath: string
-  denialReason?: string
-  approvedBy?: string
-  deniedBy?: string
-}
+import type { RequestItem } from "@/lib/requests-store"
 
 type TabType = "all" | "pending" | "approved" | "denied"
 
@@ -56,7 +38,7 @@ export default function AdminRequestsPage() {
         setRequests(data || [])
       }
     } catch {
-      /* silent */
+      console.error("[AdminRequests] Failed to fetch admin requests")
     } finally {
       setLoading(false)
     }

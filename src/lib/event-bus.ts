@@ -1,12 +1,29 @@
 import { EventEmitter } from "events"
+import type { RequestItem, UserNotification } from "./requests-store"
+
+type MediaGrabbedPayload = {
+  movie?: { title: string }
+  series?: { title: string }
+  torrentHash?: string
+}
+
+type MediaDownloadedPayload = {
+  movie?: { title: string }
+  series?: { title: string }
+}
+
+type MediaRenamedPayload = {
+  movie?: { title: string }
+  series?: { title: string }
+}
 
 export type AppServerEvent =
-  | { type: "request:created"; payload: Record<string, unknown> }
-  | { type: "request:updated"; payload: Record<string, unknown> }
-  | { type: "notification:created"; payload: Record<string, unknown> }
-  | { type: "media:grabbed"; payload: Record<string, unknown> }
-  | { type: "media:downloaded"; payload: Record<string, unknown> }
-  | { type: "media:renamed"; payload: Record<string, unknown> }
+  | { type: "request:created"; payload: RequestItem }
+  | { type: "request:updated"; payload: RequestItem }
+  | { type: "notification:created"; payload: UserNotification }
+  | { type: "media:grabbed"; payload: MediaGrabbedPayload }
+  | { type: "media:downloaded"; payload: MediaDownloadedPayload }
+  | { type: "media:renamed"; payload: MediaRenamedPayload }
 
 class AppEventBus extends EventEmitter {
   constructor() {

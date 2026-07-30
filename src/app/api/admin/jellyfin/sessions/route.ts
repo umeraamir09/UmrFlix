@@ -14,7 +14,7 @@ export async function GET() {
     return NextResponse.json({ sessions })
   } catch (e) {
     const message = e instanceof Error ? e.message : "Failed to fetch active Jellyfin sessions"
-    return NextResponse.json({ error: message, sessions: [] }, { status: 200 })
+    return NextResponse.json({ error: message, sessions: [] }, { status: 500 })
   }
 }
 

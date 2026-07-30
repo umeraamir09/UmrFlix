@@ -1,8 +1,14 @@
 import { eventBus, AppServerEvent } from "@/lib/event-bus"
+import { getSession } from "@/lib/auth"
 
 export const dynamic = "force-dynamic"
 
 export async function GET() {
+  const session = await getSession()
+  if (!session) {
+    return new Response("Unauthorized", { status: 401 })
+  }
+
   const encoder = new TextEncoder()
 
   const stream = new ReadableStream({
@@ -20,7 +26,7 @@ export async function GET() {
           const sseChunk = `event: ${event.type}\ndata: ${JSON.stringify(event.payload)}\n\n`
           controller.enqueue(encoder.encode(sseChunk))
         } catch {
-          /* Stream closed */
+          /* Stream closed by client */
         }
       })
 

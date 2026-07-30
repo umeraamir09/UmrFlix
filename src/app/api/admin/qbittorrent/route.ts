@@ -67,7 +67,7 @@ export async function GET() {
     return NextResponse.json({ torrents: fallbackTorrents, transferInfo })
   } catch (e) {
     const message = e instanceof Error ? e.message : "Failed to fetch qBittorrent status"
-    return NextResponse.json({ error: message, torrents: [], transferInfo: null }, { status: 200 })
+    return NextResponse.json({ error: message, torrents: [], transferInfo: null }, { status: 500 })
   }
 }
 

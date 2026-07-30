@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from "react"
 import Link from "next/link"
 import { Bell, Check, CheckCheck, Clock, XCircle, ShieldCheck } from "lucide-react"
+import { useEventStream, onReFetch } from "@/lib/use-event-stream"
 
 export type UserNotification = {
   id: string
@@ -21,6 +22,8 @@ export function NotificationBell() {
   const [open, setOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
 
+  useEventStream()
+
   const fetchNotifications = async () => {
     try {
       const res = await fetch("/api/notifications")
@@ -30,14 +33,14 @@ export function NotificationBell() {
         setUnreadCount(data.unreadCount || 0)
       }
     } catch {
-      /* silent */
+      console.error("[NotificationBell] Failed to fetch notifications")
     }
   }
 
   useEffect(() => {
     fetchNotifications()
-    const interval = setInterval(fetchNotifications, 15000) // Poll every 15s
-    return () => clearInterval(interval)
+    const unsub = onReFetch(fetchNotifications)
+    return () => unsub()
   }, [])
 
   useEffect(() => {
@@ -64,7 +67,7 @@ export function NotificationBell() {
         setUnreadCount(data.unreadCount || 0)
       }
     } catch {
-      /* silent */
+      console.error("[NotificationBell] Failed to mark notification as read")
     }
   }
 
@@ -81,7 +84,7 @@ export function NotificationBell() {
         setUnreadCount(data.unreadCount || 0)
       }
     } catch {
-      /* silent */
+      console.error("[NotificationBell] Failed to mark all notifications as read")
     }
   }
 

@@ -21,16 +21,8 @@ import {
   ExternalLink,
 } from "lucide-react"
 
-type RequestItem = {
-  id: string
-  tmdbId: number
-  title: string
-  mediaType: "movie" | "tv"
-  requestedBy: { username: string }
-  requestedAt: string
-  status: "pending" | "approved" | "denied"
-  rootFolderPath: string
-}
+import type { RequestItem } from "@/lib/requests-store"
+import { useEventStream, onReFetch } from "@/lib/use-event-stream"
 
 type TorrentItem = {
   hash: string
@@ -96,10 +88,12 @@ export default function AdminDashboardPage() {
     }
   }
 
+  useEventStream()
+
   useEffect(() => {
     fetchData()
-    const interval = setInterval(fetchData, 10000)
-    return () => clearInterval(interval)
+    const unsub = onReFetch(fetchData)
+    return () => unsub()
   }, [])
 
   const handleApprove = async (id: string) => {
