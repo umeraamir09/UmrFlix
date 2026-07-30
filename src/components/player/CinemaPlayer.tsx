@@ -6,7 +6,7 @@ import {
   QUALITY_PRESETS,
   type PlaybackPayload,
 } from "@/lib/playback-types"
-import { usePlayerSettings } from "@/lib/player-settings"
+import { usePlayerSettings, savePlayerSettings } from "@/lib/player-settings"
 import { parseVtt, type VttCue } from "@/lib/vtt"
 import {
   SubtitleOverlay,
@@ -28,6 +28,7 @@ import { usePlaybackReporter, type ReporterState } from "./use-playback-reporter
 import { playerLog } from "./player-debug"
 import { canBrowserPlayNatively } from "./codec-probe"
 import { PlayerDebugHud } from "./PlayerDebugHud"
+import { BandwidthEstimator, attachHlsBandwidthMonitor } from "./bandwidth-estimator"
 
 function maskUrl(url: string): string {
   return url.replace(/api_key=[^&]+/, "api_key=***")
@@ -99,7 +100,10 @@ export function CinemaPlayer({
   const [buffered, setBuffered] = useState(0)
 
   // ── Engine / track state ──
-  const [qualityId, setQualityId] = useState("auto")
+  const [qualityId, setQualityId] = useState(() => playerSettings.qualityPreference || "auto")
+  const [autoResolvedId, setAutoResolvedId] = useState<string | null>(null)
+  const [estimatedBw, setEstimatedBw] = useState<number>(0)
+  const estimatorRef = useRef(new BandwidthEstimator())
   const [audioIndex, setAudioIndex] = useState<number | null>(null)
   const [subtitleIndex, setSubtitleIndex] = useState<number | null>(null)
   // Keyed by subtitle URL — avoids clearing state synchronously on track change
@@ -185,6 +189,9 @@ export function CinemaPlayer({
       seekTargetRef.current = 0
       hadStreamRef.current = false
       playIntentRef.current = autoPlay
+      estimatorRef.current.reset()
+      setAutoResolvedId(null)
+      setEstimatedBw(0)
     })
 
     fetch(`/api/jellyfin/playback/${itemId}`)
@@ -305,33 +312,75 @@ export function CinemaPlayer({
   const streamUrl = useMemo((): string => {
     if (!payload) return ""
     const params = new URLSearchParams()
-    if (quality.maxStreamingBitrate) {
-      params.set("maxStreamingBitrate", String(quality.maxStreamingBitrate))
-      params.set("maxWidth", String(quality.maxWidth))
-      params.set("maxHeight", String(quality.maxHeight))
-    } else if (payload.canDirectPlay && engine === "hls") {
-      // "Auto" while transcoding anyway (audio override / burned subs):
-      // Jellyfin's default transcode bitrate is ~256 kbps at 416x234, so cap
-      // generously instead of letting the server pick a potato profile.
-      params.set("maxStreamingBitrate", "40000000")
-      params.set("maxWidth", "3840")
-      params.set("maxHeight", "2160")
+    // When qualityId is "auto", use autoResolvedId if set, else default to "fhd" (1080p)
+    const effectiveQuality =
+      qualityId === "auto"
+        ? (autoResolvedId
+            ? QUALITY_PRESETS.find((q) => q.id === autoResolvedId)
+            : QUALITY_PRESETS.find((q) => q.id === "fhd")) ?? QUALITY_PRESETS[2]
+        : quality
+
+    if (effectiveQuality.maxStreamingBitrate) {
+      const b = String(effectiveQuality.maxStreamingBitrate)
+      params.set("maxStreamingBitrate", b)
+      params.set("videoBitrate", b)
+      params.set("VideoBitrate", b)
+      const w = String(effectiveQuality.maxWidth)
+      params.set("maxWidth", w)
+      params.set("maxVideoWidth", w)
+      params.set("MaxVideoWidth", w)
+      const h = String(effectiveQuality.maxHeight)
+      params.set("maxHeight", h)
+      params.set("maxVideoHeight", h)
+      params.set("MaxVideoHeight", h)
+    } else if (engine === "hls") {
+      const sourceBitrate = payload.bitrate ?? 0
+      const sourceW = payload.width ?? 1920
+      const sourceH = payload.height ?? 1080
+      const autoBitrate =
+        sourceBitrate > 0
+          ? Math.min(Math.round(sourceBitrate * 1.2), 120_000_000)
+          : 40_000_000
+      const autoW = Math.min(sourceW, 3840)
+      const autoH = Math.min(sourceH, 2160)
+      const b = String(autoBitrate)
+      params.set("maxStreamingBitrate", b)
+      params.set("videoBitrate", b)
+      params.set("VideoBitrate", b)
+      const w = String(autoW)
+      params.set("maxWidth", w)
+      params.set("maxVideoWidth", w)
+      params.set("MaxVideoWidth", w)
+      const h = String(autoH)
+      params.set("maxHeight", h)
+      params.set("maxVideoHeight", h)
+      params.set("MaxVideoHeight", h)
     }
+
     const base = engine === "direct" ? payload.directUrl : payload.hlsUrl
     if (engine === "hls") {
-      if (audioIndex != null) params.set("audioStreamIndex", String(audioIndex))
-      // Subtitles delivered by the transcoder (image-based tracks always,
-      // text tracks when the "burn subtitles" setting is enabled).
-      // subtitleMethod=Encode is REQUIRED — without it Jellyfin ignores the
-      // index and NO subtitles appear at all.
+      // OVERRIDE playSessionId to force Jellyfin to launch a NEW transcode session
+      // with the requested resolution whenever quality, audio, or burn sub tracks change!
+      const activeQualityKey = effectiveQuality.id !== "auto" ? effectiveQuality.id : "fhd"
+      const uniquePlaySessionId = `${payload.playSessionId}_q_${activeQualityKey}_a_${audioIndex ?? "def"}_s_${burnSelectedSubtitle ? selectedSubtitle?.index : "off"}`
+
+      const [baseUrl, existingQs] = base.split("?")
+      const urlParams = new URLSearchParams(existingQs ?? "")
+
+      urlParams.set("playSessionId", uniquePlaySessionId)
+      params.forEach((val, key) => urlParams.set(key, val))
+
+      if (audioIndex != null) urlParams.set("audioStreamIndex", String(audioIndex))
       if (burnSelectedSubtitle) {
-        params.set("subtitleStreamIndex", String(selectedSubtitle.index))
-        params.set("subtitleMethod", "Encode")
+        urlParams.set("subtitleStreamIndex", String(selectedSubtitle.index))
+        urlParams.set("subtitleMethod", "Encode")
       }
+      return `${baseUrl}?${urlParams.toString()}`
     }
+
     const qs = params.toString()
     return qs ? `${base}&${qs}` : base
-  }, [payload, engine, quality, audioIndex, burnSelectedSubtitle, selectedSubtitle])
+  }, [payload, engine, quality, qualityId, autoResolvedId, audioIndex, burnSelectedSubtitle, selectedSubtitle])
 
   // ── Reporter (heartbeat → Jellyfin) ──
   const getReporterState = useCallback((): ReporterState | null => {
@@ -459,9 +508,62 @@ export function CinemaPlayer({
           manifestLoadingRetryDelay: 1_500,
         })
         hlsRef.current = hls
+        attachHlsBandwidthMonitor(hls, HlsCtor, estimatorRef.current)
         hls.on(HlsCtor.Events.MEDIA_ATTACHED, () => playerLog.info("hls", "media attached"))
         hls.on(HlsCtor.Events.MANIFEST_PARSED, (_e, d) => {
-          playerLog.info("hls", `manifest parsed: ${d.levels?.length ?? 0} level(s)${d.levels?.[0] ? `, first=${d.levels[0].codecs ?? "?"} ${d.levels[0].audioCodec ?? ""}` : ""}`)
+          const levels = d.levels ?? hls.levels ?? []
+          playerLog.info(
+            "hls",
+            `manifest parsed: ${levels.length} level(s) — ${levels
+              .map(
+                (l, i) =>
+                  `[${i}] ${l.width || "?"}x${l.height || "?"}@${((l.bitrate || 0) / 1_000_000).toFixed(1)}Mbps`,
+              )
+              .join(", ")}`,
+          )
+
+          if (levels.length > 0) {
+            const targetQuality =
+              qualityId === "auto" && autoResolvedId
+                ? QUALITY_PRESETS.find((q) => q.id === autoResolvedId) ?? quality
+                : quality
+
+            if (qualityId === "auto" && !autoResolvedId) {
+              // Auto mode with no downgrade resolved: start at top level (1080p/4K) and enable ABR (-1)
+              const topIdx = levels.length - 1
+              hls.startLevel = topIdx
+              hls.currentLevel = -1 // ABR
+              playerLog.info(
+                "hls",
+                `auto quality: starting at top level [${topIdx}] (${levels[topIdx]?.width}x${levels[topIdx]?.height}) with ABR enabled`,
+              )
+            } else if (targetQuality.maxHeight) {
+              // Lock hls.js to the closest level matching or within target height
+              const maxH = targetQuality.maxHeight
+              let bestIdx = 0
+              let bestDiff = Infinity
+              for (let i = 0; i < levels.length; i++) {
+                const h = levels[i].height || 0
+                if (h > 0 && h <= maxH) {
+                  const diff = maxH - h
+                  if (diff < bestDiff) {
+                    bestDiff = diff
+                    bestIdx = i
+                  }
+                }
+              }
+              if (bestDiff === Infinity && levels.length > 0) {
+                bestIdx = levels.length - 1
+              }
+              playerLog.info(
+                "hls",
+                `locking hls level to [${bestIdx}] (${levels[bestIdx]?.width}x${levels[bestIdx]?.height}) for quality ${qualityId} (maxHeight=${maxH})`,
+              )
+              hls.startLevel = bestIdx
+              hls.currentLevel = bestIdx
+            }
+          }
+
           tryPlay()
         })
         hls.on(HlsCtor.Events.LEVEL_LOADED, () => tryRestore())
@@ -629,12 +731,48 @@ export function CinemaPlayer({
     apply()
   }, [])
 
+  // ── Adaptive quality check (runs every 5s while playing in "auto" mode) ──
+  useEffect(() => {
+    if (!playing || qualityId !== "auto" || engine !== "hls" || !payload) return
+
+    const id = setInterval(() => {
+      const video = videoRef.current
+      if (!video) return
+      const bufferAhead = video.buffered.length
+        ? video.buffered.end(video.buffered.length - 1) - video.currentTime
+        : 0
+
+      const suggestion = estimatorRef.current.suggest(
+        autoResolvedId ?? "auto",
+        bufferAhead,
+        payload.bitrate,
+      )
+
+      setEstimatedBw(suggestion.estimatedBandwidth)
+
+      if (suggestion.action !== "hold" && suggestion.targetPresetId !== autoResolvedId) {
+        playerLog.info(
+          "abr",
+          `${suggestion.action}: ${autoResolvedId ?? "auto"} → ${suggestion.targetPresetId} (${suggestion.reason})`,
+        )
+        rebuildAtPosition(() => setAutoResolvedId(suggestion.targetPresetId))
+      }
+    }, 5_000)
+
+    return () => clearInterval(id)
+  }, [playing, qualityId, engine, payload, autoResolvedId, rebuildAtPosition])
+
   const handleQualityChange = useCallback(
     (id: string) => {
       playerLog.info("user", `quality change → ${id}`)
+      savePlayerSettings({ ...playerSettings, qualityPreference: id })
+      if (id === "auto") {
+        estimatorRef.current.reset()
+        setAutoResolvedId(null)
+      }
       rebuildAtPosition(() => setQualityId(id))
     },
-    [rebuildAtPosition],
+    [rebuildAtPosition, playerSettings],
   )
   const handleAudioChange = useCallback(
     (index: number) => {
@@ -752,7 +890,13 @@ export function CinemaPlayer({
   }, [buffering, endpointReady, loadError])
 
   const startedOrWaiting = endpointReady && !loadError
-  const qualityLabel = quality.label
+  const autoResolvedLabel = autoResolvedId
+    ? QUALITY_PRESETS.find((q) => q.id === autoResolvedId)?.label
+    : undefined
+  const qualityLabel =
+    qualityId === "auto" && autoResolvedLabel
+      ? `Auto (${autoResolvedLabel})`
+      : quality.label
 
   return (
     <div
@@ -886,6 +1030,7 @@ export function CinemaPlayer({
           volume={volume}
           muted={muted}
           qualityId={qualityId}
+          autoResolvedLabel={autoResolvedLabel}
           audioTracks={payload.audio}
           audioIndex={audioIndex}
           subtitleTracks={payload.subtitles}
@@ -944,6 +1089,8 @@ export function CinemaPlayer({
           payload={payload}
           engine={engine}
           qualityId={qualityId}
+          autoResolvedId={autoResolvedId}
+          estimatedBandwidth={estimatedBw}
           probeReason={codecProbe.reason}
           audioIndex={audioIndex}
           subtitleIndex={subtitleIndex}

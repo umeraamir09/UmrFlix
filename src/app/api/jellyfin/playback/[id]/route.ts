@@ -191,6 +191,7 @@ export async function GET(
       chapters: (detail?.Chapters ?? []).map((c) => ({
         name: c.Name,
         startSeconds: ticksToSeconds(c.StartPositionTicks),
+        imageTag: c.ImageTag || undefined,
       })),
       trickplay: pickTrickplayInfo(detail?.Trickplay, mediaSource.Id),
       title: detail?.Name,

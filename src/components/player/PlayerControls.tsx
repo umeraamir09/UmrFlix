@@ -21,6 +21,7 @@ import {
   type TrickplayInfo,
 } from "@/lib/playback-types"
 import { TrickplayPreview, trickplayPreviewDisplaySize } from "./TrickplayPreview"
+import { ChapterImagePreview, chapterPreviewDisplaySize } from "./ChapterImagePreview"
 import type { SubtitleShadowStyle, SubtitleStyle } from "./SubtitleOverlay"
 
 import {
@@ -67,8 +68,15 @@ function SeekBar({
   const playedPct = duration > 0 ? (shownTime / duration) * 100 : 0
   const bufferedPct = duration > 0 ? Math.min(100, (buffered / duration) * 100) : 0
 
-  // Keep the trickplay bubble within the bar so it never clips off-screen
-  const preview = trickplay ? trickplayPreviewDisplaySize(trickplay) : null
+  // Chapter images available as fallback when trickplay is absent?
+  const hasChapterImages = !trickplay && chapters.some((c) => c.imageTag)
+
+  // Keep the preview bubble within the bar so it never clips off-screen
+  const preview = trickplay
+    ? trickplayPreviewDisplaySize(trickplay)
+    : hasChapterImages
+      ? chapterPreviewDisplaySize()
+      : null
   const previewW = preview ? preview.width + 2 : 0 // + border
   const clampedHoverX =
     hover && preview && hover.barW > previewW
@@ -136,7 +144,7 @@ function SeekBar({
         style={{ left: `calc(${playedPct}% - 8px)` }}
       />
 
-      {/* hover tooltip: trickplay thumbnail when available, plain timecode otherwise */}
+      {/* hover tooltip: trickplay → chapter images → plain timecode */}
       {hover &&
         (trickplay ? (
           <div
@@ -144,6 +152,16 @@ function SeekBar({
             style={{ left: clampedHoverX }}
           >
             <TrickplayPreview trickplay={trickplay} itemId={itemId} time={hover.time} />
+            <div className="py-1.5 text-center text-xs font-semibold tabular-nums text-white">
+              {formatTimecode(hover.time)}
+            </div>
+          </div>
+        ) : hasChapterImages ? (
+          <div
+            className="pointer-events-none absolute bottom-full mb-2 -translate-x-1/2 border border-white/15 bg-black shadow-2xl"
+            style={{ left: clampedHoverX }}
+          >
+            <ChapterImagePreview chapters={chapters} itemId={itemId} time={hover.time} />
             <div className="py-1.5 text-center text-xs font-semibold tabular-nums text-white">
               {formatTimecode(hover.time)}
             </div>
@@ -407,18 +425,24 @@ const SPEED_OPTIONS = [
 
 function SpeedQualityMenu({
   qualityId,
+  autoResolvedLabel,
   onQualityChange,
   playbackRate,
   onPlaybackRateChange,
 }: {
   qualityId: string
+  autoResolvedLabel?: string
   onQualityChange: (id: string) => void
   playbackRate: number
   onPlaybackRateChange: (rate: number) => void
 }) {
   const [section, setSection] = useState<SpeedQualitySection>("root")
 
-  const qualityLabel = QUALITY_PRESETS.find((q) => q.id === qualityId)?.label ?? "Auto"
+  const baseLabel = QUALITY_PRESETS.find((q) => q.id === qualityId)?.label ?? "Auto"
+  const qualityLabel =
+    qualityId === "auto" && autoResolvedLabel
+      ? `Auto (${autoResolvedLabel})`
+      : baseLabel
   const speedLabel = playbackRate === 1 ? "Normal" : `${playbackRate}x`
 
   return (
@@ -484,6 +508,7 @@ export function PlayerControls({
   volume,
   muted,
   qualityId,
+  autoResolvedLabel,
   audioTracks,
   audioIndex,
   subtitleTracks,
@@ -521,6 +546,7 @@ export function PlayerControls({
   volume: number
   muted: boolean
   qualityId: string
+  autoResolvedLabel?: string
   audioTracks: AudioTrack[]
   audioIndex: number | null
   subtitleTracks: SubtitleTrack[]
@@ -757,6 +783,7 @@ export function PlayerControls({
               {speedOpen && (
                 <SpeedQualityMenu
                   qualityId={qualityId}
+                  autoResolvedLabel={autoResolvedLabel}
                   onQualityChange={onQualityChange}
                   playbackRate={playbackRate}
                   onPlaybackRateChange={onPlaybackRateChange}

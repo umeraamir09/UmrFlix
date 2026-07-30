@@ -22,7 +22,7 @@ export type SubtitleTrack = {
   url: string | null
 }
 
-export type ChapterInfo = { name: string; startSeconds: number }
+export type ChapterInfo = { name: string; startSeconds: number; imageTag?: string }
 
 /**
  * Trickplay seek-preview metadata (Jellyfin 10.9+ "trickplay" thumbnails).

@@ -28,6 +28,8 @@ export function PlayerDebugHud({
   payload,
   engine,
   qualityId,
+  autoResolvedId,
+  estimatedBandwidth,
   probeReason,
   audioIndex,
   subtitleIndex,
@@ -38,6 +40,8 @@ export function PlayerDebugHud({
   payload: PlaybackPayload | null
   engine: "direct" | "hls"
   qualityId: string
+  autoResolvedId?: string | null
+  estimatedBandwidth?: number
   probeReason: string
   audioIndex: number | null
   subtitleIndex: number | null
@@ -126,7 +130,13 @@ export function PlayerDebugHud({
       <div className="max-h-[55cqh] overflow-y-auto p-3 [&::-webkit-scrollbar]:w-1">
         <div className="space-y-0.5 whitespace-pre-wrap break-all">
           <p>
-            <span className="text-white/50">engine       </span> {engine} · quality {qualityId}
+            <span className="text-white/50">engine       </span> {engine} · quality {qualityId}{autoResolvedId ? ` (ABR → ${autoResolvedId})` : ""}
+          </p>
+          <p>
+            <span className="text-white/50">bandwidth    </span>{" "}
+            {estimatedBandwidth && estimatedBandwidth > 0
+              ? `${(estimatedBandwidth / 1_000_000).toFixed(1)} Mbps (est)`
+              : "measuring…"}
           </p>
           <p>
             <span className="text-white/50">probe        </span> {probeReason}

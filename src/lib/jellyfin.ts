@@ -333,6 +333,7 @@ export type JellyfinPlaybackInfo = {
 export type JellyfinChapter = {
   Name: string
   StartPositionTicks: number
+  ImageTag?: string
 }
 
 /**
@@ -548,9 +549,24 @@ function applyStreamParams(params: URLSearchParams, opts: StreamOptions) {
   if (opts.playSessionId) params.set("playSessionId", opts.playSessionId)
   if (opts.audioStreamIndex != null) params.set("audioStreamIndex", String(opts.audioStreamIndex))
   if (opts.subtitleStreamIndex != null) params.set("subtitleStreamIndex", String(opts.subtitleStreamIndex))
-  if (opts.maxStreamingBitrate) params.set("maxStreamingBitrate", String(opts.maxStreamingBitrate))
-  if (opts.maxWidth) params.set("maxWidth", String(opts.maxWidth))
-  if (opts.maxHeight) params.set("maxHeight", String(opts.maxHeight))
+  if (opts.maxStreamingBitrate) {
+    const b = String(opts.maxStreamingBitrate)
+    params.set("maxStreamingBitrate", b)
+    params.set("videoBitrate", b)
+    params.set("VideoBitrate", b)
+  }
+  if (opts.maxWidth) {
+    const w = String(opts.maxWidth)
+    params.set("maxWidth", w)
+    params.set("maxVideoWidth", w)
+    params.set("MaxVideoWidth", w)
+  }
+  if (opts.maxHeight) {
+    const h = String(opts.maxHeight)
+    params.set("maxHeight", h)
+    params.set("maxVideoHeight", h)
+    params.set("MaxVideoHeight", h)
+  }
   if (opts.startTimeTicks) params.set("startTimeTicks", String(opts.startTimeTicks))
 }
 
