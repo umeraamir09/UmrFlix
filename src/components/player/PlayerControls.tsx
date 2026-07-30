@@ -31,6 +31,7 @@ import {
   IconSubtitles,
   IconSpeed,
   IconFullscreen,
+  IconExitFullscreen,
 } from "@/components/ui/icons"
 
 // ── Seek bar with buffered display, chapter ticks, hover tooltip & scrubbing ──
@@ -779,7 +780,11 @@ export function PlayerControls({
               className="flex items-center justify-center p-1 text-white transition-transform hover:scale-110 active:scale-95"
               aria-label={isFullscreen ? "Exit Fullscreen" : "Fullscreen"}
             >
-              <IconFullscreen className="size-9 sm:size-10" />
+              {isFullscreen ? (
+                <IconExitFullscreen className="size-9 sm:size-10" />
+              ) : (
+                <IconFullscreen className="size-9 sm:size-10" />
+              )}
             </button>
           </div>
         </div>
