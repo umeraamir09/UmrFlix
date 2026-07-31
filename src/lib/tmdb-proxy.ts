@@ -26,7 +26,8 @@ export async function tmdbProxyFetch(path: string, options?: TmdbProxyFetchOptio
   if (url.origin !== baseUrl.origin) {
     throw new Error("Refusing to proxy to a different origin")
   }
-  const rawSegments = path.split("/")
+  const pathPart = path.split("?", 1)[0]
+  const rawSegments = pathPart.split("/")
   if (rawSegments.some((seg) => seg === "." || seg === ".." || seg.includes("\\") || seg.includes("%"))) {
     throw new Error("Refusing to proxy a path with traversal segments")
   }
