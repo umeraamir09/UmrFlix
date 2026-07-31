@@ -10,10 +10,8 @@ import {
   setTmdbToTvdbMapping,
   fetchTmdbToTvdbMappingL2,
 } from "@/lib/cache"
-import { env } from "@/lib/env"
+import { tmdbProxyFetch } from "@/lib/tmdb-proxy"
 
-const TMDB_BASE = env("TMDB_API_BASE")
-const TMDB_KEY = env("TMDB_API_KEY")
 const FETCH_TIMEOUT = 5_000
 
 type AvailabilityItem = {
@@ -71,10 +69,7 @@ async function resolveTvdbId(tmdbId: number): Promise<number | null> {
   if (cachedL2 !== null) return cachedL2
 
   try {
-    const controller = new AbortController()
-    const id = setTimeout(() => controller.abort(), FETCH_TIMEOUT)
-    const res = await fetch(`${TMDB_BASE}/tv/${tmdbId}/external_ids?api_key=${TMDB_KEY}`, { signal: controller.signal })
-    clearTimeout(id)
+    const res = await tmdbProxyFetch(`/3/tv/${tmdbId}/external_ids`, { timeoutMs: FETCH_TIMEOUT })
     if (!res.ok) return null
     const data = await res.json()
     const tvdbId: number | null = data.tvdb_id ?? null

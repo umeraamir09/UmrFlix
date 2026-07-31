@@ -48,7 +48,7 @@ Browse millions of movies and TV shows, see what's already in your library, requ
   - [Jellyfin](https://jellyfin.org) — media server
   - [Radarr](https://radarr.video) — movie management
   - [Sonarr](https://sonarr.tv) — TV series management
-- A [TMDB API key](https://www.themoviedb.org/settings/api) (free)
+- A deployed [Cloudflare Worker](https://workers.cloudflare.com) proxy for the TMDB API, configured via `TMDB_PROXY_URL` / `TMDB_PROXY_SECRET`
 
 ## Getting Started
 
@@ -70,7 +70,8 @@ cp .env.example .env.local
 
 | Variable | Description |
 |----------|-------------|
-| `TMDB_API_KEY` | Your TMDB API key (v3 auth) |
+| `TMDB_PROXY_URL` | Your Cloudflare Worker proxy base URL for TMDB |
+| `TMDB_PROXY_SECRET` | Shared secret the proxy requires via `X-Proxy-Secret` header |
 | `RADARR_URL` / `RADARR_API_KEY` | Radarr instance URL and API key |
 | `SONARR_URL` / `SONARR_API_KEY` | Sonarr instance URL and API key |
 | `JELLYFIN_URL` / `JELLYFIN_USERNAME` / `JELLYFIN_PASSWORD` | Jellyfin connection details |
@@ -85,7 +86,7 @@ Open [http://localhost:3000](http://localhost:3000) to see the app.
 
 ## How It Works
 
-**Browsing & search** hits the TMDB API directly — you see the full universe of movies and TV, not just what's already downloaded.
+**Browsing & search** hits the TMDB API through a Cloudflare Worker proxy — you see the full universe of movies and TV, not just what's already downloaded.
 
 **Availability checking** cross-references every TMDB result against your Radarr/Sonarr collections by ID (never by title string). If a match is found, it reads `hasFile` status. For TV, TMDB IDs are mapped to TVDB IDs via TMDB's `external_ids` endpoint since Sonarr uses TVDB internally.
 

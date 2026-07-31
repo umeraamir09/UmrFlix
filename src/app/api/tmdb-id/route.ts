@@ -1,8 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
-import { env } from "@/lib/env"
-
-const TMDB_BASE = env("TMDB_API_BASE")
-const TMDB_KEY = env("TMDB_API_KEY")
+import { tmdbProxyFetch } from "@/lib/tmdb-proxy"
 
 const reverseCache = new Map<string, { tmdbId: number; type: string }>()
 let cacheTimestamp = 0
@@ -25,11 +22,8 @@ export async function GET(request: NextRequest) {
     if (cached) return NextResponse.json(cached)
   }
 
-  const controller = new AbortController()
-  const timeoutId = setTimeout(() => controller.abort(), 5_000)
   try {
-    const url = `${TMDB_BASE}/find/${externalId}?external_source=${source}&api_key=${TMDB_KEY}`
-    const res = await fetch(url, { signal: controller.signal })
+    const res = await tmdbProxyFetch(`/3/find/${externalId}?external_source=${source}`, { timeoutMs: 5_000 })
     if (!res.ok) {
       return NextResponse.json({ error: "Lookup failed" }, { status: 502 })
     }
@@ -42,7 +36,6 @@ export async function GET(request: NextRequest) {
       const result = { tmdbId: tvResults[0].id, type: "tv" as const }
       reverseCache.set(cacheKey, result)
       cacheTimestamp = Date.now()
-      clearTimeout(timeoutId)
       return NextResponse.json(result)
     }
 
@@ -50,14 +43,11 @@ export async function GET(request: NextRequest) {
       const result = { tmdbId: movieResults[0].id, type: "movie" as const }
       reverseCache.set(cacheKey, result)
       cacheTimestamp = Date.now()
-      clearTimeout(timeoutId)
       return NextResponse.json(result)
     }
 
-    clearTimeout(timeoutId)
     return NextResponse.json({ tmdbId: null, type: null }, { status: 404 })
   } catch (e) {
-    clearTimeout(timeoutId)
     return NextResponse.json({ error: "Lookup failed" }, { status: 502 })
   }
 }

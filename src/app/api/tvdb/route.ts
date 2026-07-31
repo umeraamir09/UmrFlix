@@ -1,10 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { getTmdbToTvdbMapping, setTmdbToTvdbMapping } from "@/lib/cache"
-import { env } from "@/lib/env"
-
-const TMDB_BASE = env("TMDB_API_BASE")
-const TMDB_KEY = env("TMDB_API_KEY")
-const TIMEOUT = 5_000
+import { tmdbProxyFetch } from "@/lib/tmdb-proxy"
 
 export async function GET(request: NextRequest) {
   const tmdbId = request.nextUrl.searchParams.get("tmdbId")
@@ -22,11 +18,8 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ tmdbId: id, tvdbId: cached, cached: true })
   }
 
-  const controller = new AbortController()
-  const timeoutId = setTimeout(() => controller.abort(), TIMEOUT)
   try {
-    const url = `${TMDB_BASE}/tv/${id}/external_ids?api_key=${TMDB_KEY}`
-    const res = await fetch(url, { signal: controller.signal })
+    const res = await tmdbProxyFetch(`/3/tv/${id}/external_ids`, { timeoutMs: 5_000 })
     if (!res.ok) {
       return NextResponse.json({ tmdbId: id, tvdbId: null, error: "TMDB lookup failed" }, { status: 502 })
     }
@@ -38,7 +31,5 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ tmdbId: id, tvdbId, cached: false })
   } catch (e) {
     return NextResponse.json({ tmdbId: id, tvdbId: null, error: "TMDB lookup failed" }, { status: 502 })
-  } finally {
-    clearTimeout(timeoutId)
   }
 }
