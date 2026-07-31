@@ -134,15 +134,28 @@ export default function AdminDashboardPage() {
     }
   }
 
-  const handleTorrentAction = async (action: "pause" | "resume" | "delete", hash: string) => {
+  const handleTorrentAction = async (action: "pause" | "resume" | "delete", hash: string, name?: string) => {
+    let deleteFiles = false
+    if (action === "delete") {
+      const confirmDelete = confirm(`Are you sure you want to delete "${name || "this torrent"}"?`)
+      if (!confirmDelete) return
+      deleteFiles = confirm("Do you also want to delete downloaded files from disk?")
+    }
+
     setActionLoading(hash)
     try {
-      await fetch("/api/admin/qbittorrent", {
+      const res = await fetch("/api/admin/qbittorrent", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action, hashes: [hash], deleteFiles: action === "delete" }),
+        body: JSON.stringify({ action, hashes: [hash], deleteFiles }),
       })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok || data.error) {
+        alert(data.error || `Failed to ${action} torrent.`)
+      }
       await fetchData()
+    } catch {
+      alert("Network error executing torrent action.")
     } finally {
       setActionLoading(null)
     }
@@ -397,25 +410,28 @@ export default function AdminDashboardPage() {
                       <td className="p-3 text-right">
                         <div className="flex items-center justify-end gap-1">
                           <button
-                            onClick={() => handleTorrentAction("pause", t.hash)}
-                            className="p-1.5 hover:bg-surface text-gray-300 hover:text-white"
+                            disabled={actionLoading === t.hash}
+                            onClick={() => handleTorrentAction("pause", t.hash, t.name)}
+                            className="p-1.5 hover:bg-surface text-gray-300 hover:text-white disabled:opacity-50 transition-colors cursor-pointer"
                             title="Pause Torrent"
                           >
                             <Pause className="size-4" />
                           </button>
                           <button
-                            onClick={() => handleTorrentAction("resume", t.hash)}
-                            className="p-1.5 hover:bg-surface text-gray-300 hover:text-emerald-400"
+                            disabled={actionLoading === t.hash}
+                            onClick={() => handleTorrentAction("resume", t.hash, t.name)}
+                            className="p-1.5 hover:bg-surface text-gray-300 hover:text-emerald-400 disabled:opacity-50 transition-colors cursor-pointer"
                             title="Resume Torrent"
                           >
                             <Play className="size-4" />
                           </button>
                           <button
-                            onClick={() => handleTorrentAction("delete", t.hash)}
-                            className="p-1.5 hover:bg-surface text-gray-300 hover:text-red-400"
+                            disabled={actionLoading === t.hash}
+                            onClick={() => handleTorrentAction("delete", t.hash, t.name)}
+                            className="p-1.5 hover:bg-surface text-gray-300 hover:text-red-400 disabled:opacity-50 transition-colors cursor-pointer"
                             title="Delete Torrent"
                           >
-                            <Trash2 className="size-4" />
+                            {actionLoading === t.hash ? <Loader2 className="size-4 animate-spin text-amber-400" /> : <Trash2 className="size-4" />}
                           </button>
                         </div>
                       </td>

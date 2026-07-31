@@ -153,5 +153,18 @@ export function getDiskSpace(): Promise<SonarrDiskSpaceItem[]> {
   return sonarrFetch("/diskspace")
 }
 
+export function deleteSeries(id: number, deleteFiles = true): Promise<void> {
+  return sonarrFetch<void>(`/series/${id}?deleteFiles=${deleteFiles}`, {
+    method: "DELETE",
+  })
+}
+
+export function removeFromQueue(id: number, removeFromClient = true): Promise<void> {
+  return sonarrFetch<void>(`/queue/${id}?removeFromClient=${removeFromClient}&blocklist=false`, {
+    method: "DELETE",
+  })
+}
+
+
 
 

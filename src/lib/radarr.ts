@@ -120,4 +120,18 @@ export function getDiskSpace(): Promise<DiskSpaceItem[]> {
   return radarrFetch("/diskspace")
 }
 
+export function deleteMovie(id: number, deleteFiles = true): Promise<void> {
+  return radarrFetch<void>(`/movie/${id}?deleteFiles=${deleteFiles}`, {
+    method: "DELETE",
+  })
+}
+
+export function removeFromQueue(id: number, removeFromClient = true): Promise<void> {
+  return radarrFetch<void>(`/queue/${id}?removeFromClient=${removeFromClient}&blocklist=false`, {
+    method: "DELETE",
+  })
+}
+
+
+
 

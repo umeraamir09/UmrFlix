@@ -771,5 +771,43 @@ export async function getJellyfinUsers(): Promise<JellyfinUserPublic[]> {
   }
 }
 
+/**
+ * Triggers a full library scan / refresh on the Jellyfin server.
+ * POST /Library/Refresh
+ */
+export async function triggerLibraryScan(): Promise<boolean> {
+  try {
+    const { token } = await authenticate()
+    const res = await jellyfinFetch(`${BASE}/Library/Refresh`, {
+      method: "POST",
+      headers: getAuthHeaders(token),
+    })
+    return res.ok
+  } catch (err) {
+    console.error("Failed to trigger Jellyfin library scan:", err)
+    return false
+  }
+}
+
+/**
+ * Deletes an item and its media files from Jellyfin.
+ * DELETE /Items/{itemId}
+ */
+export async function deleteJellyfinItem(itemId: string): Promise<boolean> {
+  try {
+    const { token } = await authenticate()
+    const res = await jellyfinFetch(`${BASE}/Items/${itemId}`, {
+      method: "DELETE",
+      headers: getAuthHeaders(token),
+    })
+    return res.ok
+  } catch (err) {
+    console.error(`Failed to delete Jellyfin item ${itemId}:`, err)
+    return false
+  }
+}
+
+
+
 
 

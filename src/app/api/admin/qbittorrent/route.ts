@@ -81,22 +81,62 @@ export async function POST(request: NextRequest) {
     const body = await request.json()
     const { action, hashes, deleteFiles } = body
 
-    if (!action || !hashes || !Array.isArray(hashes)) {
+    if (!action || !hashes || !Array.isArray(hashes) || hashes.length === 0) {
       return NextResponse.json({ error: "Missing action or hashes array" }, { status: 400 })
     }
 
-    let success = false
-    if (action === "pause") {
-      success = await pauseTorrents(hashes)
-    } else if (action === "resume") {
-      success = await resumeTorrents(hashes)
-    } else if (action === "delete") {
-      success = await deleteTorrents(hashes, Boolean(deleteFiles))
-    } else {
-      return NextResponse.json({ error: "Invalid action" }, { status: 400 })
+    const qbitHashes: string[] = []
+    const radarrIds: number[] = []
+    const sonarrIds: number[] = []
+
+    for (const h of hashes) {
+      if (typeof h === "string") {
+        if (h.startsWith("radarr_")) {
+          const id = parseInt(h.replace("radarr_", ""), 10)
+          if (!isNaN(id)) radarrIds.push(id)
+        } else if (h.startsWith("sonarr_")) {
+          const id = parseInt(h.replace("sonarr_", ""), 10)
+          if (!isNaN(id)) sonarrIds.push(id)
+        } else {
+          qbitHashes.push(h)
+        }
+      }
     }
 
-    return NextResponse.json({ success })
+    let success = true
+
+    if (qbitHashes.length > 0) {
+      if (action === "pause") {
+        const ok = await pauseTorrents(qbitHashes)
+        if (!ok) success = false
+      } else if (action === "resume") {
+        const ok = await resumeTorrents(qbitHashes)
+        if (!ok) success = false
+      } else if (action === "delete") {
+        const ok = await deleteTorrents(qbitHashes, Boolean(deleteFiles))
+        if (!ok) success = false
+      } else {
+        return NextResponse.json({ error: "Invalid action" }, { status: 400 })
+      }
+    }
+
+    if (action === "delete") {
+      if (radarrIds.length > 0) {
+        await Promise.all(radarrIds.map((id) => radarr.removeFromQueue(id).catch(() => null)))
+      }
+      if (sonarrIds.length > 0) {
+        await Promise.all(sonarrIds.map((id) => sonarr.removeFromQueue(id).catch(() => null)))
+      }
+    }
+
+    if (!success && qbitHashes.length > 0) {
+      return NextResponse.json(
+        { error: `Failed to ${action} torrent(s) in qBittorrent.` },
+        { status: 500 }
+      )
+    }
+
+    return NextResponse.json({ success: true })
   } catch (e) {
     const message = e instanceof Error ? e.message : "qBittorrent action failed"
     return NextResponse.json({ error: message }, { status: 500 })

@@ -4,6 +4,12 @@ const nextConfig: NextConfig = {
   images: {
     formats: ["image/avif", "image/webp"],
     minimumCacheTTL: 86400,
+    localPatterns: [
+      {
+        pathname: "/**",
+        search: "",
+      },
+    ],
     remotePatterns: [
       { protocol: "https", hostname: "image.tmdb.org" },
       { protocol: "https", hostname: "themoviedb.org" },
