@@ -10,10 +10,8 @@ import {
   setTmdbToTvdbMapping,
   fetchTmdbToTvdbMappingL2,
 } from "@/lib/cache"
-import { env } from "@/lib/env"
+import { tmdbProxyFetch } from "@/lib/tmdb-proxy"
 
-const TMDB_BASE = env("TMDB_API_BASE")
-const TMDB_KEY = env("TMDB_API_KEY")
 const FETCH_TIMEOUT = 5_000
 
 type AvailabilityItem = {
@@ -65,16 +63,14 @@ async function buildSonarrQueueMap(): Promise<QueueMap> {
 }
 
 async function resolveTvdbId(tmdbId: number): Promise<number | null> {
+  if (!Number.isInteger(tmdbId) || tmdbId <= 0) return null
   const cached = getTmdbToTvdbMapping(tmdbId)
   if (cached !== undefined) return cached
   const cachedL2 = await fetchTmdbToTvdbMappingL2(tmdbId)
   if (cachedL2 !== null) return cachedL2
 
   try {
-    const controller = new AbortController()
-    const id = setTimeout(() => controller.abort(), FETCH_TIMEOUT)
-    const res = await fetch(`${TMDB_BASE}/tv/${tmdbId}/external_ids?api_key=${TMDB_KEY}`, { signal: controller.signal })
-    clearTimeout(id)
+    const res = await tmdbProxyFetch(`/3/tv/${tmdbId}/external_ids`, { timeoutMs: FETCH_TIMEOUT })
     if (!res.ok) return null
     const data = await res.json()
     const tvdbId: number | null = data.tvdb_id ?? null
@@ -95,6 +91,9 @@ export async function GET(request: NextRequest) {
   const type = typeParam as "movie" | "tv"
   if (type !== "movie" && type !== "tv") {
     return NextResponse.json({ error: "type must be 'movie' or 'tv'" }, { status: 400 })
+  }
+  if (!Number.isInteger(tmdbId) || tmdbId <= 0) {
+    return NextResponse.json({ error: "tmdbId must be a positive integer" }, { status: 400 })
   }
 
   try {
