@@ -53,8 +53,8 @@ Set every variable for your environment:
 
 ```ini
 # Required
-TMDB_API_KEY=your_tmdb_api_key
-TMDB_API_BASE=https://api.themoviedb.org/3
+TMDB_PROXY_URL=https://tmdb-proxy.<subdomain>.workers.dev
+TMDB_PROXY_SECRET=your_tmdb_proxy_secret
 NEXT_PUBLIC_APP_URL=https://umrflix.example.com
 SESSION_SECRET=generate_a_random_64_char_string_here
 

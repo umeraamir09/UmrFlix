@@ -2,15 +2,20 @@ import { NextResponse } from "next/server"
 
 import { radarrBreaker, sonarrBreaker, jellyfinBreaker, tmdbBreaker, convexBreaker } from "@/lib/circuit-breaker"
 
-async function probeService(url: string, breaker: typeof radarrBreaker, timeoutMs = 3000): Promise<void> {
+async function probeService(
+  url: string,
+  breaker: typeof radarrBreaker,
+  timeoutMs = 3000,
+  headers?: Record<string, string>
+): Promise<void> {
   if (!url) return
   try {
     const controller = new AbortController()
     const timeout = setTimeout(() => controller.abort(), timeoutMs)
-    const res = await fetch(url, { method: "HEAD", signal: controller.signal }).catch(() => null)
+    const res = await fetch(url, { method: "HEAD", headers, signal: controller.signal, redirect: "manual" }).catch(() => null)
     clearTimeout(timeout)
 
-    if (res && (res.ok || res.status < 500)) {
+    if (res?.ok) {
       breaker.recordSuccess()
     } else {
       breaker.recordFailure()
@@ -24,7 +29,8 @@ export async function GET() {
   const radarrUrl = process.env.RADARR_URL
   const sonarrUrl = process.env.SONARR_URL
   const jellyfinUrl = process.env.JELLYFIN_URL
-  const tmdbKey = process.env.TMDB_API_KEY
+  const tmdbProxyUrl = process.env.TMDB_PROXY_URL
+  const tmdbProxySecret = process.env.TMDB_PROXY_SECRET
   const convexUrl =
     process.env.CONVEX_SELF_HOSTED_URL ||
     process.env.NEXT_PUBLIC_CONVEX_SELF_HOSTED_URL ||
@@ -35,11 +41,12 @@ export async function GET() {
     probeService(radarrUrl ? `${radarrUrl}/api/v3/system/status` : "", radarrBreaker),
     probeService(sonarrUrl ? `${sonarrUrl}/api/v3/system/status` : "", sonarrBreaker),
     probeService(jellyfinUrl ?? "", jellyfinBreaker),
-    tmdbKey
+    tmdbProxyUrl && tmdbProxySecret
       ? probeService(
-          `https://api.themoviedb.org/3/configuration?api_key=${tmdbKey}`,
+          new URL("/3/configuration", tmdbProxyUrl).toString(),
           tmdbBreaker,
-          4000
+          4000,
+          { "X-Proxy-Secret": tmdbProxySecret }
         )
       : Promise.resolve(),
     probeService(convexUrl ?? "", convexBreaker),

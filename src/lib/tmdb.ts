@@ -1,23 +1,23 @@
-import { env } from "./env"
-import { resilientFetch } from "./resilient-fetch"
+import { tmdbProxyFetch } from "./tmdb-proxy"
 import { tmdbBreaker } from "./circuit-breaker"
 
 export async function tmdbFetch<T>(path: string, params?: Record<string, string>): Promise<T> {
-  const BASE = env("TMDB_API_BASE") || "https://api.themoviedb.org/3"
-  const KEY = env("TMDB_API_KEY")
-  const url = new URL(`${BASE}${path}`)
-  url.searchParams.set("api_key", KEY)
-  url.searchParams.set("language", "en-US")
+  const search = new URLSearchParams()
+  search.set("language", "en-US")
   if (params) {
     for (const [k, v] of Object.entries(params)) {
-      url.searchParams.set(k, v)
+      search.set(k, v)
     }
   }
-  return resilientFetch<T>(url.toString(), {
+  const res = await tmdbProxyFetch(`/3${path}?${search.toString()}`, {
     breaker: tmdbBreaker,
     timeoutMs: 6_000,
-    retries: 2,
+    retries: 1,
   })
+  if (!res.ok) {
+    throw new Error(`TMDB proxy responded with ${res.status}`)
+  }
+  return (await res.json()) as T
 }
 
 
