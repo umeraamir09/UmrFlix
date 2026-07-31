@@ -63,6 +63,7 @@ async function buildSonarrQueueMap(): Promise<QueueMap> {
 }
 
 async function resolveTvdbId(tmdbId: number): Promise<number | null> {
+  if (!Number.isInteger(tmdbId) || tmdbId <= 0) return null
   const cached = getTmdbToTvdbMapping(tmdbId)
   if (cached !== undefined) return cached
   const cachedL2 = await fetchTmdbToTvdbMappingL2(tmdbId)
@@ -90,6 +91,9 @@ export async function GET(request: NextRequest) {
   const type = typeParam as "movie" | "tv"
   if (type !== "movie" && type !== "tv") {
     return NextResponse.json({ error: "type must be 'movie' or 'tv'" }, { status: 400 })
+  }
+  if (!Number.isInteger(tmdbId) || tmdbId <= 0) {
+    return NextResponse.json({ error: "tmdbId must be a positive integer" }, { status: 400 })
   }
 
   try {

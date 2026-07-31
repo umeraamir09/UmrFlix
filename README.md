@@ -88,6 +88,8 @@ Open [http://localhost:3000](http://localhost:3000) to see the app.
 
 **Browsing & search** hits the TMDB API through a Cloudflare Worker proxy — you see the full universe of movies and TV, not just what's already downloaded.
 
+> **Security model:** `TMDB_PROXY_SECRET` is a single shared static secret sent to the Worker on every request. It keeps your TMDB API key off your server, but it is *not* per-user auth — anyone with the secret (or access to this app's `/api/tmdb/*` routes, which require a logged-in session) can reach the proxy. Treat the Worker as semi-public: keep its path allowlisting tight and consider rotating the secret if the Worker URL ever leaks.
+
 **Availability checking** cross-references every TMDB result against your Radarr/Sonarr collections by ID (never by title string). If a match is found, it reads `hasFile` status. For TV, TMDB IDs are mapped to TVDB IDs via TMDB's `external_ids` endpoint since Sonarr uses TVDB internally.
 
 **Requesting** a title posts to Radarr (`POST /api/v3/movie`) or Sonarr (`POST /api/v3/series`) with the media ID and your configured quality profile / root folder. The backend immediately triggers an automatic search.

@@ -12,7 +12,7 @@ export async function tmdbFetch<T>(path: string, params?: Record<string, string>
   const res = await tmdbProxyFetch(`/3${path}?${search.toString()}`, {
     breaker: tmdbBreaker,
     timeoutMs: 6_000,
-    retries: 2,
+    retries: 1,
   })
   if (!res.ok) {
     throw new Error(`TMDB proxy responded with ${res.status}`)

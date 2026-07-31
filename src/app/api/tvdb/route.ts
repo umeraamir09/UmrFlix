@@ -9,8 +9,8 @@ export async function GET(request: NextRequest) {
   }
 
   const id = Number(tmdbId)
-  if (isNaN(id)) {
-    return NextResponse.json({ error: "tmdbId must be a number" }, { status: 400 })
+  if (!Number.isInteger(id) || id <= 0) {
+    return NextResponse.json({ error: "tmdbId must be a positive integer" }, { status: 400 })
   }
 
   const cached = getTmdbToTvdbMapping(id)
@@ -29,7 +29,7 @@ export async function GET(request: NextRequest) {
       setTmdbToTvdbMapping(id, tvdbId)
     }
     return NextResponse.json({ tmdbId: id, tvdbId, cached: false })
-  } catch (e) {
+  } catch {
     return NextResponse.json({ tmdbId: id, tvdbId: null, error: "TMDB lookup failed" }, { status: 502 })
   }
 }

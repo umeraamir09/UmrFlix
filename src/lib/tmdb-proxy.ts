@@ -1,5 +1,5 @@
 import { env } from "./env"
-import { CircuitBreaker } from "./circuit-breaker"
+import { CircuitBreaker, tmdbBreaker } from "./circuit-breaker"
 
 export interface TmdbProxyFetchOptions extends RequestInit {
   timeoutMs?: number
@@ -10,19 +10,30 @@ export interface TmdbProxyFetchOptions extends RequestInit {
 export async function tmdbProxyFetch(path: string, options?: TmdbProxyFetchOptions): Promise<Response> {
   const proxyUrl = env("TMDB_PROXY_URL")
   const secret = env("TMDB_PROXY_SECRET")
-  const timeoutMs = options?.timeoutMs ?? 8_000
-  const retries = options?.retries ?? 2
-  const breaker = options?.breaker
+  const timeoutMs = options?.timeoutMs ?? 6_000
+  const retries = Math.max(0, options?.retries ?? 1)
+  const breaker = options?.breaker ?? tmdbBreaker
 
   if (!proxyUrl) {
     throw new Error("TMDB_PROXY_URL is not set")
   }
-
-  if (breaker && !breaker.canExecute()) {
-    throw new Error("TMDB proxy is unavailable (circuit open)")
+  if (!secret) {
+    throw new Error("TMDB_PROXY_SECRET is not set")
   }
 
-  const url = new URL(path, proxyUrl)
+  const baseUrl = new URL(proxyUrl)
+  const url = new URL(path, baseUrl)
+  if (url.origin !== baseUrl.origin) {
+    throw new Error("Refusing to proxy to a different origin")
+  }
+  const rawSegments = path.split("/")
+  if (rawSegments.some((seg) => seg === "." || seg === ".." || seg.includes("\\") || seg.includes("%"))) {
+    throw new Error("Refusing to proxy a path with traversal segments")
+  }
+  if (!url.pathname.startsWith("/3/")) {
+    throw new Error("Refusing to proxy outside the /3/ namespace")
+  }
+
   const headers = new Headers(options?.headers)
   headers.set("X-Proxy-Secret", secret)
 
@@ -30,6 +41,10 @@ export async function tmdbProxyFetch(path: string, options?: TmdbProxyFetchOptio
   let lastError: unknown
 
   while (attempt <= retries) {
+    if (!breaker.canExecute()) {
+      throw new Error("TMDB proxy is unavailable (circuit open)")
+    }
+
     const controller = new AbortController()
     const timeoutId = setTimeout(() => controller.abort(), timeoutMs)
     try {
@@ -37,13 +52,14 @@ export async function tmdbProxyFetch(path: string, options?: TmdbProxyFetchOptio
         ...options,
         headers,
         signal: controller.signal,
+        redirect: "manual",
       })
       if (res.ok) {
-        breaker?.recordSuccess()
+        breaker.recordSuccess()
         return res
       }
-      if (res.status >= 500) {
-        breaker?.recordFailure()
+      if (res.status >= 300) {
+        breaker.recordFailure()
         throw new Error(`HTTP Error ${res.status}: ${res.statusText}`)
       }
       return res
@@ -51,11 +67,11 @@ export async function tmdbProxyFetch(path: string, options?: TmdbProxyFetchOptio
       clearTimeout(timeoutId)
       lastError = err
       if (err instanceof Error && (err.name === "AbortError" || err.message.includes("fetch failed"))) {
-        breaker?.recordFailure()
+        breaker.recordFailure()
       }
       attempt++
       if (attempt <= retries) {
-        await new Promise((r) => setTimeout(r, 200 + Math.floor(Math.random() * 50)))
+        await new Promise((r) => setTimeout(r, 250 * attempt))
       }
     }
   }

@@ -12,10 +12,10 @@ async function probeService(
   try {
     const controller = new AbortController()
     const timeout = setTimeout(() => controller.abort(), timeoutMs)
-    const res = await fetch(url, { method: "HEAD", headers, signal: controller.signal }).catch(() => null)
+    const res = await fetch(url, { method: "HEAD", headers, signal: controller.signal, redirect: "manual" }).catch(() => null)
     clearTimeout(timeout)
 
-    if (res && (res.ok || res.status < 500)) {
+    if (res?.ok) {
       breaker.recordSuccess()
     } else {
       breaker.recordFailure()
