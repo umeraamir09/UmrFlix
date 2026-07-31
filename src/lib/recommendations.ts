@@ -1,6 +1,6 @@
-import { getResumeItems, getAllItems } from "./jellyfin"
+import { getResumeItems } from "./jellyfin"
 import { tmdbFetch, type TmdbMovie, type TmdbTvShow, type TmdbPaginated, discoverMovies, discoverTv } from "./tmdb"
-import { filterReleasedContent } from "./catalog"
+
 
 /**
  * Recommendation System for UmrFlix

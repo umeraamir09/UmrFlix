@@ -32,14 +32,29 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json()
-    const series = await sonarr.addSeries(body)
+    const { createRequest } = await import("@/lib/requests-store")
+
+    const reqItem = await createRequest({
+      tmdbId: body.tvdbId || body.tmdbId,
+      tvdbId: body.tvdbId,
+      title: body.title,
+      mediaType: "tv",
+      qualityProfileId: body.qualityProfileId,
+      rootFolderPath: body.rootFolderPath,
+      seasons: body.seasons,
+      requestedBy: {
+        userId: session!.userId,
+        username: session!.username,
+      },
+      autoApprove: Boolean(session?.isAdmin),
+    })
 
     if (session && !session.isAdmin) {
       const updatedSession = incrementRequestCount(session)
       await setSessionCookie(updatedSession)
     }
 
-    return NextResponse.json(series, { status: 201 })
+    return NextResponse.json(reqItem, { status: 201 })
   } catch (e) {
     const message = e instanceof Error ? e.message : "Failed to add series"
     return NextResponse.json({ error: message }, { status: 502 })

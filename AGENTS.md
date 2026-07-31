@@ -36,3 +36,4 @@ The goal is to use the reference image as a design referece and follow the user'
 ## Notes
 - There are no dedicated test scripts in this repo today; use lint/build plus manual verification for behavior changes.
 - The /watch route intentionally renders a fullscreen player experience without the standard navbar/footer chrome.
+- Watch Party engine lives under `src/lib/party/` (in-memory ephemeral rooms, protocol math, `roomManager` globalThis singleton), `/api/party/*` route handlers, `src/components/player/use-party-sync.ts` hook, and `/watch?party=[id]` room route.

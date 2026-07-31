@@ -32,14 +32,28 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json()
-    const movie = await radarr.addMovie(body)
+    const { createRequest } = await import("@/lib/requests-store")
+
+    const reqItem = await createRequest({
+      tmdbId: body.tmdbId,
+      title: body.title,
+      mediaType: "movie",
+      year: body.year,
+      qualityProfileId: body.qualityProfileId,
+      rootFolderPath: body.rootFolderPath,
+      requestedBy: {
+        userId: session!.userId,
+        username: session!.username,
+      },
+      autoApprove: Boolean(session?.isAdmin),
+    })
 
     if (session && !session.isAdmin) {
       const updatedSession = incrementRequestCount(session)
       await setSessionCookie(updatedSession)
     }
 
-    return NextResponse.json(movie, { status: 201 })
+    return NextResponse.json(reqItem, { status: 201 })
   } catch (e) {
     const message = e instanceof Error ? e.message : "Failed to add movie"
     return NextResponse.json({ error: message }, { status: 502 })

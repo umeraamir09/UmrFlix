@@ -6,8 +6,8 @@ import { useRouter } from "next/navigation"
 import { getImageUrl, formatYear, formatRating } from "@/lib/utils"
 import { AvailabilityBadge } from "@/components/AvailabilityBadge"
 import { BookmarkButton } from "@/components/BookmarkButton"
-import { Star, Bookmark } from "lucide-react"
-import { IconPlay, IconDownloadNav, IconAdd } from "@/components/ui/icons"
+import { Star } from "lucide-react"
+import { IconPlay, IconAdd } from "@/components/ui/icons"
 import type { AvailabilityResult } from "@/app/api/availability/route"
 
 export type MovieCardItem = {
@@ -68,8 +68,8 @@ export function MovieCard({
           fill
           sizes="(max-width: 640px) 50vw, (max-width: 1024px) 25vw, 16vw"
           className="object-cover"
-          unoptimized
         />
+
 
         {/* Top Badges (Visible when not hovering) */}
         <div className="absolute inset-x-2 top-2 z-10 flex items-center justify-end gap-1 pointer-events-none group-hover:opacity-0 transition-opacity">
@@ -148,13 +148,29 @@ export function MovieCard({
           </button>
           <BookmarkButton
             itemId={availabilityState?.jellyfinItemId || String(item.id)}
+            tmdbId={item.id}
+            jellyfinId={availabilityState?.jellyfinItemId}
+            mediaType={type}
             title={title}
+            posterPath={item.poster_path}
+            overview={item.overview}
+            releaseYear={year}
             variant="icon"
             className="!p-1.5 border-none bg-transparent hover:bg-white/10"
           />
-          <div className="text-accent hover:scale-110 transition-transform cursor-pointer" title="Add to Library">
+          <button
+            className="text-accent hover:scale-110 transition-transform cursor-pointer"
+            title="Request / Add to Library"
+            aria-label="Request or Add to Library"
+            onClick={(e) => {
+              e.preventDefault()
+              e.stopPropagation()
+              router.push(href)
+            }}
+          >
             <IconAdd className="size-5" />
-          </div>
+          </button>
+
         </div>
       </div>
     </Link>

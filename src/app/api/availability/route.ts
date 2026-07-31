@@ -8,6 +8,7 @@ import {
   ensureJellyfinIndex,
   getTmdbToTvdbMapping,
   setTmdbToTvdbMapping,
+  fetchTmdbToTvdbMappingL2,
 } from "@/lib/cache"
 import { env } from "@/lib/env"
 
@@ -66,6 +67,9 @@ async function buildSonarrQueueMap(): Promise<QueueMap> {
 async function resolveTvdbId(tmdbId: number): Promise<number | null> {
   const cached = getTmdbToTvdbMapping(tmdbId)
   if (cached !== undefined) return cached
+  const cachedL2 = await fetchTmdbToTvdbMappingL2(tmdbId)
+  if (cachedL2 !== null) return cachedL2
+
   try {
     const controller = new AbortController()
     const id = setTimeout(() => controller.abort(), FETCH_TIMEOUT)

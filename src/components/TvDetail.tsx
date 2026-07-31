@@ -6,12 +6,13 @@ import { getImageUrl, formatRating, formatDate } from "@/lib/utils"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Badge } from "@/components/ui/badge"
 import { RequestButton } from "@/components/RequestButton"
+import { RequestModal } from "@/components/RequestModal"
 import { BookmarkButton } from "@/components/BookmarkButton"
 import { SeasonBrowser } from "@/components/SeasonBrowser"
 import { MovieRow } from "@/components/MovieRow"
 import { CastCarousel } from "@/components/CastCarousel"
 import { useAvailability } from "@/lib/use-availability"
-import { Star, Calendar, Bookmark, Check, Tv, User, Globe, ShieldAlert, Award } from "lucide-react"
+import { Star, Calendar, Tv, Globe, ShieldAlert } from "lucide-react"
 import type { TmdbTvDetail } from "@/lib/tmdb"
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json())
@@ -31,12 +32,19 @@ export function TvDetail({ params }: { params: Promise<{ id: string }> }) {
     fetcher
   )
 
-  const [isBookmarked, setIsBookmarked] = useState(false)
-
   const showId = data?.id
   const { availability, refresh } = useAvailability(
     showId ? { tmdbId: showId, type: "tv" } : null
   )
+
+  const [seasonsState, setSeasonsState] = useState<{
+    downloadedSeasons: number[]
+    missingSeasons: number[]
+    hasMissingSeasons: boolean
+  }>({ downloadedSeasons: [], missingSeasons: [], hasMissingSeasons: false })
+
+  const [requestSeasonTarget, setRequestSeasonTarget] = useState<number | undefined>(undefined)
+  const [showExplicitRequestModal, setShowExplicitRequestModal] = useState(false)
 
   if (isLoading) {
     return (
@@ -187,14 +195,27 @@ export function TvDetail({ params }: { params: Promise<{ id: string }> }) {
                   tmdbId={show.id}
                   title={show.name}
                   year={show.first_air_date ? new Date(show.first_air_date).getFullYear() : undefined}
+                  posterPath={show.poster_path}
+                  backdropPath={show.backdrop_path}
                   tvdbId={tvdbId}
+                  seasonsCount={show.seasons?.length || show.number_of_seasons}
                   availability={availability}
                   onStatusChange={refresh}
+                  hasMissingSeasons={seasonsState.hasMissingSeasons}
+                  missingSeasons={seasonsState.missingSeasons}
+                  downloadedSeasons={seasonsState.downloadedSeasons}
                 />
 
                 <BookmarkButton
                   itemId={availability?.jellyfinItemId || String(show.id)}
+                  tmdbId={show.id}
+                  tvdbId={tvdbId}
+                  jellyfinId={availability?.jellyfinItemId}
+                  mediaType="tv"
                   title={show.name}
+                  posterPath={show.poster_path}
+                  overview={show.overview}
+                  releaseYear={show.first_air_date ? new Date(show.first_air_date).getFullYear().toString() : undefined}
                 />
               </div>
             </div>
@@ -210,9 +231,6 @@ export function TvDetail({ params }: { params: Promise<{ id: string }> }) {
           <div className="lg:col-span-2 space-y-8">
             {/* Show Synopsis */}
             <div className="space-y-3">
-              {/* <h2 className="text-lg font-black uppercase tracking-wider text-white border-b border-border pb-3 flex items-center gap-2">
-                <Tv className="size-5 text-accent" /> SHOW SYNOPSIS
-              </h2> */}
               <p className="text-base sm:text-lg leading-relaxed text-gray-300">
                 {show.overview || "No overview available for this show."}
               </p>
@@ -225,10 +243,6 @@ export function TvDetail({ params }: { params: Promise<{ id: string }> }) {
           {/* Right Sidebar Metadata Details (Open Design) */}
           <div className="space-y-6">
             <div className="space-y-4">
-              {/* <h2 className="text-lg font-black uppercase tracking-wider text-white border-b border-border pb-3 flex items-center gap-2">
-                <Award className="size-5 text-accent" /> SHOW DETAILS
-              </h2> */}
-
               <dl className="space-y-4 text-xs">
                 {creators.length > 0 && (
                   <div className="pt-2">
@@ -291,6 +305,11 @@ export function TvDetail({ params }: { params: Promise<{ id: string }> }) {
             tmdbSeasons={show.seasons}
             seriesId={availability?.jellyfinItemId}
             tvdbId={tvdbId}
+            onSeasonsStateChange={setSeasonsState}
+            onRequestSeason={(seasonNum) => {
+              setRequestSeasonTarget(seasonNum)
+              setShowExplicitRequestModal(true)
+            }}
           />
         </div>
 
@@ -318,6 +337,32 @@ export function TvDetail({ params }: { params: Promise<{ id: string }> }) {
           </div>
         )}
       </div>
+
+      {showExplicitRequestModal && (
+        <RequestModal
+          tmdbId={show.id}
+          title={show.name}
+          type="tv"
+          year={show.first_air_date ? new Date(show.first_air_date).getFullYear() : undefined}
+          posterPath={show.poster_path}
+          backdropPath={show.backdrop_path}
+          tvdbId={tvdbId}
+          seasonsCount={show.seasons?.length || show.number_of_seasons}
+          initialSeasonMode={requestSeasonTarget || seasonsState.missingSeasons.length > 0 ? "custom" : "all"}
+          initialSelectedSeasons={requestSeasonTarget ? [requestSeasonTarget] : seasonsState.missingSeasons}
+          downloadedSeasons={seasonsState.downloadedSeasons}
+          onClose={() => {
+            setShowExplicitRequestModal(false)
+            setRequestSeasonTarget(undefined)
+          }}
+          onSuccess={() => {
+            setShowExplicitRequestModal(false)
+            setRequestSeasonTarget(undefined)
+            refresh()
+          }}
+        />
+      )}
     </div>
   )
 }
+

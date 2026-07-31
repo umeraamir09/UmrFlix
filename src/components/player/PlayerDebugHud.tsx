@@ -4,6 +4,7 @@ import { useEffect, useState, useSyncExternalStore } from "react"
 import { ClipboardCopy, X } from "lucide-react"
 import { getDebugEntries, subscribeDebugEntries } from "./player-debug"
 import type { PlaybackPayload } from "@/lib/playback-types"
+import { maskUrl } from "@/lib/url-utils"
 
 const READY_STATE: Record<number, string> = {
   0: "HAVE_NOTHING",
@@ -28,6 +29,8 @@ export function PlayerDebugHud({
   payload,
   engine,
   qualityId,
+  autoResolvedId,
+  estimatedBandwidth,
   probeReason,
   audioIndex,
   subtitleIndex,
@@ -38,6 +41,8 @@ export function PlayerDebugHud({
   payload: PlaybackPayload | null
   engine: "direct" | "hls"
   qualityId: string
+  autoResolvedId?: string | null
+  estimatedBandwidth?: number
   probeReason: string
   audioIndex: number | null
   subtitleIndex: number | null
@@ -82,7 +87,7 @@ export function PlayerDebugHud({
     const text = [
       `engine=${engine} quality=${qualityId}`,
       `probe: ${probeReason}`,
-      `streamUrl: ${streamUrl}`,
+      `streamUrl: ${maskUrl(streamUrl)}`,
       payload
         ? `payload: container=${payload.container} vcodec=${payload.videoCodec} canDirectPlay=${payload.canDirectPlay} supportsTranscoding=${payload.supportsTranscoding} audio=${payload.audio.map((a) => `[${a.index}]${a.codec}`).join(",")} subs=${payload.subtitles.map((s) => `[${s.index}]${s.codec}${s.isImageBased ? "(img)" : ""}`).join(",")}`
         : "payload: (none)",
@@ -126,7 +131,13 @@ export function PlayerDebugHud({
       <div className="max-h-[55cqh] overflow-y-auto p-3 [&::-webkit-scrollbar]:w-1">
         <div className="space-y-0.5 whitespace-pre-wrap break-all">
           <p>
-            <span className="text-white/50">engine       </span> {engine} · quality {qualityId}
+            <span className="text-white/50">engine       </span> {engine} · quality {qualityId}{autoResolvedId ? ` (ABR → ${autoResolvedId})` : ""}
+          </p>
+          <p>
+            <span className="text-white/50">bandwidth    </span>{" "}
+            {estimatedBandwidth && estimatedBandwidth > 0
+              ? `${(estimatedBandwidth / 1_000_000).toFixed(1)} Mbps (est)`
+              : "measuring…"}
           </p>
           <p>
             <span className="text-white/50">probe        </span> {probeReason}
@@ -154,7 +165,7 @@ export function PlayerDebugHud({
             </p>
           )}
           <p>
-            <span className="text-white/50">stream       </span> {streamUrl}
+            <span className="text-white/50">stream       </span> {maskUrl(streamUrl)}
           </p>
         </div>
 

@@ -3,8 +3,8 @@
 import { useState, useEffect, useCallback } from "react"
 import Image from "next/image"
 import Link from "next/link"
-import { ChevronLeft, ChevronRight, Info, Check } from "lucide-react"
-import { IconPlay, IconDownloadNav } from "@/components/ui/icons"
+import { ChevronLeft, ChevronRight } from "lucide-react"
+import { IconPlay } from "@/components/ui/icons"
 import { BookmarkButton } from "@/components/BookmarkButton"
 
 export interface BillboardItem {
@@ -25,19 +25,19 @@ export interface BillboardItem {
 export function HeroBillboard({ items }: { items: BillboardItem[] }) {
   const [currentIndex, setCurrentIndex] = useState(0)
   const [direction, setDirection] = useState<"next" | "prev">("next")
-  const [isBookmarked, setIsBookmarked] = useState(false)
 
   const activeItem = items[currentIndex] || items[0]
+
 
   const nextSlide = useCallback(() => {
     setDirection("next")
     setCurrentIndex((prev) => (prev + 1) % items.length)
   }, [items.length])
 
-  const prevSlide = () => {
+  const prevSlide = useCallback(() => {
     setDirection("prev")
     setCurrentIndex((prev) => (prev - 1 + items.length) % items.length)
-  }
+  }, [items.length])
 
   const handleIndicatorClick = (idx: number) => {
     if (idx === currentIndex) return
@@ -74,8 +74,8 @@ export function HeroBillboard({ items }: { items: BillboardItem[] }) {
           className={`object-cover object-center ${
             direction === "next" ? "animate-backdrop-right" : "animate-backdrop-left"
           }`}
-          unoptimized
         />
+
         {/* Dark Vignette Gradients */}
         <div className="absolute inset-0 bg-gradient-to-t from-background via-background/50 to-transparent" />
         <div className="absolute inset-0 bg-gradient-to-r from-background via-background/80 to-transparent w-full md:w-3/4" />
@@ -103,8 +103,8 @@ export function HeroBillboard({ items }: { items: BillboardItem[] }) {
                 alt={title}
                 fill
                 className="object-contain object-left drop-shadow-xl"
-                unoptimized
               />
+
             </div>
           ) : (
             <h1 className="text-3xl sm:text-5xl md:text-6xl font-black uppercase tracking-tight text-white leading-tight drop-shadow-lg">
@@ -127,7 +127,7 @@ export function HeroBillboard({ items }: { items: BillboardItem[] }) {
                   ? `/watch?id=${activeItem.jellyfinItemId}${activeItem.media_type === "tv" ? "&type=tv" : ""}`
                   : `/${activeItem.media_type}/${activeItem.id}`
               }
-              className="flex items-center gap-2 rounded-none bg-accent px-6 py-3 text-xs sm:text-sm font-bold uppercase tracking-wider text-white shadow-xl hover:bg-accent-hover transition-all active:scale-95"
+              className="inline-flex items-center justify-center gap-2 rounded-none border border-transparent bg-accent px-5 sm:px-6 py-3 text-xs sm:text-sm font-bold uppercase tracking-wider text-white shadow-xl hover:bg-accent-hover transition-all active:scale-95 shrink-0"
             >
               <IconPlay className="size-4 fill-white" />
               {activeItem.inLibrary ? "WATCH NOW" : "EXPLORE & REQUEST"}

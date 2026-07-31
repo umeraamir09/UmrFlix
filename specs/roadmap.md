@@ -16,7 +16,7 @@ flowchart TD
     subgraph Server ["Server Proxy & Middleware Layer (Next.js App Router)"]
         APIProxy["API Route Proxies (Server-Side Secrets)"]
         AuthModule["Jellyfin User Auth & JWT Session"]
-        PersistentCache["Persistent Cache (SQLite / Redis)"]
+        PersistentCache["Convex Database (Reactive Store)"]
         EventHub["Real-time Event Hub (Webhooks / SSE)"]
     end
 
@@ -146,53 +146,76 @@ The core MVP foundation has been fully built and verified:
 
 ---
 
-## Phase 4: Real-time Download Management & Automation Hub
+## Phase 4: Admin Dashboard, Request Management & Real-time Automation Hub (Completed)
 
-### 4.1 Webhook & Server-Sent Events (SSE) System
-- [ ] **Real-time Event Bridge (`/api/webhooks`):**
+### 4.1 Admin Request Management Dashboard (`/admin/requests`)
+- [x] **Request Approval & Denial Workflow:**
+  - Non-admin user requests do NOT automatically dispatch to Radarr/Sonarr; they are placed into a `pending` request queue.
+  - Admin users can review pending requests with media poster, title, requester username, quality profile, and destination folder.
+  - One-click **Approve** button (dispatches request to Radarr/Sonarr, sets status to `approved`, sends approval notification to user).
+  - One-click **Deny** button (opens denial reason prompt, sets status to `denied`, sends denial notification with reason to user).
+  - Admin users can submit direct requests or bypass approval.
+
+### 4.2 Integrated qBittorrent & Jellyfin Admin Dashboard (`/admin`)
+- [x] **qBittorrent Active Downloads Monitoring:**
+  - Integrated qBittorrent Web API client (`/api/v2/torrents/info`).
+  - Real-time torrent list displaying release name, progress %, torrent size, download/upload speeds (MB/s), ETA, status, and seeders/leechers ratio.
+  - Admin torrent control actions: Pause, Resume, and Delete torrent.
+- [x] **Jellyfin Active Sessions Monitoring:**
+  - Real-time display of active streaming sessions from Jellyfin API (`GET /Sessions`).
+  - Shows active user avatar/name, movie/show title being played, client device, video resolution, Direct Play vs Transcode status, and progress.
+  - Admin session action: Terminate stream session (`POST /Sessions/{sessionId}/Stop`).
+- [x] **Total Storage & Disk Space Monitor:**
+  - Aggregate disk space monitor across qBittorrent download drives and Radarr/Sonarr media root folders (`/api/v3/diskspace`).
+  - Visual storage allocation bar showing Used, Free, and Total storage capacity in GB/TB.
+
+### 4.3 User Request Management Dashboard & Notifications (`/requests`)
+- [x] **User Request History & Monitoring Page (`/requests`):**
+  - Dedicated page for non-admin and admin users to track their requested movies and TV shows.
+  - Filter tabs: `All`, `Pending`, `Approved`, `Denied`.
+  - Request cards showing poster art, title, media type, request date, status badge, and denial reason if rejected.
+- [x] **Real-time Request Status Notification System (`NotificationBell.tsx`):**
+  - Instant notification alerts generated when an admin approves or denies a user request.
+  - Interactive Notification Bell icon in Navbar with unread badge counter.
+  - Slide-over / dropdown notification list with "Mark as read", notification message, timestamp, and quick link to request details.
+
+### 4.4 Advanced Request Customization Modal
+- [x] **Enhanced Request Modal (`RequestModal.tsx`):**
+  - Quality Profile selector (e.g., Ultra-HD 4K, HD-1080p, Any).
+  - Root Folder destination picker (with disk space information).
+  - Minimum Availability & Tags selection.
+  - For TV Shows: Season selection picker (All Seasons, First Season, Future Seasons, Specific Seasons checkboxes).
+
+### 4.5 Webhook & Server-Sent Events (SSE) System
+- [x] **Real-time Event Bridge (`/api/webhooks`):**
   - Configure Radarr & Sonarr Webhooks pointing to UmrFlix (`On Grab`, `On Download`, `On Rename`).
-  - Server-Sent Events (SSE) or WebSocket channel to broadcast state changes instantly to client browsers.
+  - Server-Sent Events (SSE) channel (`/api/events`) to broadcast state changes instantly to client browsers.
   - Instant UI badge state updates without polling.
 
-### 4.2 Download Activity Center (`/activity`)
-- [ ] **Active Downloads Drawer & Page:**
-  - Consolidated view of active Radarr and Sonarr queues.
-  - Live progress bar, download speed (MB/s), ETA, download client tag (qBittorrent / SABnzbd), and release title.
-  - Actions: Pause download, Cancel download, Force re-search, and Remove from queue.
-
-### 4.3 Advanced Request Customization Modal
-- [ ] **Enhanced Request Modal (`RequestModal.tsx`):**
-  - Quality Profile selector (e.g., Ultra-HD 4K, HD-1080p, Any).
-  - Root Folder destination picker.
-  - Minimum Availability & Tags selection.
-  - For TV Shows: Season selection picker (All Seasons, First Season, Future Seasons, Specific Season).
-
-### 4.4 Interactive Manual Search & Release Selection
-- [ ] **Manual Release Picker (`/movie/:id/releases`):**
-  - Fallback manual search triggering Radarr/Sonarr release search (`GET /api/v3/release`).
-  - Interactive table displaying release title, size, indexer, seeders/leechers, quality, and age.
-  - One-click "Grab Release" button to manually override automatic release selection.
 
 ---
 
-## Phase 5: Persistent Cache & High-Performance Architecture
+## Phase 5: Persistent Cache & High-Performance Architecture (Completed)
 
-### 5.1 Persistent Storage Engine
-- [ ] **Database & Cache Layer (SQLite / Prisma or Redis):**
-  - Replace in-memory maps in `cache.ts` with persistent storage (SQLite via Prisma/Kysely or Upstash Redis).
-  - Store TMDB metadata, TMDB↔TVDB mapping table, Jellyfin item indices, and user request history.
-  - Background cron job to refresh collection indices every 15 minutes.
+### 5.1 Convex Database Integration
+- [x] **Convex Backend (convex/*):**
+  - Replace in-memory maps in `cache.ts` with Convex for persistent, reactive storage.
+  - Define Convex schemas for TMDB metadata, TMDB↔TVDB mappings, Jellyfin item indices, and user request history.
+  - Use Convex mutations/queries for all CRUD operations, replacing manual cache logic.
+  - Leverage Convex scheduled functions (cron jobs) for periodic collection index refreshes.
+  - Remove SQLite/Prisma/Redis dependencies in favor of Convex's built-in reactive data layer.
 
 ### 5.2 Next.js Image Optimization & Asset Proxying
-- [ ] **Optimized Media Delivery:**
+- [x] **Optimized Media Delivery:**
   - Use `next/image` for TMDB posters and fanart (`image.tmdb.org`).
   - Secure proxy route for Jellyfin image assets (`/api/jellyfin/image/:id`) with token authorization and browser caching headers.
 
 ### 5.3 Resilient API Middleware & Circuit Breakers
-- [ ] **Fault Tolerance:**
+- [x] **Fault Tolerance:**
   - Circuit breaker for external services (Radarr, Sonarr, Jellyfin, TMDB).
   - Fallback UI states when any self-hosted service goes offline (e.g., graceful message "Radarr unavailable, browsing remains active").
   - Retry logic with exponential backoff for external API calls.
+
 
 ---
 
@@ -226,5 +249,5 @@ The core MVP foundation has been fully built and verified:
 | 🎯 **P0** | **Phase 3** | Jellyfin User Authentication | Secure multi-user login & sessions |
 | 🚀 **P1** | **Phase 1** | Netflix UI, Hero Billboard & Carousels | Premium cinematic design & smooth discovery |
 | 🚀 **P1** | **Phase 4** | Webhooks & Active Download Activity Center | Real-time download progress & status updates |
-| 🛡️ **P2** | **Phase 5** | Persistent SQLite/Redis Cache & Performance | Resilient caching across server restarts |
+| 🛡️ **P2** | **Phase 5** | Convex Database & Reactive Cache | Persistent, reactive data layer replacing in-memory cache |
 | 📱 **P2** | **Phase 6** | Docker Stack, PWA & Smart TV Support | One-click deployment & TV remote accessibility |

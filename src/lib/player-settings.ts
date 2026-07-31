@@ -16,10 +16,13 @@ export type SubtitleMode = "client" | "burn"
 
 export type PlayerSettings = {
   subtitleMode: SubtitleMode
+  /** Persisted quality preference. "auto" enables adaptive quality. */
+  qualityPreference: string
 }
 
 export const DEFAULT_PLAYER_SETTINGS: PlayerSettings = {
   subtitleMode: "client",
+  qualityPreference: "auto",
 }
 
 const STORAGE_KEY = "umrflix.playerSettings"

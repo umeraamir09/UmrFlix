@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import { toggleFavoriteItem } from "@/lib/jellyfin"
+import { setFavoriteItem } from "@/lib/jellyfin"
 
 export async function POST(
   req: Request,
@@ -7,7 +7,7 @@ export async function POST(
 ) {
   try {
     const { id } = await params
-    const success = await toggleFavoriteItem(id, true)
+    const success = await setFavoriteItem(id, true)
     return NextResponse.json({ success })
   } catch (e) {
     const message = e instanceof Error ? e.message : "Failed to add favorite"
@@ -21,7 +21,7 @@ export async function DELETE(
 ) {
   try {
     const { id } = await params
-    const success = await toggleFavoriteItem(id, false)
+    const success = await setFavoriteItem(id, false)
     return NextResponse.json({ success })
   } catch (e) {
     const message = e instanceof Error ? e.message : "Failed to remove favorite"

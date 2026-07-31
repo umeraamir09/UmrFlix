@@ -1,11 +1,11 @@
 "use client"
 
 import { useSearchParams, useRouter } from "next/navigation"
-import { useState, useEffect, useCallback, useMemo } from "react"
+import { useState, useEffect, useCallback, useMemo, useRef } from "react"
 import useSWR from "swr"
 import Image from "next/image"
 import Link from "next/link"
-import { Search, X, ChevronRight, ChevronDown } from "lucide-react"
+import { Search, X, ChevronRight, ChevronDown, Loader2 } from "lucide-react"
 import { useBatchAvailability } from "@/lib/use-availability"
 import { AvailabilityBadge } from "@/components/AvailabilityBadge"
 
@@ -56,28 +56,59 @@ export function SearchResults() {
   const type = searchParams.get("type") ?? "" // "movie" | "tv" | ""
   const filter = searchParams.get("filter") ?? "" // "popular"
   const sort = searchParams.get("sort") ?? "popularity"
-  const query = searchParams.get("q") ?? ""
-  const [inputValue, setInputValue] = useState(query)
-  const [recentSearches, setRecentSearches] = useState<string[]>([])
-  const [showAllSeries, setShowAllSeries] = useState(false)
-  const [showAllMovies, setShowAllMovies] = useState(false)
+  const urlQuery = searchParams.get("q") ?? ""
 
-  // Sync state with URL search params
-  useEffect(() => {
-    setInputValue(searchParams.get("q") ?? "")
-  }, [searchParams])
-
-  // Load recent searches from localStorage
-  useEffect(() => {
+  const [inputValue, setInputValue] = useState(urlQuery)
+  const [debouncedQuery, setDebouncedQuery] = useState(urlQuery)
+  const [recentSearches, setRecentSearches] = useState<string[]>(() => {
+    if (typeof window === "undefined") return []
     try {
       const saved = localStorage.getItem(RECENT_SEARCHES_KEY)
-      if (saved) {
-        setRecentSearches(JSON.parse(saved))
-      }
+      return saved ? JSON.parse(saved) : []
     } catch (e) {
       console.error("Failed to load recent searches:", e)
+      return []
     }
+  })
+  const [showAllSeries, setShowAllSeries] = useState(false)
+  const [showAllMovies, setShowAllMovies] = useState(false)
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  // Auto-focus input field on mount
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      inputRef.current?.focus()
+    }, 50)
+    return () => clearTimeout(timer)
   }, [])
+
+  // Sync state when URL searchParams change externally (e.g., browser back/forward or clicking links)
+  useEffect(() => {
+    const q = searchParams.get("q") ?? ""
+    setInputValue(q)
+    setDebouncedQuery(q)
+  }, [searchParams])
+
+  // Real-time search content refresh while typing (debounced)
+  useEffect(() => {
+    const currentUrlQ = searchParams.get("q") ?? ""
+    const timer = setTimeout(() => {
+      setDebouncedQuery(inputValue)
+      if (inputValue.trim() !== currentUrlQ.trim()) {
+        const params = new URLSearchParams(searchParams.toString())
+        const trimmed = inputValue.trim()
+        if (trimmed) {
+          params.set("q", trimmed)
+        } else {
+          params.delete("q")
+        }
+        const newUrl = params.toString() ? `/search?${params.toString()}` : "/search"
+        router.replace(newUrl, { scroll: false })
+      }
+    }, 250)
+
+    return () => clearTimeout(timer)
+  }, [inputValue, router, searchParams])
 
   // Save recent search
   const addRecentSearch = useCallback((term: string) => {
@@ -124,14 +155,30 @@ export function SearchResults() {
     const trimmed = inputValue.trim()
     if (trimmed) {
       addRecentSearch(trimmed)
-      router.push(`/search?q=${encodeURIComponent(trimmed)}`)
+      setDebouncedQuery(trimmed)
+      const params = new URLSearchParams(searchParams.toString())
+      params.set("q", trimmed)
+      router.push(`/search?${params.toString()}`)
+    } else {
+      router.push("/search")
     }
   }
 
   const handleSelectRecent = (term: string) => {
     setInputValue(term)
+    setDebouncedQuery(term)
     addRecentSearch(term)
     router.push(`/search?q=${encodeURIComponent(term)}`)
+  }
+
+  const handleClear = () => {
+    setInputValue("")
+    setDebouncedQuery("")
+    const params = new URLSearchParams(searchParams.toString())
+    params.delete("q")
+    const newUrl = params.toString() ? `/search?${params.toString()}` : "/search"
+    router.replace(newUrl, { scroll: false })
+    inputRef.current?.focus()
   }
 
   // Update a browse param while preserving others
@@ -148,7 +195,8 @@ export function SearchResults() {
     router.push(`/search?${params.toString()}`)
   }
 
-  const isBrowseMode = !query
+  const query = debouncedQuery
+  const isBrowseMode = !query.trim()
 
   // Build API URL
   const searchUrl = useMemo(() => {
@@ -266,6 +314,8 @@ export function SearchResults() {
       <div className="relative w-full pt-2">
         <form onSubmit={handleSearchSubmit} className="relative flex items-center">
           <input
+            ref={inputRef}
+            autoFocus
             type="text"
             value={inputValue}
             onChange={(e) => setInputValue(e.target.value)}
@@ -273,20 +323,19 @@ export function SearchResults() {
             className={`w-full bg-transparent pb-3 pt-2 text-2xl sm:text-3xl font-medium text-white placeholder-gray-500 border-b ${inputValue ? "border-accent" : "border-border focus:border-accent"
               } focus:outline-none transition-colors pr-10`}
           />
-          {inputValue ? (
+          {isLoading && inputValue.trim() ? (
+            <Loader2 className="absolute right-0 pb-3 size-6 animate-spin text-accent pointer-events-none" />
+          ) : inputValue ? (
             <button
               type="button"
-              onClick={() => {
-                setInputValue("")
-                router.push("/search")
-              }}
+              onClick={handleClear}
               className="absolute right-0 pb-3 text-gray-400 hover:text-white transition-colors"
               title="Clear Search"
             >
               <X className="size-6" />
             </button>
           ) : (
-            <Search className="absolute right-0 pb-3 size-6 text-gray-400" />
+            <Search className="absolute right-0 pb-3 size-6 text-gray-400 pointer-events-none" />
           )}
         </form>
       </div>
