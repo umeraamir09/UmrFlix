@@ -108,7 +108,7 @@ Install PM2 globally and configure it to start on boot:
 ```bash
 sudo npm install -g pm2
 
-# Start the app
+# Start the app in standard (fork) mode
 pm2 start npm --name umrflix -- start
 
 # Save the process list
@@ -118,6 +118,9 @@ pm2 save
 pm2 startup systemd
 sudo env PATH=$PATH:/usr/bin pm2 startup systemd -u $USER --hp /home/$USER
 ```
+
+> ⚠️ **CRITICAL WARNING FOR WATCH PARTY:**
+> Do **NOT** use PM2 Cluster Mode (e.g. `pm2 start ... -i max`). Watch Party uses process-local memory for room management and real-time EventBus (SSE). Running in multi-process cluster mode splits users across isolated Node processes, causing members not to show up in parties and breaking media synchronization. Always run PM2 in single-instance (`fork`) mode (default).
 
 **Useful PM2 commands:**
 ```bash
@@ -151,10 +154,27 @@ Since you already have Nginx Proxy Manager running, add a new **Proxy Host**:
 3. Enable "Force SSL" and "HTTP/2 Support"
 4. Set "Email for Let's Encrypt" and agree to terms
 
-### Optional: Increase Upload Size
-Streaming media requests may exceed the default 1MB body limit. If streaming proxies through UmrFlix, add a **Custom Nginx Configuration** on the proxy host's **Advanced** tab:
+### Required: Disable Buffering for Server-Sent Events (SSE) & Watch Party
+UmrFlix uses Server-Sent Events (SSE) via `/api/events` for Watch Party state, membership updates, and real-time notifications. Nginx Proxy Manager buffers proxied responses by default, which causes Watch Party sync events to freeze or delay.
+
+Add the following configuration in Nginx Proxy Manager under your Proxy Host's **Advanced** tab:
 
 ```nginx
+# Disable buffering for SSE (Watch Party & real-time events)
+location /api/events {
+    proxy_pass http://127.0.0.1:3000/api/events;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+
+    proxy_buffering off;
+    proxy_cache off;
+    proxy_read_timeout 86400s;
+    proxy_send_timeout 86400s;
+}
+
+# Optional: Increase body limit for media proxy streaming
 client_max_body_size 100M;
 proxy_read_timeout 600s;
 proxy_send_timeout 600s;
@@ -279,3 +299,4 @@ UmrFlix (Next.js, PM2, port 3000)
 | Images not loading | TMDB remote pattern mismatch | Check `next.config.ts` `remotePatterns` |
 | High memory usage | Media proxy streaming | Disable `/api/jellyfin/proxy` — connect clients directly to Jellyfin |
 | `data/` writes failing | Directory permissions | `sudo chown -R $USER:$USER /opt/umrflix/data` |
+| Watch Party users missing / sync broken | PM2 in cluster mode or Nginx SSE buffering | Run PM2 in single-instance mode (`pm2 restart umrflix -- --fork`) and add `proxy_buffering off;` to NPM for `/api/events` |

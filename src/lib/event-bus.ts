@@ -48,13 +48,11 @@ class AppEventBus extends EventEmitter {
   }
 }
 
-// Preserve instance across Next.js dev fast reloads
+// Preserve instance across Next.js route handlers and dev fast reloads
 const globalForEventBus = globalThis as unknown as {
   eventBus: AppEventBus | undefined
 }
 
-export const eventBus = globalForEventBus.eventBus ?? new AppEventBus()
-
-if (process.env.NODE_ENV !== "production") {
-  globalForEventBus.eventBus = eventBus
-}
+export const eventBus =
+  globalForEventBus.eventBus ??
+  (globalForEventBus.eventBus = new AppEventBus())

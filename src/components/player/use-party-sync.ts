@@ -117,7 +117,7 @@ export function usePartySync({
   // Initial snapshot load
   useEffect(() => {
     if (partyId) {
-      refreshSnapshot()
+      void refreshSnapshot()
     }
   }, [partyId, refreshSnapshot])
 
@@ -323,6 +323,19 @@ export function usePartySync({
       if (heartbeatRef.current) clearInterval(heartbeatRef.current)
     }
   }, [partyId])
+
+  // Periodic 5s snapshot polling safety net (ensures membership & state sync even if SSE drops/buffers)
+  useEffect(() => {
+    if (!partyId) return
+
+    const pollInterval = setInterval(() => {
+      void refreshSnapshot()
+    }, 5000)
+
+    return () => {
+      clearInterval(pollInterval)
+    }
+  }, [partyId, refreshSnapshot])
 
   // beforeunload: notify server on tab close
   useEffect(() => {

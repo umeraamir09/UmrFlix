@@ -632,8 +632,6 @@ const globalForPartyRoomManager = globalThis as unknown as {
   partyRoomManager: PartyRoomManager | undefined
 }
 
-export const roomManager = globalForPartyRoomManager.partyRoomManager ?? new PartyRoomManager()
-
-if (process.env.NODE_ENV !== "production") {
-  globalForPartyRoomManager.partyRoomManager = roomManager
-}
+export const roomManager =
+  globalForPartyRoomManager.partyRoomManager ??
+  (globalForPartyRoomManager.partyRoomManager = new PartyRoomManager())
