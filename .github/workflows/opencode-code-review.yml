@@ -1,0 +1,114 @@
+name: opencode-code-review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+concurrency:
+  group: opencode-code-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  review:
+    if: ${{ !github.event.pull_request.draft }}
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+      pull-requests: write
+      issues: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Detect previous code report
+        id: detect
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          REPORT_BODY=$(gh api \
+            "repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/comments?per_page=100&sort=created&direction=desc" \
+            --jq '[.[] | select(.body | contains("<!-- OPENCODE-CODE-REPORT -->"))][0].body' 2>/dev/null || true)
+          if [ -z "$REPORT_BODY" ] || [ "$REPORT_BODY" = "null" ]; then
+            echo "has_report=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_report=true" >> "$GITHUB_OUTPUT"
+            printf '%s' "$REPORT_BODY" > "$RUNNER_TEMP/opencode-last-report.md"
+            echo "Previous code report saved for verification."
+          fi
+
+      - name: Run OpenCode deep review
+        uses: anomalyco/opencode/github@latest
+        env:
+          OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          model: opencode/deepseek-v4-flash-free
+          use_github_token: true
+          prompt: |
+            You are a senior code reviewer running in GitHub Actions for pull request #${{ github.event.pull_request.number }} on ${{ github.repository }}.
+
+            IMPORTANT: You are in READ-ONLY review mode. Do NOT edit files, create branches, or push commits. Only analyze, verify, and report.
+
+            STEP 1 - Determine the mode:
+            Check whether the file "${{ runner.temp }}/opencode-last-report.md" exists (a previous review report saved by this workflow).
+            - If the file EXISTS, run in VERIFICATION MODE (STEP 2a).
+            - If the file does NOT exist, run in FULL REVIEW MODE (STEP 2b).
+
+            STEP 2a - VERIFICATION MODE (a new commit was pushed after the previous code report was generated):
+            - Read "${{ runner.temp }}/opencode-last-report.md" for the full list of issues from the previous report.
+            - Review the current PR diff (git diff against the base branch) and the code at HEAD.
+            - For EVERY issue in the previous report, re-examine its file:line at the current HEAD and mark it:
+              - [FIXED] - the problem is fully resolved
+              - [PARTIAL] - only part of the problem is resolved
+              - [NOT FIXED] - the problem is still present
+            - Also scan the diff for any NEW issues introduced since the previous report.
+            - Verify that every referenced fix actually landed; do not blindly trust commit messages.
+
+            STEP 2b - FULL REVIEW MODE (first run on this PR):
+            - Perform a full, deep and optimized review of the ENTIRE pull request.
+            - Read AGENTS.md at the repo root and follow the project's conventions.
+            - Analyze every changed file, the complete diff, and surrounding context in the codebase.
+            - Look for: logic bugs, race conditions, security issues (secrets exposure, injection, broken auth), unhandled errors, missing validation, performance problems, TypeScript type issues, dead code, accessibility problems, and deviations from repo conventions.
+            - Be thorough but precise: only report real, actionable problems. Do not report style nitpicks as bugs.
+
+            SEVERITY CLASSIFICATION (use exactly these labels):
+            - [CRITICAL]: Security vulnerabilities, data loss, crashes, or broken production behavior.
+            - [HIGH]: Likely bugs, unhandled errors, missing validation, incorrect logic.
+            - [MEDIUM]: Code quality, maintainability, edge cases, missing tests.
+            - [LOW]: Minor improvements, naming, small style issues.
+            - [INFO]: Suggestions and nitpicks.
+
+            REPORT FORMAT - your FINAL RESPONSE must be exactly the report below. It is posted as a comment on the PR, so it must be self-contained Markdown and MUST start with this exact marker line:
+
+            <!-- OPENCODE-CODE-REPORT -->
+
+            ## OpenCode Severity Report - PR #${{ github.event.pull_request.number }}
+
+            ### Summary
+            In VERIFICATION MODE: "X of Y issues fixed" plus counts of NOT FIXED / PARTIAL / NEW issues. If all previous issues are fixed, state that clearly.
+            In FULL REVIEW MODE: "CRITICAL: X | HIGH: Y | MEDIUM: Z | LOW: W | INFO: I"
+
+            ### Issues
+            Group issues by severity using headers exactly like these (omit empty sections):
+
+            #### CRITICAL
+            - **[path/file.ts:line]** Title - Description. Why it matters. Suggested fix.
+
+            #### HIGH
+            ...
+
+            #### MEDIUM
+            ...
+
+            #### LOW
+            ...
+
+            #### INFO
+            ...
+
+            Each issue must include an exact `file:line` reference from the current HEAD so it can be located and re-verified on the next commit. In VERIFICATION MODE, prefix each issue with its status tag (e.g. "- [NOT FIXED] **[file:line]** ...", "- [FIXED] **[file:line]** ...").
+
+            Keep the report detailed and actionable. Every listed problem must be re-checkable by a later run of this workflow.
