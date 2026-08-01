@@ -4,6 +4,7 @@ import {
   getPlaybackInfo,
   getItemDetail,
   getIntroSkipperSegments,
+  getMediaSegments,
   buildDirectStreamUrl,
   buildHlsStreamUrl,
   buildSubtitleUrl,
@@ -15,17 +16,17 @@ import {
 
 export const dynamic = "force-dynamic"
 
-export type MarkerType = "intro" | "recap" | "credits" | "preview"
+export type MarkerType = "intro" | "recap" | "outro" | "preview"
 export type SegmentMarker = { type: MarkerType; start: number; end: number } // seconds
 
 const IMAGE_BASED_SUB_CODECS = new Set(["pgssub", "dvdsub", "dvbsub", "xsub"])
 
-// Chapter-name heuristics used when the Intro Skipper plugin is absent.
+// Chapter-name heuristics used when segment providers are absent or incomplete.
 const CHAPTER_PATTERNS: [RegExp, MarkerType][] = [
-  [/^(recap|previously|cold ?start)/i, "recap"],
-  [/^(intro|opening|op\b|title sequence|main titles)/i, "intro"],
-  [/^(credits|ending|ed\b|outro|end credits)/i, "credits"],
-  [/^(preview|next time|trailer)/i, "preview"],
+  [/^(recap|previously|cold ?start|summary)/i, "recap"],
+  [/^(intro|opening|op\b|title sequence|main titles|opening title)/i, "intro"],
+  [/^(credits|ending|ed\b|outro|end credits|closing|end\b)/i, "outro"],
+  [/^(preview|next time|next episode|trailer|coming up|next on)/i, "preview"],
 ]
 
 function chaptersToMarkers(
@@ -50,6 +51,32 @@ function chaptersToMarkers(
     }
   }
   return markers
+}
+
+const MARKER_TYPES: MarkerType[] = ["intro", "recap", "outro", "preview"]
+const MIN_MARKER_DURATION = 5
+
+/**
+ * Merges marker sources in priority order, taking the first source that
+ * produced a given type (native segments > Intro Skipper plugin > chapters).
+ * Lower-tier sources only fill in types the higher tiers missed, and the
+ * result is sanity-filtered and sorted.
+ */
+function mergeMarkerSources(
+  sources: SegmentMarker[][],
+  runtimeSeconds: number,
+): SegmentMarker[] {
+  const byType = new Map<MarkerType, SegmentMarker[]>()
+  for (const source of sources) {
+    for (const m of source) {
+      const list = byType.get(m.type)
+      if (list) continue
+      if (m.end - m.start < MIN_MARKER_DURATION) continue
+      if (runtimeSeconds > 0 && m.start >= runtimeSeconds) continue
+      byType.set(m.type, [m])
+    }
+  }
+  return MARKER_TYPES.flatMap((t) => byType.get(t) ?? []).sort((a, b) => a.start - b.start)
 }
 
 function pickMediaSource(sources: JellyfinMediaSource[]): JellyfinMediaSource | undefined {
@@ -117,25 +144,39 @@ export async function GET(
         }
       })
 
-    // ── Markers: Intro Skipper plugin first, chapter heuristics as fallback ──
+    // ── Markers: native MediaSegments → Intro Skipper plugin → chapter heuristics ──
     let markers: SegmentMarker[] = []
     if (detail?.Type === "Episode" || detail?.Type === "Movie") {
-      const pluginSegments = await getIntroSkipperSegments(id)
+      const runtimeSeconds = ticksToSeconds(
+        detail.RunTimeTicks ?? mediaSource.RunTimeTicks ?? 0,
+      )
+      const [nativeSegments, pluginSegments] = await Promise.all([
+        getMediaSegments(id),
+        getIntroSkipperSegments(id),
+      ])
+
+      const pluginMarkers: SegmentMarker[] = []
       if (pluginSegments) {
         const typeMap: Record<string, MarkerType> = {
           Introduction: "intro",
           Recap: "recap",
-          Credits: "credits",
+          Credits: "outro",
           Preview: "preview",
         }
         for (const [key, seg] of Object.entries(pluginSegments)) {
           const type = typeMap[key]
-          if (type) markers.push({ type, start: seg.start, end: seg.end })
+          if (type) pluginMarkers.push({ type, start: seg.start, end: seg.end })
         }
       }
-    }
-    if (markers.length === 0 && detail?.Chapters?.length) {
-      markers = chaptersToMarkers(detail.Chapters, detail.RunTimeTicks ?? 0)
+
+      const chapterMarkers: SegmentMarker[] = detail?.Chapters?.length
+        ? chaptersToMarkers(detail.Chapters, detail.RunTimeTicks ?? 0)
+        : []
+
+      markers = mergeMarkerSources(
+        [nativeSegments ?? [], pluginMarkers, chapterMarkers],
+        runtimeSeconds,
+      )
     }
 
     const container = (mediaSource.Container ?? "").toLowerCase()

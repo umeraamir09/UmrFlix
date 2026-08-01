@@ -2,8 +2,9 @@
 
 import Link from "next/link"
 import Image from "next/image"
+import { useState } from "react"
 import { IconPlay } from "@/components/ui/icons"
-import { MoreVertical } from "lucide-react"
+import { Check, Loader2 } from "lucide-react"
 
 export interface ContinueWatchingItem {
   id: number
@@ -18,7 +19,28 @@ export interface ContinueWatchingItem {
   jellyfinImageUrl?: string
 }
 
-export function ContinueWatchingCard({ item }: { item: ContinueWatchingItem }) {
+export function ContinueWatchingCard({
+  item,
+  onMarkWatched,
+}: {
+  item: ContinueWatchingItem
+  onMarkWatched?: (jellyfinItemId: string) => void
+}) {
+  const [marking, setMarking] = useState(false)
+
+  const handleMarkWatched = async (e: React.MouseEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    if (!item.jellyfinItemId || marking) return
+    setMarking(true)
+    try {
+      await fetch(`/api/jellyfin/played/${item.jellyfinItemId}`, { method: "POST" })
+      onMarkWatched?.(item.jellyfinItemId)
+    } catch {
+      setMarking(false)
+    }
+  }
+
   // Resume items carry the exact Jellyfin movie/episode id — go straight to
   // the fullscreen player; fall back to the detail page when unknown.
   const href = item.jellyfinItemId
@@ -74,9 +96,20 @@ export function ContinueWatchingCard({ item }: { item: ContinueWatchingItem }) {
           <p className="text-[11px] font-bold uppercase tracking-wider text-gray-400 line-clamp-1">
             {item.title}
           </p>
-          <button className="text-gray-400 hover:text-white p-1">
-            <MoreVertical className="size-3.5" />
-          </button>
+          {item.jellyfinItemId && (
+            <button
+              onClick={handleMarkWatched}
+              disabled={marking}
+              title="Mark as watched"
+              className="p-1 text-gray-400 transition-colors hover:text-accent disabled:opacity-50"
+            >
+              {marking ? (
+                <Loader2 className="size-3.5 animate-spin" />
+              ) : (
+                <Check className="size-3.5" />
+              )}
+            </button>
+          )}
         </div>
         <h4 className="text-xs font-bold text-white line-clamp-1 group-hover:text-accent transition-colors">
           {item.episodeNumber ? `${item.episodeNumber} - ` : ""}{item.episodeTitle || item.title}

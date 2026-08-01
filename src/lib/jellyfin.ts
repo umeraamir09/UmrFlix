@@ -600,6 +600,49 @@ export async function getIntroSkipperSegments(
   }
 }
 
+export type JellyfinMediaSegment = {
+  type: "intro" | "recap" | "outro" | "preview"
+  start: number
+  end: number
+}
+
+/**
+ * Queries Jellyfin's native Media Segments API (Jellyfin 10.10+).
+ * Types are standardised by the server: Intro, Recap, Outro, Preview, Commercial.
+ * Commercials are intentionally ignored. Returns null when unavailable
+ * (older server / no segments), so callers can fall back to other sources.
+ */
+export async function getMediaSegments(itemId: string): Promise<JellyfinMediaSegment[] | null> {
+  const { token } = await authenticate()
+  const res = await jellyfinFetch(`${BASE}/MediaSegments/${itemId}`, {
+    headers: getAuthHeaders(token),
+  }).catch(() => null)
+  if (!res || !res.ok) return null
+
+  try {
+    const raw = (await res.json()) as {
+      Items?: { Type?: string; StartTicks?: number; EndTicks?: number }[]
+    }
+    const typeMap: Record<string, JellyfinMediaSegment["type"]> = {
+      Intro: "intro",
+      Recap: "recap",
+      Outro: "outro",
+      Preview: "preview",
+    }
+    const out: JellyfinMediaSegment[] = []
+    for (const seg of raw.Items ?? []) {
+      const type = seg.Type ? typeMap[seg.Type] : undefined
+      if (!type || seg.StartTicks == null || seg.EndTicks == null) continue
+      const start = ticksToSeconds(seg.StartTicks)
+      const end = ticksToSeconds(seg.EndTicks)
+      if (end > start) out.push({ type, start, end })
+    }
+    return out.length > 0 ? out : null
+  } catch {
+    return null
+  }
+}
+
 // ── TV seasons & episodes ──
 
 export type JellyfinSeason = {

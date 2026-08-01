@@ -32,6 +32,7 @@ import { BandwidthEstimator, attachHlsBandwidthMonitor } from "./bandwidth-estim
 import { applyStreamParams, maskUrl } from "@/lib/url-utils"
 import { usePartySync } from "./use-party-sync"
 import { PartyBar } from "@/components/party/PartyBar"
+import type { EpisodeInfo, SeasonInfo } from "@/components/SeasonBrowser"
 
 const TICKS_PER_SECOND = 10_000_000
 const CONTROLS_HIDE_DELAY = 3_500
@@ -48,6 +49,10 @@ export type CinemaPlayerProps = {
   fill?: boolean
   nextEpisode?: NextEpisodeInfo | null
   onNextEpisode?: () => void
+  /** Series context for the in-player episode browser. */
+  episodes?: EpisodeInfo[] | null
+  seasons?: SeasonInfo[]
+  onSelectEpisode?: (episodeId: string) => void
   onWatched?: () => void
   onBack?: () => void
   onReport?: () => void
@@ -67,6 +72,9 @@ export function CinemaPlayer({
   fill = false,
   nextEpisode = null,
   onNextEpisode,
+  episodes = null,
+  seasons = [],
+  onSelectEpisode,
   onWatched,
   onBack,
   onReport,
@@ -143,12 +151,12 @@ export function CinemaPlayer({
   // ── UI state ──
   const [endpointReady, setEndpointReady] = useState(false) // playback info settled
   const [controlsVisible, setControlsVisible] = useState(true)
+  const [episodeBrowserOpen, setEpisodeBrowserOpen] = useState(false)
   const [isFullscreen, setIsFullscreen] = useState(false)
   const [nextPrompt, setNextPrompt] = useState<{ secondsLeft: number } | null>(null)
   const [creditsPillDismissed, setCreditsPillDismissed] = useState(false)
   const [debugOpen, setDebugOpen] = useState(false)
   const [lastStreamUrl, setLastStreamUrl] = useState("")
-  const debugAutoOpenedRef = useRef(false)
   const [volume, setVolume] = useState(() => {
     if (typeof window === "undefined") return 1
     try {
@@ -687,22 +695,33 @@ export function CinemaPlayer({
     }
   }, [currentTime, duration, payload, onWatched])
 
+  // ── Auto-mark watched once the outro of an episode is reached ──
+  useEffect(() => {
+    if (!payload?.series || watchedReportedRef.current) return
+    const outro = payload.markers.find((m) => m.type === "outro")
+    if (outro && currentTime >= outro.start) {
+      watchedReportedRef.current = true
+      fetch(`/api/jellyfin/played/${payload.itemId}`, { method: "POST" }).catch(() => {})
+      onWatched?.()
+    }
+  }, [currentTime, payload, onWatched])
+
   // ── Controls auto-hide (while playing) ──
   useEffect(() => {
-    if (!playing) return
+    if (!playing || episodeBrowserOpen) return
     hideTimerRef.current = setTimeout(() => setControlsVisible(false), CONTROLS_HIDE_DELAY)
     return () => {
       if (hideTimerRef.current) clearTimeout(hideTimerRef.current)
     }
-  }, [playing])
+  }, [playing, episodeBrowserOpen])
 
   const pokeControls = useCallback(() => {
     setControlsVisible(true)
     if (hideTimerRef.current) clearTimeout(hideTimerRef.current)
-    if (videoRef.current && !videoRef.current.paused) {
+    if (!episodeBrowserOpen && videoRef.current && !videoRef.current.paused) {
       hideTimerRef.current = setTimeout(() => setControlsVisible(false), CONTROLS_HIDE_DELAY)
     }
-  }, [])
+  }, [episodeBrowserOpen])
 
   // ── Fullscreen ──
   useEffect(() => {
@@ -859,7 +878,7 @@ export function CinemaPlayer({
   const activeMarker =
     payload?.markers.find((m) => currentTime >= m.start && currentTime < m.end - 0.25) ?? null
   const showCreditsPill =
-    activeMarker?.type === "credits" &&
+    activeMarker?.type === "outro" &&
     !!nextEpisode &&
     !creditsPillDismissed &&
     !nextPrompt
@@ -910,19 +929,6 @@ export function CinemaPlayer({
     pokeControls()
   }
 
-  // Auto-open the debug HUD when playback is stuck buffering (once per session)
-  useEffect(() => {
-    if (!buffering || !endpointReady || loadError) return
-    const id = setTimeout(() => {
-      if (!debugAutoOpenedRef.current) {
-        debugAutoOpenedRef.current = true
-        playerLog.warn("debug", "buffering exceeded 8s — opening debug HUD (press d to toggle)")
-        setDebugOpen(true)
-      }
-    }, 8_000)
-    return () => clearTimeout(id)
-  }, [buffering, endpointReady, loadError])
-
   const startedOrWaiting = endpointReady && !loadError
   const autoResolvedLabel = autoResolvedId
     ? QUALITY_PRESETS.find((q) => q.id === autoResolvedId)?.label
@@ -941,7 +947,7 @@ export function CinemaPlayer({
       onTouchStart={pokeControls}
       className={`group relative select-none overflow-hidden bg-black outline-none [container-type:inline-size] ${
         fill ? "h-dvh w-screen rounded-none" : "aspect-video w-full rounded-lg"
-      } ${!controlsVisible && playing ? "cursor-none" : ""} ${className}`}
+      } ${!controlsVisible && playing && !episodeBrowserOpen ? "cursor-none" : ""} ${className}`}
     >
       <video
         ref={videoRef}
@@ -1064,7 +1070,7 @@ export function CinemaPlayer({
       {/* Control bar */}
       {payload && startedOrWaiting && endpointReady && (
         <PlayerControls
-          visible={controlsVisible || !playing || !!nextPrompt}
+          visible={controlsVisible || !playing || !!nextPrompt || episodeBrowserOpen}
           title={title}
           subtitle={subtitle}
           playing={playing}
@@ -1086,6 +1092,12 @@ export function CinemaPlayer({
           chapters={payload.chapters}
           itemId={payload.itemId}
           trickplay={payload.trickplay}
+          seriesId={payload.series?.id}
+          episodes={episodes}
+          seasons={seasons}
+          onSelectEpisode={onSelectEpisode}
+          episodeBrowserOpen={episodeBrowserOpen}
+          onToggleEpisodeBrowser={() => setEpisodeBrowserOpen((o) => !o)}
           onTogglePlay={togglePlay}
           onSeek={seekTo}
           onSkipBy={(d) => {

@@ -40,7 +40,7 @@ export type TrickplayInfo = {
 }
 
 export type SegmentMarker = {
-  type: "intro" | "recap" | "credits" | "preview"
+  type: "intro" | "recap" | "outro" | "preview"
   start: number
   end: number
 }
