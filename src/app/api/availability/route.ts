@@ -12,6 +12,8 @@ import {
 } from "@/lib/cache"
 import { tmdbProxyFetch } from "@/lib/tmdb-proxy"
 
+import { getAllRequests, type RequestItem } from "@/lib/requests-store"
+
 const FETCH_TIMEOUT = 5_000
 
 type AvailabilityItem = {
@@ -21,9 +23,12 @@ type AvailabilityItem = {
 }
 
 export type AvailabilityResult = {
-  status: "in_library" | "downloading" | "in_radarr" | "in_sonarr" | "not_requested"
+  status: "in_library" | "downloading" | "in_radarr" | "in_sonarr" | "pending" | "not_requested"
   progress?: number
   jellyfinItemId?: string
+  requestedByUsername?: string
+  requestedAt?: string
+  requestId?: string
 }
 
 type QueueMap = Map<number, { progress: number }>
@@ -81,6 +86,24 @@ async function resolveTvdbId(tmdbId: number): Promise<number | null> {
   }
 }
 
+function findPendingRequest(
+  tmdbId: number,
+  type: "movie" | "tv",
+  tvdbId: number | null,
+  pendingRequests: RequestItem[]
+): RequestItem | undefined {
+  return pendingRequests.find((r) => {
+    if (r.status !== "pending") return false
+    if (r.mediaType !== type) return false
+    if (type === "movie") {
+      return r.tmdbId === tmdbId
+    } else {
+      const target = tvdbId ?? tmdbId
+      return r.tmdbId === tmdbId || (r.tvdbId && r.tvdbId === target) || r.tmdbId === target
+    }
+  })
+}
+
 export async function GET(request: NextRequest) {
   const tmdbIdParam = request.nextUrl.searchParams.get("tmdbId")
   const typeParam = request.nextUrl.searchParams.get("type")
@@ -97,7 +120,8 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const [movies, series] = await Promise.all([
+    const [allRequests, movies, series] = await Promise.all([
+      getAllRequests().catch(() => []),
       ensureRadarrMovies(() => radarr.getMovies()).catch(() => new Map<number, radarr.RadarrMovie>()),
       ensureSonarrSeries(() => sonarr.getSeries()).catch(() => new Map<number, sonarr.SonarrSeries>()),
     ])
@@ -116,6 +140,18 @@ export async function GET(request: NextRequest) {
         result = { status: "not_requested" }
       } else {
         result = checkSeriesAvailability(resolvedTvdbId, series, sonarrQueue)
+      }
+    }
+
+    if (result.status === "not_requested") {
+      const pendingReq = findPendingRequest(tmdbId, type, resolvedTvdbId, allRequests)
+      if (pendingReq) {
+        result = {
+          status: "pending",
+          requestedByUsername: pendingReq.requestedBy.username,
+          requestedAt: pendingReq.requestedAt,
+          requestId: pendingReq.id,
+        }
       }
     }
 
@@ -161,7 +197,8 @@ export async function POST(request: NextRequest) {
   const results: Record<string, AvailabilityResult> = {}
 
   try {
-    const [radarrQueue, sonarrQueue] = await Promise.all([
+    const [allRequests, radarrQueue, sonarrQueue] = await Promise.all([
+      getAllRequests().catch(() => []),
       buildRadarrQueueMap(),
       buildSonarrQueueMap(),
     ])
@@ -198,6 +235,19 @@ export async function POST(request: NextRequest) {
               result = { status: "not_requested" }
             } else {
               result = checkSeriesAvailability(resolvedTvdbId, series, sonarrQueue)
+            }
+          }
+
+          if (result.status === "not_requested") {
+            const resolvedTvdbId = item.type === "tv" ? (tvdbMap.get(item.tmdbId) ?? null) : null
+            const pendingReq = findPendingRequest(item.tmdbId, item.type, resolvedTvdbId, allRequests)
+            if (pendingReq) {
+              result = {
+                status: "pending",
+                requestedByUsername: pendingReq.requestedBy.username,
+                requestedAt: pendingReq.requestedAt,
+                requestId: pendingReq.id,
+              }
             }
           }
 

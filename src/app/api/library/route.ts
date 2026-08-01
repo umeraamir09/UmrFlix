@@ -34,6 +34,7 @@ export interface JellyfinLibraryItem {
   posterUrl: string
   backdropUrl: string
   dateAdded?: string
+  played: boolean
 }
 
 type ExtendedJellyfinItem = JellyfinItem & {
@@ -119,6 +120,7 @@ export async function GET(request: NextRequest) {
         posterUrl: `/api/jellyfin/image/${item.Id}?type=Primary`,
         backdropUrl: `/api/jellyfin/image/${item.Id}?type=Backdrop`,
         dateAdded: item.DateCreated || item.DateLastMediaAdded,
+        played: item.UserData?.Played ?? false,
       }
 
       if (type === "movie") {

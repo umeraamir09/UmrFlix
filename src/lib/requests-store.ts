@@ -255,6 +255,24 @@ export async function createRequest(payload: {
   requestedBy: { userId: string; username: string }
   autoApprove?: boolean
 }): Promise<RequestItem> {
+  const existingRequests = await getAllRequests()
+  const existingPending = existingRequests.find((r) => {
+    if (r.status !== "pending") return false
+    if (r.mediaType !== payload.mediaType) return false
+    if (payload.mediaType === "movie") {
+      return r.tmdbId === payload.tmdbId
+    } else {
+      const targetTvdb = payload.tvdbId ?? payload.tmdbId
+      return r.tmdbId === payload.tmdbId || (r.tvdbId && r.tvdbId === targetTvdb) || r.tmdbId === targetTvdb
+    }
+  })
+
+  if (existingPending) {
+    throw new Error(
+      `This item has already been requested by ${existingPending.requestedBy.username}, please wait for an admin to approve the request`
+    )
+  }
+
   const id = `req_${Date.now()}_${crypto.randomUUID?.() ?? Math.random().toString(36).substring(2, 15)}`
   const status: RequestStatus = payload.autoApprove ? "approved" : "pending"
 

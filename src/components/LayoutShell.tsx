@@ -3,7 +3,6 @@
 import { usePathname } from "next/navigation"
 import { Navbar } from "@/components/Navbar"
 import { Footer } from "@/components/Footer"
-import { ServiceHealthBanner } from "@/components/ServiceHealthBanner"
 
 /**
  * App chrome wrapper — the dedicated /watch route renders bare
@@ -18,9 +17,8 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
 
   return (
     <>
-      <ServiceHealthBanner />
       <Navbar />
-      <main className="flex-1 pt-16">{children}</main>
+      <main className="flex-1">{children}</main>
       <Footer />
     </>
   )

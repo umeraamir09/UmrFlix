@@ -83,6 +83,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(requestItem, { status: 201 })
   } catch (e) {
     const message = e instanceof Error ? e.message : "Failed to submit request"
-    return NextResponse.json({ error: message }, { status: 500 })
+    const status = message.includes("already been requested") ? 409 : 500
+    return NextResponse.json({ error: message }, { status })
   }
 }

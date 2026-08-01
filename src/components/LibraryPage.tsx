@@ -55,6 +55,43 @@ export function LibraryPage() {
     }
   }, [refreshLibrary, toast])
 
+  const handleToggleWatched = useCallback(
+    async (item: JellyfinLibraryItem) => {
+      const isSeries = item.type === "tv"
+      const markAsWatched = !item.played
+      if (isSeries) {
+        const confirmed = window.confirm(
+          markAsWatched
+            ? `Mark all episodes of "${item.title}" as watched in Jellyfin?`
+            : `Mark all episodes of "${item.title}" as unwatched in Jellyfin?`
+        )
+        if (!confirmed) return
+      }
+
+      try {
+        const res = await fetch(`/api/jellyfin/played/${item.jellyfinId}`, {
+          method: markAsWatched ? "POST" : "DELETE",
+        })
+        if (res.ok) {
+          toast(
+            markAsWatched
+              ? isSeries
+                ? `Marked all episodes of "${item.title}" as watched`
+                : `Marked "${item.title}" as watched`
+              : `Marked "${item.title}" as unwatched`,
+            "success"
+          )
+          await refreshLibrary()
+        } else {
+          toast(`Failed to update "${item.title}"`, "error")
+        }
+      } catch {
+        toast("Error updating watched status", "error")
+      }
+    },
+    [refreshLibrary, toast]
+  )
+
   const handleDeleteItem = useCallback(
     async (item: JellyfinLibraryItem) => {
       const confirmed = window.confirm(
@@ -124,7 +161,7 @@ export function LibraryPage() {
   }
 
   return (
-    <div className="p-6">
+    <div className="pt-20 px-6 pb-6 max-w-[1600px] mx-auto">
       <div className="mb-6 flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold">My Library</h1>
@@ -169,6 +206,8 @@ export function LibraryPage() {
                   }}
                   disabled={!m.tmdbId}
                   onDelete={isAdmin ? () => handleDeleteItem(m) : undefined}
+                  onMarkWatched={() => handleToggleWatched(m)}
+                  isWatched={m.played}
                 />
               )
             })}
@@ -203,6 +242,8 @@ export function LibraryPage() {
                   }}
                   disabled={!s.tmdbId}
                   onDelete={isAdmin ? () => handleDeleteItem(s) : undefined}
+                  onMarkWatched={() => handleToggleWatched(s)}
+                  isWatched={s.played}
                 />
               )
             })}

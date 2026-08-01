@@ -1,7 +1,7 @@
 "use client"
 
 import type { AvailabilityResult } from "@/app/api/availability/route"
-import { Check, Download, BookmarkPlus, Bookmark } from "lucide-react"
+import { Check, Download, BookmarkPlus, Bookmark, Clock } from "lucide-react"
 
 export function AvailabilityBadge({ state }: { state?: AvailabilityResult }) {
   if (!state) return null
@@ -26,6 +26,16 @@ export function AvailabilityBadge({ state }: { state?: AvailabilityResult }) {
         <div className="flex items-center gap-1 rounded-none bg-blue-600/90 px-1.5 py-0.5 text-[10px] font-bold text-white shadow backdrop-blur">
           <BookmarkPlus className="size-3 stroke-[3]" />
           <span>REQUESTED</span>
+        </div>
+      )
+    case "pending":
+      return (
+        <div
+          className="flex items-center gap-1 rounded-none bg-amber-600/90 px-1.5 py-0.5 text-[10px] font-bold text-white shadow backdrop-blur"
+          title={state.requestedByUsername ? `Requested by ${state.requestedByUsername}` : "Pending admin approval"}
+        >
+          <Clock className="size-3 stroke-[3]" />
+          <span>PENDING</span>
         </div>
       )
     case "not_requested":

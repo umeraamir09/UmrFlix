@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { RequestModal } from "@/components/RequestModal"
 import { useToast } from "@/components/Toast"
-import { Plus, Play, Loader2, Layers, Users } from "lucide-react"
+import { Plus, Play, Loader2, Layers, Users, Clock } from "lucide-react"
 import { StartPartyModal } from "@/components/party/StartPartyModal"
 import type { AvailabilityResult } from "@/app/api/availability/route"
 
@@ -152,6 +152,28 @@ export function RequestButton({
 
         {renderModal()}
       </div>
+    )
+  }
+
+  // Case 2.5: Pending Approval
+  if (availability?.status === "pending") {
+    const requester = availability.requestedByUsername || "another user"
+    return (
+      <>
+        <Button size="lg" variant="secondary" disabled className="opacity-80 border-amber-500/40 text-amber-300">
+          <Clock className="mr-1.5 size-4 text-amber-400 animate-pulse" />
+          Pending Approval
+        </Button>
+
+        {renderModal()}
+
+        <div className="w-full text-xs font-semibold text-amber-300/90 bg-amber-950/40 border border-amber-800/50 p-2.5 rounded-none flex items-center gap-2 mt-1">
+          <Clock className="size-4 text-amber-400 shrink-0" />
+          <span>
+            This item has already been requested by <strong className="font-bold text-amber-200">{requester}</strong>, please wait for an admin to approve the request
+          </span>
+        </div>
+      </>
     )
   }
 
