@@ -8,35 +8,24 @@ import { CinemaPlayer } from "@/components/player/CinemaPlayer"
 import type { NextEpisodeInfo } from "@/components/player/PlayerOverlays"
 import type { PlaybackPayload } from "@/lib/playback-types"
 import type { AvailabilityResult } from "@/app/api/availability/route"
+import type { EpisodeInfo, SeasonInfo } from "@/components/SeasonBrowser"
 import { PartyRoomSnapshot, predictedPosition } from "@/lib/party/protocol"
-
-type LibraryEpisode = {
-  id: string
-  title: string
-  seasonNumber: number
-  episodeNumber: number
-  status: "in_library" | "downloading" | "missing" | "unaired"
-  played: boolean
-  playedPercentage: number
-  resumeTicks: number
-  thumbUrl: string
-}
 
 type WatchError = {
   message: string
   detailHref?: string
 }
 
-function sortEpisodes(a: LibraryEpisode, b: LibraryEpisode) {
+function sortEpisodes(a: EpisodeInfo, b: EpisodeInfo) {
   return a.seasonNumber - b.seasonNumber || a.episodeNumber - b.episodeNumber
 }
 
-function playableEpisodes(eps: LibraryEpisode[] = []): LibraryEpisode[] {
+function playableEpisodes(eps: EpisodeInfo[] = []): EpisodeInfo[] {
   return eps.filter((e) => e.status === "in_library").sort(sortEpisodes)
 }
 
 /** Pick what to play for a series: in-progress episode → first unplayed → first episode. */
-function pickSeriesEpisode(eps: LibraryEpisode[] = []): LibraryEpisode | null {
+function pickSeriesEpisode(eps: EpisodeInfo[] = []): EpisodeInfo | null {
   const playable = playableEpisodes(eps)
   if (playable.length === 0) return null
   const inProgress = playable.find((e) => e.resumeTicks > 0 && !e.played)
@@ -44,7 +33,7 @@ function pickSeriesEpisode(eps: LibraryEpisode[] = []): LibraryEpisode | null {
   return playable.find((e) => !e.played) ?? playable[0]
 }
 
-function episodeLabel(ep: Pick<LibraryEpisode, "seasonNumber" | "episodeNumber">) {
+function episodeLabel(ep: Pick<EpisodeInfo, "seasonNumber" | "episodeNumber">) {
   return `S${ep.seasonNumber}:E${ep.episodeNumber}`
 }
 
@@ -59,7 +48,8 @@ export function WatchPage() {
 
   const [resolvedId, setResolvedId] = useState<string | null>(null)
   const [payload, setPayload] = useState<PlaybackPayload | null>(null)
-  const [episodes, setEpisodes] = useState<LibraryEpisode[] | null>(null)
+  const [episodes, setEpisodes] = useState<EpisodeInfo[] | null>(null)
+  const [seasons, setSeasons] = useState<SeasonInfo[]>([])
   const [error, setError] = useState<WatchError | null>(null)
   const [partyInfo, setPartyInfo] = useState<{ partyId: string; isOwner: boolean } | null>(null)
   const [partyStartAt, setPartyStartAt] = useState<number | undefined>(undefined)
@@ -88,6 +78,7 @@ export function WatchPage() {
     setResolvedId(null)
     setPayload(null)
     setEpisodes(null)
+    setSeasons([])
     setError(null)
 
     async function resolve() {
@@ -170,7 +161,10 @@ export function WatchPage() {
           fetch(`/api/jellyfin/series/${p.series.id}/episodes`)
             .then((r) => r.json())
             .then((d) => {
-              if (!cancelled) setEpisodes(d.episodes ?? [])
+              if (!cancelled) {
+                setEpisodes(d.episodes ?? [])
+                setSeasons(d.seasons ?? [])
+              }
             })
             .catch(() => {})
         }
@@ -224,6 +218,27 @@ export function WatchPage() {
     }
   }, [nextEpisode, partyInfo])
 
+  const handleSelectEpisode = useCallback(
+    async (episodeId: string) => {
+      if (partyInfo) {
+        if (!partyInfo.isOwner) return
+        try {
+          await fetch(`/api/party/${partyInfo.partyId}/item`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ itemId: episodeId }),
+          })
+          setResolvedId(episodeId)
+        } catch (err) {
+          console.error("[WatchPage] Party episode select error:", err)
+        }
+        return
+      }
+      router.replace(`/watch?id=${episodeId}`)
+    },
+    [router, partyInfo],
+  )
+
   const handleBack = useCallback(() => {
     if (window.history.length > 1) router.back()
     else router.push("/")
@@ -237,6 +252,12 @@ export function WatchPage() {
     }
     return goToNextEpisode
   }, [nextEpisode, partyInfo, handlePartyNextEpisode, goToNextEpisode])
+
+  // Party-aware arbitrary-episode handler for the in-player episode browser
+  const effectiveOnSelectEpisode = useMemo(() => {
+    if (partyInfo && !partyInfo.isOwner) return undefined
+    return handleSelectEpisode
+  }, [partyInfo, handleSelectEpisode])
 
   if (error) {
     return (
@@ -291,6 +312,9 @@ export function WatchPage() {
       autoPlay
       nextEpisode={nextEpisode}
       onNextEpisode={effectiveOnNextEpisode}
+      episodes={episodes}
+      seasons={seasons}
+      onSelectEpisode={effectiveOnSelectEpisode}
       onBack={handleBack}
       party={partyInfo ?? undefined}
       startAtSec={partyStartAt}

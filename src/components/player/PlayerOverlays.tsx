@@ -18,6 +18,7 @@ export function formatTimecode(totalSeconds: number): string {
 const SKIP_LABELS: Record<string, string> = {
   intro: "Skip Intro",
   recap: "Skip Recap",
+  outro: "Skip Outro",
   credits: "Skip Credits",
   preview: "Skip Preview",
 }

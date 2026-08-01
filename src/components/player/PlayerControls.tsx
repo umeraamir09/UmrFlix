@@ -1,13 +1,13 @@
 "use client"
 
 import { useEffect, useRef, useState } from "react"
+import Image from "next/image"
 import {
   ArrowLeft,
   Check,
   ChevronLeft,
   Flag,
   PictureInPicture2,
-  SkipForward,
   Type,
   Volume2,
   VolumeX,
@@ -22,6 +22,8 @@ import {
 } from "@/lib/playback-types"
 import { TrickplayPreview, trickplayPreviewDisplaySize } from "./TrickplayPreview"
 import { ChapterImagePreview, chapterPreviewDisplaySize } from "./ChapterImagePreview"
+import { EpisodeBrowser } from "./EpisodeBrowser"
+import type { EpisodeInfo, SeasonInfo } from "@/components/SeasonBrowser"
 import type { SubtitleShadowStyle, SubtitleStyle } from "./SubtitleOverlay"
 
 import {
@@ -31,8 +33,6 @@ import {
   IconSkipForward,
   IconSubtitles,
   IconSpeed,
-  IconFullscreen,
-  IconExitFullscreen,
 } from "@/components/ui/icons"
 
 // ── Seek bar with buffered display, chapter ticks, hover tooltip & scrubbing ──
@@ -520,6 +520,12 @@ export function PlayerControls({
   chapters,
   itemId,
   trickplay,
+  seriesId,
+  episodes,
+  seasons,
+  onSelectEpisode,
+  episodeBrowserOpen,
+  onToggleEpisodeBrowser,
   onTogglePlay,
   onSeek,
   onSkipBy,
@@ -558,6 +564,12 @@ export function PlayerControls({
   chapters: ChapterInfo[]
   itemId: string
   trickplay: TrickplayInfo | null
+  seriesId?: string
+  episodes?: EpisodeInfo[] | null
+  seasons?: SeasonInfo[]
+  onSelectEpisode?: (episodeId: string) => void
+  episodeBrowserOpen: boolean
+  onToggleEpisodeBrowser: () => void
   onTogglePlay: () => void
   onSeek: (t: number) => void
   onSkipBy: (delta: number) => void
@@ -729,12 +741,41 @@ export function PlayerControls({
             {hasNext && onNextEpisode && (
               <button
                 onClick={onNextEpisode}
-                className="flex items-center gap-2 rounded-none border border-white/20 bg-black/50 px-3 py-2 text-xs font-bold uppercase tracking-wider text-white backdrop-blur transition-all hover:border-accent hover:bg-accent active:scale-95"
+                className="flex items-center justify-center p-1 text-white transition-all hover:scale-110 hover:opacity-100 active:scale-95 opacity-90"
                 aria-label="Play next episode"
                 title="Next Episode"
               >
-                <span className="hidden sm:inline">Next Episode</span>
-                <SkipForward className="size-4" />
+                <Image
+                  src="/icons/next-ep.svg"
+                  alt=""
+                  width={52}
+                  height={52}
+                  className="size-9 sm:size-10"
+                />
+              </button>
+            )}
+
+            {/* Episode Browser (series only; guests in a party can't switch) */}
+            {seriesId && onSelectEpisode && episodes && episodes.length > 0 && (
+              <button
+                onClick={() => {
+                  setAudioSubsOpen(false)
+                  setSpeedOpen(false)
+                  onToggleEpisodeBrowser()
+                }}
+                className={`flex items-center justify-center p-1 text-white transition-all hover:scale-110 hover:opacity-100 active:scale-95 opacity-90 ${
+                  episodeBrowserOpen ? "text-accent" : ""
+                }`}
+                aria-label="Browse episodes"
+                title="Episodes"
+              >
+                <Image
+                  src="/icons/ep-browser.svg"
+                  alt=""
+                  width={72}
+                  height={72}
+                  className="size-9 sm:size-10"
+                />
               </button>
             )}
 
@@ -808,14 +849,37 @@ export function PlayerControls({
               aria-label={isFullscreen ? "Exit Fullscreen" : "Fullscreen"}
             >
               {isFullscreen ? (
-                <IconExitFullscreen className="size-9 sm:size-10" />
+                <Image
+                  src="/icons/minimize.svg"
+                  alt=""
+                  width={72}
+                  height={72}
+                  className="size-9 sm:size-10"
+                />
               ) : (
-                <IconFullscreen className="size-9 sm:size-10" />
+                <Image
+                  src="/icons/maximize.svg"
+                  alt=""
+                  width={72}
+                  height={72}
+                  className="size-9 sm:size-10"
+                />
               )}
             </button>
           </div>
         </div>
       </div>
+
+      {/* In-player episode browser overlay */}
+      {episodeBrowserOpen && seriesId && episodes && episodes.length > 0 && onSelectEpisode && (
+        <EpisodeBrowser
+          episodes={episodes}
+          seasons={seasons ?? []}
+          currentItemId={itemId}
+          onClose={onToggleEpisodeBrowser}
+          onSelect={(episodeId) => onSelectEpisode(episodeId)}
+        />
+      )}
     </div>
   )
 }

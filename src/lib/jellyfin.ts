@@ -497,23 +497,24 @@ export async function reportPlaybackState(report: PlaybackReport): Promise<void>
   })
 }
 
-/** Mark an item as fully watched (played). */
+/** Mark an item as fully watched (played). Throws so callers/route handlers
+ *  can surface failures instead of silently reporting success. */
 export async function markItemPlayed(itemId: string): Promise<void> {
   const { token, userId } = await authenticate()
   await jellyfinFetch(`${BASE}/Users/${userId}/PlayedItems/${itemId}`, {
     method: "POST",
     headers: getAuthHeaders(token),
     body: JSON.stringify({}),
-  }).catch(() => {})
+  })
 }
 
-/** Mark an item as unwatched. */
+/** Mark an item as unwatched. Throws so callers/route handlers can surface failures. */
 export async function markItemUnplayed(itemId: string): Promise<void> {
   const { token, userId } = await authenticate()
   await jellyfinFetch(`${BASE}/Users/${userId}/PlayedItems/${itemId}`, {
     method: "DELETE",
     headers: getAuthHeaders(token),
-  }).catch(() => {})
+  })
 }
 
 // ── Stream URL builders (quality / track aware) ──
@@ -595,6 +596,49 @@ export async function getIntroSkipperSegments(
       if (end > start) out[key] = { start, end }
     }
     return Object.keys(out).length > 0 ? out : null
+  } catch {
+    return null
+  }
+}
+
+export type JellyfinMediaSegment = {
+  type: "intro" | "recap" | "outro" | "preview"
+  start: number
+  end: number
+}
+
+/**
+ * Queries Jellyfin's native Media Segments API (Jellyfin 10.10+).
+ * Types are standardised by the server: Intro, Recap, Outro, Preview, Commercial.
+ * Commercials are intentionally ignored. Returns null when unavailable
+ * (older server / no segments), so callers can fall back to other sources.
+ */
+export async function getMediaSegments(itemId: string): Promise<JellyfinMediaSegment[] | null> {
+  const { token } = await authenticate()
+  const res = await jellyfinFetch(`${BASE}/MediaSegments/${itemId}`, {
+    headers: getAuthHeaders(token),
+  }).catch(() => null)
+  if (!res || !res.ok) return null
+
+  try {
+    const raw = (await res.json()) as {
+      Items?: { Type?: string; StartTicks?: number; EndTicks?: number }[]
+    }
+    const typeMap: Record<string, JellyfinMediaSegment["type"]> = {
+      Intro: "intro",
+      Recap: "recap",
+      Outro: "outro",
+      Preview: "preview",
+    }
+    const out: JellyfinMediaSegment[] = []
+    for (const seg of raw.Items ?? []) {
+      const type = seg.Type ? typeMap[seg.Type] : undefined
+      if (!type || seg.StartTicks == null || seg.EndTicks == null) continue
+      const start = ticksToSeconds(seg.StartTicks)
+      const end = ticksToSeconds(seg.EndTicks)
+      if (end > start) out.push({ type, start, end })
+    }
+    return out.length > 0 ? out : null
   } catch {
     return null
   }

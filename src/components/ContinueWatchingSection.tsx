@@ -50,6 +50,10 @@ export function ContinueWatchingSection() {
     load()
   }, [])
 
+  const handleMarkWatched = (jellyfinItemId: string) => {
+    setItems((prev) => prev.filter((item) => item.jellyfinItemId !== jellyfinItemId))
+  }
+
   // Don't render anything if there's nothing to continue or still loading
   if (loading) {
     return (
@@ -85,7 +89,11 @@ export function ContinueWatchingSection() {
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
         {items.map((item) => (
-          <ContinueWatchingCard key={item.jellyfinItemId ?? item.id} item={item} />
+          <ContinueWatchingCard
+            key={item.jellyfinItemId ?? item.id}
+            item={item}
+            onMarkWatched={handleMarkWatched}
+          />
         ))}
       </div>
     </section>
