@@ -91,6 +91,7 @@ export function CinemaPlayer({
   const seekTargetRef = useRef<number>(0) // position to restore after stream rebuild
   const watchedReportedRef = useRef(false)
   const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const debugAutoOpenedRef = useRef(false)
   // Once playback has started (or autoplay is requested) stream rebuilds keep playing
   const playIntentRef = useRef(autoPlay)
   // Tracks whether a stream has ever been attached — used to preserve the
@@ -698,13 +699,17 @@ export function CinemaPlayer({
   // ── Auto-mark watched once the outro of an episode is reached ──
   useEffect(() => {
     if (!payload?.series || watchedReportedRef.current) return
+    const runtime = payload.runtimeTicks > 0 ? payload.runtimeTicks / TICKS_PER_SECOND : duration
     const outro = payload.markers.find((m) => m.type === "outro")
-    if (outro && currentTime >= outro.start) {
+    // Only trust the marker when it sits genuinely near the end — the chapter
+    // fallback can match titles like "End of Part 1" well before the credits,
+    // which would otherwise mark an episode watched mid-way through.
+    if (outro && currentTime >= outro.start && runtime > 0 && outro.start >= runtime * 0.85) {
       watchedReportedRef.current = true
       fetch(`/api/jellyfin/played/${payload.itemId}`, { method: "POST" }).catch(() => {})
       onWatched?.()
     }
-  }, [currentTime, payload, onWatched])
+  }, [currentTime, duration, payload, onWatched])
 
   // ── Controls auto-hide (while playing) ──
   useEffect(() => {
@@ -722,6 +727,24 @@ export function CinemaPlayer({
       hideTimerRef.current = setTimeout(() => setControlsVisible(false), CONTROLS_HIDE_DELAY)
     }
   }, [episodeBrowserOpen])
+
+  // Auto-open the diagnostics HUD for party hosts after prolonged buffering —
+  // they need visibility into stuck streams, but we don't want to auto-show a
+  // diagnostics surface to regular viewers. Closes itself once playback resumes.
+  useEffect(() => {
+    if (!party?.partyId || !partySync.isOwner) return
+    if (buffering) {
+      const id = setTimeout(() => {
+        debugAutoOpenedRef.current = true
+        setDebugOpen(true)
+      }, 8_000)
+      return () => clearTimeout(id)
+    }
+    if (debugAutoOpenedRef.current) {
+      debugAutoOpenedRef.current = false
+      setDebugOpen(false)
+    }
+  }, [buffering, party?.partyId, partySync.isOwner])
 
   // ── Fullscreen ──
   useEffect(() => {
@@ -885,6 +908,10 @@ export function CinemaPlayer({
 
   // ── Keyboard shortcuts ──
   const handleKeyDown = (e: React.KeyboardEvent) => {
+    // The episode browser is a full-screen modal with its own focusable
+    // content — let its keys (arrows, Space, Tab) operate the list, not the
+    // player. It also handles Escape itself.
+    if (episodeBrowserOpen) return
     const target = e.target as HTMLElement
     if (target.tagName === "INPUT" || target.tagName === "TEXTAREA") return
     const video = videoRef.current

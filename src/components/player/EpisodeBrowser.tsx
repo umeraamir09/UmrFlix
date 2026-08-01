@@ -64,6 +64,7 @@ export function EpisodeBrowser({
   const [selectedSeason, setSelectedSeason] = useState<number>(currentSeason)
   const [seasonMenuOpen, setSeasonMenuOpen] = useState(false)
   const seasonMenuRef = useRef<HTMLDivElement>(null)
+  const dialogRef = useRef<HTMLDivElement>(null)
 
   // Sync the active season when the current episode changes (render-time
   // adjustment — see react.dev "you might not need an effect")
@@ -73,10 +74,29 @@ export function EpisodeBrowser({
     setSeasonMenuOpen(false)
   }
 
-  // Escape closes the browser
+  // Move focus into the dialog, trap Tab within it, and close on Escape
   useEffect(() => {
+    dialogRef.current?.focus()
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose()
+      if (e.key === "Escape") {
+        e.stopPropagation()
+        onClose()
+        return
+      }
+      if (e.key !== "Tab") return
+      const focusables = dialogRef.current?.querySelectorAll<HTMLElement>(
+        'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
+      )
+      if (!focusables || focusables.length === 0) return
+      const first = focusables[0]
+      const last = focusables[focusables.length - 1]
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault()
+        last.focus()
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault()
+        first.focus()
+      }
     }
     window.addEventListener("keydown", onKey)
     return () => window.removeEventListener("keydown", onKey)
@@ -119,7 +139,14 @@ export function EpisodeBrowser({
   const activeSeasonLabel = activeSeason?.name ?? `Season ${selectedSeason}`
 
   return (
-    <div className="absolute inset-0 z-[70] flex flex-col bg-black/95 backdrop-blur-md animate-in fade-in duration-200">
+    <div
+      ref={dialogRef}
+      role="dialog"
+      aria-modal="true"
+      aria-label="Episode browser"
+      tabIndex={-1}
+      className="absolute inset-0 z-[70] flex flex-col bg-black/95 backdrop-blur-md animate-in fade-in duration-200"
+    >
       {/* Header */}
       <div className="flex items-end justify-between px-6 sm:px-8 pt-8 sm:pt-10 pb-3">
         <div>

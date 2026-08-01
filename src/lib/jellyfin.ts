@@ -497,23 +497,24 @@ export async function reportPlaybackState(report: PlaybackReport): Promise<void>
   })
 }
 
-/** Mark an item as fully watched (played). */
+/** Mark an item as fully watched (played). Throws so callers/route handlers
+ *  can surface failures instead of silently reporting success. */
 export async function markItemPlayed(itemId: string): Promise<void> {
   const { token, userId } = await authenticate()
   await jellyfinFetch(`${BASE}/Users/${userId}/PlayedItems/${itemId}`, {
     method: "POST",
     headers: getAuthHeaders(token),
     body: JSON.stringify({}),
-  }).catch(() => {})
+  })
 }
 
-/** Mark an item as unwatched. */
+/** Mark an item as unwatched. Throws so callers/route handlers can surface failures. */
 export async function markItemUnplayed(itemId: string): Promise<void> {
   const { token, userId } = await authenticate()
   await jellyfinFetch(`${BASE}/Users/${userId}/PlayedItems/${itemId}`, {
     method: "DELETE",
     headers: getAuthHeaders(token),
-  }).catch(() => {})
+  })
 }
 
 // ── Stream URL builders (quality / track aware) ──

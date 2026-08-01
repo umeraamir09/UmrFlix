@@ -61,6 +61,11 @@ const MIN_MARKER_DURATION = 5
  * produced a given type (native segments > Intro Skipper plugin > chapters).
  * Lower-tier sources only fill in types the higher tiers missed, and the
  * result is sanity-filtered and sorted.
+ *
+ * Note: only the FIRST marker of each type is kept across all sources — if a
+ * source ever returns multiple native segments of the same type (e.g. two
+ * intros in a compilation/multi-part item) the extras are dropped. That's
+ * fine for standard episodes, where one intro/outro per item is the norm.
  */
 function mergeMarkerSources(
   sources: SegmentMarker[][],

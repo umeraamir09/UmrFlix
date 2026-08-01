@@ -34,7 +34,8 @@ export function ContinueWatchingCard({
     if (!item.jellyfinItemId || marking) return
     setMarking(true)
     try {
-      await fetch(`/api/jellyfin/played/${item.jellyfinItemId}`, { method: "POST" })
+      const res = await fetch(`/api/jellyfin/played/${item.jellyfinItemId}`, { method: "POST" })
+      if (!res.ok) throw new Error(`Mark watched failed: HTTP ${res.status}`)
       onMarkWatched?.(item.jellyfinItemId)
     } catch {
       setMarking(false)

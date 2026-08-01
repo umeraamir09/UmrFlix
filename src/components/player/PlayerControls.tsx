@@ -756,7 +756,7 @@ export function PlayerControls({
             )}
 
             {/* Episode Browser (series only; guests in a party can't switch) */}
-            {seriesId && onSelectEpisode && (
+            {seriesId && onSelectEpisode && episodes && episodes.length > 0 && (
               <button
                 onClick={() => {
                   setAudioSubsOpen(false)
