@@ -61,12 +61,7 @@ async function getAuthCookie(): Promise<string | null> {
     // Extract cookie from set-cookie header (supports both standard Node fetch & getSetCookie)
     let cookieStr: string | null = null
 
-    const headerVal = res.headers.get("set-cookie")
-    if (headerVal) {
-      cookieStr = extractQBitCookie(headerVal)
-    }
-
-    if (!cookieStr && typeof res.headers.getSetCookie === "function") {
+    if (typeof res.headers.getSetCookie === "function") {
       const cookies = res.headers.getSetCookie()
       for (const c of cookies) {
         const parsed = extractQBitCookie(c)
@@ -74,6 +69,19 @@ async function getAuthCookie(): Promise<string | null> {
           cookieStr = parsed
           break
         }
+      }
+    }
+
+    if (!cookieStr) {
+      // `get("set-cookie")` throws in undici when multiple set-cookie headers
+      // are present; the getSetCookie() branch above already handles those.
+      try {
+        const headerVal = res.headers.get("set-cookie")
+        if (headerVal) {
+          cookieStr = extractQBitCookie(headerVal)
+        }
+      } catch {
+        /* covered by getSetCookie path */
       }
     }
 
@@ -113,6 +121,7 @@ async function qbitFetch<T>(endpoint: string, options?: RequestInit): Promise<T 
     // If unauthorized (session expired), retry ONCE after re-authenticating
     if ((res.status === 403 || res.status === 401) && username) {
       cachedCookie = null
+      lastAuthAttemptTime = 0
       const newCookie = await getAuthCookie()
       if (newCookie) {
         headers["Cookie"] = newCookie
@@ -124,7 +133,17 @@ async function qbitFetch<T>(endpoint: string, options?: RequestInit): Promise<T 
     }
 
     if (!res.ok) return null
-    return (await res.json()) as T
+
+    const text = await res.text()
+    if (!text || text.trim() === "" || text.trim() === "Ok.") {
+      return { ok: true } as unknown as T
+    }
+
+    try {
+      return JSON.parse(text) as T
+    } catch {
+      return text as unknown as T
+    }
   } catch (e) {
     console.error(`[qBittorrent] Fetch ${endpoint} error:`, e instanceof Error ? e.message : e)
     return null
@@ -155,11 +174,15 @@ export type QBitTransferInfo = {
 
 export async function getTorrents(): Promise<QBittorrentItem[]> {
   const result = await qbitFetch<QBittorrentItem[]>("/torrents/info")
-  return result ?? []
+  return Array.isArray(result) ? result : []
 }
 
 export async function getTransferInfo(): Promise<QBitTransferInfo | null> {
-  return qbitFetch<QBitTransferInfo>("/transfer/info")
+  const result = await qbitFetch<QBitTransferInfo>("/transfer/info")
+  if (!result || typeof result !== "object" || typeof (result as QBitTransferInfo).dl_info_speed !== "number") {
+    return null
+  }
+  return result as QBitTransferInfo
 }
 
 export async function getDiskSpace(): Promise<number | null> {
@@ -171,11 +194,21 @@ export async function pauseTorrents(hashes: string[]): Promise<boolean> {
   if (!hashes.length) return false
   const params = new URLSearchParams()
   params.append("hashes", hashes.join("|"))
-  const result = await qbitFetch<unknown>("/torrents/pause", {
+  let result = await qbitFetch<unknown>("/torrents/pause", {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: params.toString(),
   })
+  if (result === null) {
+    // NOTE: /torrents/stop is a hard stop (pauses AND stops seeding), whereas
+    // /torrents/pause keeps the torrent active but idle. Fall back only when
+    // pause is unavailable on the server.
+    result = await qbitFetch<unknown>("/torrents/stop", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: params.toString(),
+    })
+  }
   return result !== null
 }
 
@@ -183,11 +216,18 @@ export async function resumeTorrents(hashes: string[]): Promise<boolean> {
   if (!hashes.length) return false
   const params = new URLSearchParams()
   params.append("hashes", hashes.join("|"))
-  const result = await qbitFetch<unknown>("/torrents/resume", {
+  let result = await qbitFetch<unknown>("/torrents/resume", {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: params.toString(),
   })
+  if (result === null) {
+    result = await qbitFetch<unknown>("/torrents/start", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: params.toString(),
+    })
+  }
   return result !== null
 }
 
