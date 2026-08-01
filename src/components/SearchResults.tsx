@@ -8,28 +8,13 @@ import Link from "next/link"
 import { Search, X, ChevronRight, ChevronDown, Loader2 } from "lucide-react"
 import { useBatchAvailability } from "@/lib/use-availability"
 import { AvailabilityBadge } from "@/components/AvailabilityBadge"
+import { getGenreByParam, getGenreIdsForMediaType } from "@/lib/genres"
+import { filterDisplayableContent } from "@/lib/catalog"
 
 const RECENT_SEARCHES_KEY = "umrflix_recent_searches"
 const MAX_RECENTS = 6
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json())
-
-const GENRES: Record<string, number> = {
-  "Action": 28,
-  "Adventure": 12,
-  "Animation": 16,
-  "Comedy": 35,
-  "Crime": 80,
-  "Documentary": 99,
-  "Drama": 18,
-  "Family": 10751,
-  "Fantasy": 14,
-  "Horror": 27,
-  "Mystery": 9648,
-  "Romance": 10749,
-  "Sci-Fi": 878,
-  "Thriller": 53,
-}
 
 const SORT_OPTIONS = [
   { value: "popularity", label: "Popularity" },
@@ -197,6 +182,7 @@ export function SearchResults() {
 
   const query = debouncedQuery
   const isBrowseMode = !query.trim()
+  const genreDef = genre ? getGenreByParam(genre) : null
 
   // Build API URL
   const searchUrl = useMemo(() => {
@@ -205,7 +191,10 @@ export function SearchResults() {
     }
 
     // Browse mode
-    const genreId = genre ? GENRES[genre] : null
+    const genreIds = genreDef
+      ? getGenreIdsForMediaType(genreDef, type === "tv" ? "tv" : "movie")
+      : []
+    const genreId = genreIds.length > 0 ? genreIds.join(",") : null
     const resolveEndpoint = (): string => {
       if (filter === "popular") {
         if (type === "tv") return "/api/tmdb/tv/popular"
@@ -247,32 +236,21 @@ export function SearchResults() {
     }
 
     return `${endpoint}?${params.join("&")}`
-  }, [query, genre, type, filter, sort])
+  }, [query, genreDef, type, filter, sort])
 
   const { data: searchData, error, isLoading } = useSWR(searchUrl, fetcher)
 
   const rawResults: any[] = searchData?.results ?? []
 
-  // Filter out unreleased & no-poster items client-side (browse mode)
+  // Filter out unreleased, announced, & cinema-only items
   const results = useMemo(() => {
-    let items = rawResults
-    if (isBrowseMode) {
-      const today = new Date()
-      items = items.filter((item: any) => {
-        const dateStr = item.release_date || item.first_air_date
-        if (!dateStr) return false
-        if (new Date(dateStr) > today) return false
-        if (!item.poster_path && !item.backdrop_path) return false
-        return true
+    let items = filterDisplayableContent(rawResults)
+    if (isBrowseMode && sort === "name") {
+      items = [...items].sort((a, b) => {
+        const aTitle = (a.title || a.name || "").toLowerCase()
+        const bTitle = (b.title || b.name || "").toLowerCase()
+        return aTitle.localeCompare(bTitle)
       })
-      // Apply client-side sort for A-Z
-      if (sort === "name") {
-        items = [...items].sort((a, b) => {
-          const aTitle = (a.title || a.name || "").toLowerCase()
-          const bTitle = (b.title || b.name || "").toLowerCase()
-          return aTitle.localeCompare(bTitle)
-        })
-      }
     }
     return items
   }, [rawResults, isBrowseMode, sort])
@@ -396,6 +374,22 @@ export function SearchResults() {
               </div>
             )}
           </div>
+
+          {/* Dedicated Genre Page Banner */}
+          {genreDef && (
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 bg-surface border border-accent/40 p-4 rounded-none shadow-lg">
+              <div>
+                <p className="text-sm font-bold text-white">Looking for the dedicated {genreDef.name} experience?</p>
+                <p className="text-xs text-foreground-muted mt-0.5">Explore curated sub-categories, personalized picks, and available library titles for {genreDef.name}.</p>
+              </div>
+              <Link
+                href={`/genre/${genreDef.slug}`}
+                className="shrink-0 inline-flex items-center gap-2 bg-accent text-white px-4 py-2 text-xs font-bold uppercase tracking-wider transition-all hover:bg-accent/90 hover:scale-[1.02] active:scale-95"
+              >
+                Explore Dedicated {genreDef.name} Page →
+              </Link>
+            </div>
+          )}
         </div>
       )}
 

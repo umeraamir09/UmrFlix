@@ -10,6 +10,7 @@ import { IconSearch, IconClose, IconDownloadNav } from "@/components/ui/icons"
 import { UserProfileMenu } from "@/components/UserProfileMenu"
 import { NotificationBell } from "@/components/NotificationBell"
 import { useEventStream } from "@/lib/use-event-stream"
+import { GENRE_CATALOG } from "@/lib/genres"
 
 const NAV_LINKS = [
   { href: "/popular", label: "Popular" },
@@ -19,15 +20,9 @@ const NAV_LINKS = [
 ]
 
 const QUICK_LINKS = [
-  { href: "/search", label: "Browse All (A-Z)" },
   { href: "/popular", label: "Popular Movies" },
   { href: "/tv-shows", label: "TV Shows" },
   { href: "/library", label: "My Library" },
-]
-
-const CATEGORIES = [
-  "Action", "Adventure", "Animation", "Comedy", "Crime", "Documentary",
-  "Drama", "Family", "Fantasy", "Horror", "Mystery", "Romance", "Sci-Fi", "Thriller"
 ]
 
 export function Navbar() {
@@ -104,7 +99,7 @@ export function Navbar() {
                     : "text-foreground-muted hover:bg-surface-hover hover:text-white"
                 }`}
               >
-                <span>Categories</span>
+                <span>Browse By Genre</span>
                 <ChevronDown
                   className={`size-4 transition-transform duration-200 ${
                     categoriesOpen ? "rotate-180 text-white" : "text-foreground-muted"
@@ -137,14 +132,14 @@ export function Navbar() {
                       GENRES
                     </span>
                     <div className="grid grid-cols-3 gap-x-6 gap-y-3">
-                      {CATEGORIES.map((cat) => (
+                      {GENRE_CATALOG.map((genre) => (
                         <Link
-                          key={cat}
-                          href={`/search?genre=${encodeURIComponent(cat)}`}
+                          key={genre.slug}
+                          href={`/genre/${genre.slug}`}
                           className="text-sm font-medium text-foreground-muted hover:text-white transition-colors"
                           onClick={() => setCategoriesOpen(false)}
                         >
-                          {cat}
+                          {genre.name}
                         </Link>
                       ))}
                     </div>
@@ -260,14 +255,14 @@ export function Navbar() {
           <div className="pt-3 border-t border-border">
             <p className="text-[11px] font-bold text-gray-400 uppercase tracking-wider mb-3">Genres</p>
             <div className="grid grid-cols-2 gap-2.5">
-              {CATEGORIES.map((cat) => (
+              {GENRE_CATALOG.map((genre) => (
                 <Link
-                  key={cat}
-                  href={`/search?genre=${encodeURIComponent(cat)}`}
+                  key={genre.slug}
+                  href={`/genre/${genre.slug}`}
                   onClick={() => setMobileMenuOpen(false)}
                   className="text-sm font-medium text-foreground-muted hover:text-white transition-colors"
                 >
-                  {cat}
+                  {genre.name}
                 </Link>
               ))}
             </div>

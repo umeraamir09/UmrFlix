@@ -1,3 +1,4 @@
+import Link from "next/link"
 import { HeroBillboard, BillboardItem } from "@/components/HeroBillboard"
 import { MovieRow } from "@/components/MovieRow"
 import { SpotlightBanner, SpotlightItem } from "@/components/SpotlightBanner"
@@ -7,27 +8,9 @@ import { filterReleasedContent } from "@/lib/catalog"
 import { generateRecommendations } from "@/lib/recommendations"
 import { getNextEpisode, getAiringLabel, lookupShowByTvdbId } from "@/lib/tvmaze"
 import { authenticate, getAllItems } from "@/lib/jellyfin"
+import { getGenreByParam, getTvGenres } from "@/lib/genres"
 
 export const revalidate = 1800 // Revalidate page every 30 minutes
-
-const TV_GENRES = [
-  { name: "Action & Adventure", id: 10759 },
-  { name: "Animation", id: 16 },
-  { name: "Comedy", id: 35 },
-  { name: "Crime", id: 80 },
-  { name: "Documentary", id: 99 },
-  { name: "Drama", id: 18 },
-  { name: "Family", id: 10751 },
-  { name: "Kids", id: 10762 },
-  { name: "Mystery", id: 9648 },
-  { name: "News", id: 10763 },
-  { name: "Reality", id: 10764 },
-  { name: "Sci-Fi & Fantasy", id: 10765 },
-  { name: "Soap", id: 10766 },
-  { name: "Talk", id: 10767 },
-  { name: "War & Politics", id: 10768 },
-  { name: "Western", id: 37 },
-]
 
 interface JellyfinApiItem {
   Id: string
@@ -49,13 +32,8 @@ export default async function TvShowCatalogPage({
   const rawGenre = resolvedSearchParams.genre
   const decodedGenre = rawGenre ? decodeURIComponent(rawGenre) : undefined
 
-  const selectedGenre = decodedGenre
-    ? TV_GENRES.find(
-        (g) =>
-          g.name.toLowerCase() === decodedGenre.toLowerCase() ||
-          String(g.id) === decodedGenre
-      )
-    : null
+  const selectedGenre = decodedGenre ? getGenreByParam(decodedGenre) : null
+  const selectedGenreIds = selectedGenre ? selectedGenre.tvGenreIds.join(",") : null
 
   let heroItems: BillboardItem[] = []
   let spotlightItem1: SpotlightItem | null = null
@@ -67,7 +45,7 @@ export default async function TvShowCatalogPage({
     if (selectedGenre) {
       // Fetch genre-specific TV shows
       const genreTvData = await discoverTv({
-        with_genres: String(selectedGenre.id),
+        with_genres: String(selectedGenreIds),
         sort_by: "popularity.desc",
       })
       const tvResults = filterReleasedContent(genreTvData?.results || [])
@@ -220,9 +198,17 @@ export default async function TvShowCatalogPage({
                   : "Discover trending shows, personalized recommendations, airing episodes, and binge-worthy series."}
               </p>
             </div>
+            {selectedGenre && (
+              <Link
+                href={`/genre/${selectedGenre.slug}`}
+                className="shrink-0 inline-flex items-center gap-2 rounded-none border border-accent/50 bg-surface px-4 py-2.5 text-xs font-bold uppercase tracking-wider text-white transition-all hover:bg-accent hover:border-accent hover:scale-[1.02] active:scale-95"
+              >
+                Dedicated {selectedGenre.name} Page →
+              </Link>
+            )}
           </div>
           <GenreFilterBar
-            genres={TV_GENRES}
+            genres={getTvGenres()}
             mediaType="tv"
             activeGenre={selectedGenre?.name}
           />
@@ -235,7 +221,7 @@ export default async function TvShowCatalogPage({
               title={`Popular ${selectedGenre.name} Series`}
               subtitle={`Top trending ${selectedGenre.name.toLowerCase()} shows right now`}
               type="tv"
-              endpoint={`/api/tmdb/discover/tv?with_genres=${selectedGenre.id}&sort_by=popularity.desc`}
+              endpoint={`/api/tmdb/discover/tv?with_genres=${selectedGenreIds}&sort_by=popularity.desc`}
             />
 
             {/* Top Rated Genre TV Shows */}
@@ -243,7 +229,7 @@ export default async function TvShowCatalogPage({
               title={`Top Rated ${selectedGenre.name} Series`}
               subtitle={`Highest rated ${selectedGenre.name.toLowerCase()} series of all time`}
               type="tv"
-              endpoint={`/api/tmdb/discover/tv?with_genres=${selectedGenre.id}&sort_by=vote_average.desc&vote_count.gte=50`}
+              endpoint={`/api/tmdb/discover/tv?with_genres=${selectedGenreIds}&sort_by=vote_average.desc&vote_count.gte=50`}
             />
 
             {/* Mid-page Spotlight Banner */}
@@ -254,7 +240,7 @@ export default async function TvShowCatalogPage({
               title={`New & Recently Airing ${selectedGenre.name}`}
               subtitle={`Freshly aired ${selectedGenre.name.toLowerCase()} television series`}
               type="tv"
-              endpoint={`/api/tmdb/discover/tv?with_genres=${selectedGenre.id}&sort_by=first_air_date.desc`}
+              endpoint={`/api/tmdb/discover/tv?with_genres=${selectedGenreIds}&sort_by=first_air_date.desc`}
             />
           </>
         ) : (
