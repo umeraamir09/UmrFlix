@@ -278,4 +278,26 @@ export function invalidateAll() {
   sonarrSeriesCache.timestamp = 0
   tmdbToTvdbCache.timestamp = 0
   jellyfinIndexCache.timestamp = 0
+
+  // Invalidate the derived in-memory caches (genre rows, per-user genre
+  // profiles, recommendations) so library changes are reflected immediately
+  // instead of after their 30-minute TTL. Dynamic imports avoid an import
+  // cycle (genre-catalog → cache → genre-catalog).
+  void Promise.all([
+    import("./genre-catalog"),
+    import("./genre-profile"),
+    import("./recommendations"),
+  ])
+    .then(
+      ([
+        { invalidateGenreCache },
+        { invalidateGenreProfileCache },
+        { invalidateRecommendationCache },
+      ]) => {
+        invalidateGenreCache()
+        invalidateGenreProfileCache()
+        invalidateRecommendationCache()
+      }
+    )
+    .catch(() => {})
 }

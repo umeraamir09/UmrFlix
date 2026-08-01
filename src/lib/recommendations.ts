@@ -26,6 +26,60 @@ export type RecommendationItem = {
   score: number
 }
 
+/**
+ * Uniform row-card shape consumed by MovieRow (customItems) across every
+ * catalog surface. Keeps genre rows, recommendation rows, and detail pages
+ * rendering identically.
+ */
+export type RowItem = {
+  id: number
+  title?: string
+  name?: string
+  poster_path: string | null
+  backdrop_path: string | null
+  overview: string
+  release_date?: string
+  first_air_date?: string
+  vote_average: number
+  media_type?: string
+  availabilityStatus?: {
+    status: string
+    progress?: number
+    jellyfinItemId?: string
+  }
+}
+
+export function toRowItem(
+  item: TmdbMovie | TmdbTvShow | RecommendationItem,
+  mediaType: "movie" | "tv"
+): RowItem {
+  const title = "title" in item ? item.title : undefined
+  const name = "name" in item ? item.name : undefined
+  return {
+    id: item.id,
+    title: title || undefined,
+    name: name || undefined,
+    poster_path: item.poster_path,
+    backdrop_path: item.backdrop_path,
+    overview: item.overview,
+    release_date: "release_date" in item ? item.release_date : undefined,
+    first_air_date: "first_air_date" in item ? item.first_air_date : undefined,
+    vote_average: item.vote_average,
+    media_type: mediaType,
+  }
+}
+
+export function dedupeByTmdbId<T extends { id: number }>(items: T[]): T[] {
+  const seen = new Set<number>()
+  const result: T[] = []
+  for (const item of items) {
+    if (seen.has(item.id)) continue
+    seen.add(item.id)
+    result.push(item)
+  }
+  return result
+}
+
 // Cache for recommendations per mediaType
 const CACHE_TTL = 30 * 60 * 1000 // 30 minutes
 const cacheMap = new Map<string, { items: RecommendationItem[]; timestamp: number }>()
@@ -300,6 +354,17 @@ export async function getForYouRecommendations(userId: string): Promise<Recommen
  */
 export async function getBecauseYouWatchedRecommendations(
   userId: string,
+  itemId: number,
+  mediaType: "movie" | "tv"
+): Promise<RecommendationItem[]> {
+  return getSimilarRecommendations(itemId, mediaType)
+}
+
+/**
+ * Public accessor for TMDB similar/recommendations of a single item, shared by
+ * the genre personalization engine.
+ */
+export async function getTmdbRecommendations(
   itemId: number,
   mediaType: "movie" | "tv"
 ): Promise<RecommendationItem[]> {

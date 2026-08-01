@@ -1,3 +1,4 @@
+import Link from "next/link"
 import { HeroBillboard, BillboardItem } from "@/components/HeroBillboard"
 import { MovieRow } from "@/components/MovieRow"
 import { SpotlightBanner, SpotlightItem } from "@/components/SpotlightBanner"
@@ -5,25 +6,9 @@ import { GenreFilterBar } from "@/components/GenreFilterBar"
 import { getTrending, getItemLogo, discoverMovies } from "@/lib/tmdb"
 import { filterReleasedContent } from "@/lib/catalog"
 import { generateRecommendations } from "@/lib/recommendations"
+import { getGenreByParam, getMovieGenres } from "@/lib/genres"
 
 export const revalidate = 1800 // Revalidate page every 30 minutes
-
-const MOVIE_GENRES = [
-  { name: "Action", id: 28 },
-  { name: "Adventure", id: 12 },
-  { name: "Animation", id: 16 },
-  { name: "Comedy", id: 35 },
-  { name: "Crime", id: 80 },
-  { name: "Documentary", id: 99 },
-  { name: "Drama", id: 18 },
-  { name: "Family", id: 10751 },
-  { name: "Fantasy", id: 14 },
-  { name: "Horror", id: 27 },
-  { name: "Mystery", id: 9648 },
-  { name: "Romance", id: 10749 },
-  { name: "Sci-Fi", id: 878 },
-  { name: "Thriller", id: 53 },
-]
 
 export default async function MovieCatalogPage({
   searchParams,
@@ -34,13 +19,8 @@ export default async function MovieCatalogPage({
   const rawGenre = resolvedSearchParams.genre
   const decodedGenre = rawGenre ? decodeURIComponent(rawGenre) : undefined
 
-  const selectedGenre = decodedGenre
-    ? MOVIE_GENRES.find(
-        (g) =>
-          g.name.toLowerCase() === decodedGenre.toLowerCase() ||
-          String(g.id) === decodedGenre
-      )
-    : null
+  const selectedGenre = decodedGenre ? getGenreByParam(decodedGenre) : null
+  const selectedGenreIds = selectedGenre ? selectedGenre.movieGenreIds.join(",") : null
 
   let heroItems: BillboardItem[] = []
   let spotlightItem1: SpotlightItem | null = null
@@ -51,7 +31,7 @@ export default async function MovieCatalogPage({
     if (selectedGenre) {
       // Fetch genre-specific movies
       const genreMovieData = await discoverMovies({
-        with_genres: String(selectedGenre.id),
+        with_genres: String(selectedGenreIds),
         sort_by: "popularity.desc",
       })
       const movieResults = filterReleasedContent(genreMovieData?.results || [])
@@ -173,9 +153,17 @@ export default async function MovieCatalogPage({
                   : "Explore blockbuster films, personalized picks, timeless classics, and genre favorites."}
               </p>
             </div>
+            {selectedGenre && (
+              <Link
+                href={`/genre/${selectedGenre.slug}`}
+                className="shrink-0 inline-flex items-center gap-2 rounded-none border border-accent/50 bg-surface px-4 py-2.5 text-xs font-bold uppercase tracking-wider text-white transition-all hover:bg-accent hover:border-accent hover:scale-[1.02] active:scale-95"
+              >
+                Dedicated {selectedGenre.name} Page →
+              </Link>
+            )}
           </div>
           <GenreFilterBar
-            genres={MOVIE_GENRES}
+            genres={getMovieGenres()}
             mediaType="movie"
             activeGenre={selectedGenre?.name}
           />
@@ -188,7 +176,7 @@ export default async function MovieCatalogPage({
               title={`Popular ${selectedGenre.name} Movies`}
               subtitle={`Top trending ${selectedGenre.name.toLowerCase()} films right now`}
               type="movie"
-              endpoint={`/api/tmdb/discover/movie?with_genres=${selectedGenre.id}&sort_by=popularity.desc`}
+              endpoint={`/api/tmdb/discover/movie?with_genres=${selectedGenreIds}&sort_by=popularity.desc`}
             />
 
             {/* Top Rated Genre Movies */}
@@ -196,7 +184,7 @@ export default async function MovieCatalogPage({
               title={`Top Rated ${selectedGenre.name} Masterpieces`}
               subtitle={`Highest critically acclaimed ${selectedGenre.name.toLowerCase()} movies of all time`}
               type="movie"
-              endpoint={`/api/tmdb/discover/movie?with_genres=${selectedGenre.id}&sort_by=vote_average.desc&vote_count.gte=100`}
+              endpoint={`/api/tmdb/discover/movie?with_genres=${selectedGenreIds}&sort_by=vote_average.desc&vote_count.gte=100`}
             />
 
             {/* Mid-page Spotlight Banner */}
@@ -207,7 +195,7 @@ export default async function MovieCatalogPage({
               title={`New & Recent ${selectedGenre.name} Releases`}
               subtitle={`Freshly released ${selectedGenre.name.toLowerCase()} movies`}
               type="movie"
-              endpoint={`/api/tmdb/discover/movie?with_genres=${selectedGenre.id}&sort_by=primary_release_date.desc`}
+              endpoint={`/api/tmdb/discover/movie?with_genres=${selectedGenreIds}&sort_by=primary_release_date.desc`}
             />
           </>
         ) : (
@@ -222,12 +210,12 @@ export default async function MovieCatalogPage({
               />
             )}
 
-            {/* Now Playing / Fresh Releases */}
+            {/* Recently Released Movies */}
             <MovieRow
-              title="Now Playing & In Theaters"
-              subtitle="New releases hitting screens right now"
+              title="Recently Released Movies"
+              subtitle="Freshly released movies available for streaming"
               type="movie"
-              endpoint="/api/tmdb/movie/now_playing"
+              endpoint="/api/tmdb/discover/movie?sort_by=primary_release_date.desc&vote_count.gte=50"
             />
 
             {/* Popular Movies */}

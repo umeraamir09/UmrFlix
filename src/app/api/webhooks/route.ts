@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { eventBus } from "@/lib/event-bus"
+import { invalidateAll } from "@/lib/cache"
 
 export async function POST(req: NextRequest) {
   try {
@@ -34,6 +35,9 @@ export async function POST(req: NextRequest) {
           ...(payload.series ? { series: { title: payload.series.title } } : {}),
         },
       })
+      // A grab or download changes availability state, so drop the cached
+      // "Available Now / In Your Library" rows, genre profiles, etc.
+      invalidateAll()
     } else {
       // General fall-through event broadcast
       eventBus.emitEvent({

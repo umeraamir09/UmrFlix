@@ -1,9 +1,11 @@
 "use client"
 
-import { useRef, useState, useEffect, useCallback } from "react"
+import { useRef, useState, useEffect, useCallback, useMemo } from "react"
 import useSWR from "swr"
 import { MovieCard, MovieCardItem } from "@/components/MovieCard"
 import { useBatchAvailability } from "@/lib/use-availability"
+import { filterDisplayableContent } from "@/lib/catalog"
+import type { AvailabilityResult } from "@/app/api/availability/route"
 import { ChevronLeft, ChevronRight } from "lucide-react"
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json())
@@ -33,14 +35,28 @@ export function MovieRow({
     fetcher
   )
 
-  const items: MovieCardItem[] = customItems || (data?.results ?? [])
+  const rawItems: MovieCardItem[] = customItems || (data?.results ?? [])
+  const items: MovieCardItem[] = useMemo(
+    () => filterDisplayableContent(rawItems),
+    [rawItems]
+  )
 
-  const availabilityRefs = items.map((item) => ({
-    tmdbId: item.id,
-    type,
-  }))
+  const getItemType = (item: MovieCardItem): "movie" | "tv" =>
+    item.media_type === "tv" || item.media_type === "movie" ? item.media_type : type
+
+  // Items that already carry a server-computed availabilityStatus (genre
+  // "Available Now" row) skip the client-side availability round-trip.
+  const availabilityRefs = items
+    .filter((item) => !item.availabilityStatus)
+    .map((item) => ({
+      tmdbId: item.id,
+      type: getItemType(item),
+    }))
 
   const { availabilityMap } = useBatchAvailability(availabilityRefs)
+
+  const availabilityFor = (item: MovieCardItem, itemType: "movie" | "tv"): AvailabilityResult | undefined =>
+    (item.availabilityStatus as AvailabilityResult | undefined) ?? availabilityMap[`${itemType}-${item.id}`]
 
   const checkScroll = useCallback(() => {
     if (scrollRef.current) {
@@ -129,14 +145,17 @@ export function MovieRow({
               ))
             : error
             ? <p className="text-xs text-gray-500 py-4">Unable to load media catalog</p>
-            : items.map((item) => (
-                <MovieCard
-                  key={item.id}
-                  item={item}
-                  type={type}
-                  availabilityState={availabilityMap[`${type}-${item.id}`]}
-                />
-              ))}
+            : items.map((item) => {
+                const itemType = getItemType(item)
+                return (
+                  <MovieCard
+                    key={item.id}
+                    item={item}
+                    type={itemType}
+                    availabilityState={availabilityFor(item, itemType)}
+                  />
+                )
+              })}
         </div>
       </div>
     </section>

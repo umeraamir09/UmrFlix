@@ -60,7 +60,8 @@ export function GenreFilterBar({ genres, mediaType, activeGenre, basePath }: Gen
           {genres.map((genre) => {
             const isActive = currentGenre
               ? currentGenre.toLowerCase() === genre.name.toLowerCase() ||
-                currentGenre === String(genre.id)
+                currentGenre === String(genre.id) ||
+                currentGenre === genre.slug
               : false
 
             return (
