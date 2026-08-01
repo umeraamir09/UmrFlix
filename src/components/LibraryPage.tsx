@@ -1,109 +1,94 @@
 "use client"
 
 import useSWR from "swr"
-import { useState, useEffect, useCallback } from "react"
+import { useState, useCallback, useMemo } from "react"
 import { Skeleton } from "@/components/ui/skeleton"
 import { MovieCard } from "@/components/MovieCard"
-import { useBatchAvailability } from "@/lib/use-availability"
 import { RefreshCw } from "lucide-react"
 import { Button } from "@/components/ui/button"
-
-interface MediaImage {
-  coverType: string
-  url: string
-  remoteUrl?: string
-}
-
-interface RadarrItem {
-  tmdbId: number
-  title: string
-  year: number
-  hasFile: boolean
-  images: MediaImage[]
-}
-
-interface SonarrItem {
-  tvdbId: number
-  title: string
-  year: number
-  images: MediaImage[]
-}
+import { useToast } from "@/components/Toast"
+import type { JellyfinLibraryItem } from "@/app/api/library/route"
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json())
-const tmdbIdFetcher = async (tvdbId: number): Promise<number> => {
-  const res = await fetch(`/api/tmdb-id?tvdbId=${tvdbId}`)
-  if (!res.ok) return tvdbId
-  const data = await res.json()
-  return data.tmdbId ?? tvdbId
-}
-
-function getPosterUrl(images?: MediaImage[], serviceType: "radarr" | "sonarr" = "radarr"): string | null {
-  if (!images || !Array.isArray(images)) return null
-  const poster = images.find((i) => i.coverType === "poster")
-  if (!poster) return null
-
-  if (poster.remoteUrl) {
-    return poster.remoteUrl
-  }
-
-  if (poster.url) {
-    if (poster.url.startsWith("http://") || poster.url.startsWith("https://")) {
-      return poster.url
-    }
-    if (poster.url.startsWith("/MediaCover/")) {
-      return `/api/${serviceType}${poster.url}`
-    }
-    return poster.url
-  }
-
-  return null
-}
 
 export function LibraryPage() {
-  const { data: movies, error: moviesError, isLoading: moviesLoading, mutate: mutateMovies } = useSWR(
-    "/api/radarr/movies?refresh=true",
-    fetcher
-  )
-  const { data: series, error: seriesError, isLoading: seriesLoading, mutate: mutateSeries } = useSWR(
-    "/api/sonarr/series?refresh=true",
-    fetcher
-  )
+  const { toast } = useToast()
+  const [isScanning, setIsScanning] = useState(false)
 
-  const movieItems: RadarrItem[] = movies ?? []
-  const seriesItems: SonarrItem[] = series ?? []
+  // Fetch current user session to determine admin status
+  const { data: meData } = useSWR("/api/auth/me", fetcher)
+  const isAdmin = Boolean(meData?.user?.isAdmin)
 
-  const [tvTmdbIds, setTvTmdbIds] = useState<Record<number, number>>({})
+  const { data, error, isLoading, mutate } = useSWR<{
+    movies: JellyfinLibraryItem[]
+    series: JellyfinLibraryItem[]
+    total: number
+    error?: string
+  }>("/api/library", fetcher)
 
-  useEffect(() => {
-    seriesItems.forEach(async (s) => {
-      if (!tvTmdbIds[s.tvdbId]) {
-        const tmdbId = await tmdbIdFetcher(s.tvdbId)
-        setTvTmdbIds((prev) => ({ ...prev, [s.tvdbId]: tmdbId }))
-      }
+  const movieItems = useMemo(() => data?.movies ?? [], [data?.movies])
+  const seriesItems = useMemo(() => data?.series ?? [], [data?.series])
+
+  // Re-fetch the library bypassing the server's short-TTL cache (e.g. after
+  // a scan or delete so the UI reflects the change immediately).
+  const refreshLibrary = useCallback(async () => {
+    await mutate(async () => {
+      const res = await fetch("/api/library?refresh=true")
+      return res.json()
     })
-  }, [seriesItems])
+  }, [mutate])
 
-  const movieRefs = movieItems.filter(m => m.hasFile).map((m) => ({
-    tmdbId: m.tmdbId,
-    type: "movie" as const,
-  }))
+  const handleScanLibrary = useCallback(async () => {
+    setIsScanning(true)
+    try {
+      const res = await fetch("/api/library/scan", { method: "POST" })
+      if (res.ok) {
+        toast("Initiated fresh Jellyfin library scan", "info")
+      } else {
+        toast("Failed to trigger Jellyfin scan", "error")
+      }
+    } catch {
+      toast("Error connecting to server", "error")
+    } finally {
+      await refreshLibrary()
+      setIsScanning(false)
+    }
+  }, [refreshLibrary, toast])
 
-  const tvRefs = seriesItems.map((s) => ({
-    tmdbId: tvTmdbIds[s.tvdbId] ?? s.tvdbId,
-    type: "tv" as const,
-    tvdbId: s.tvdbId,
-  }))
+  const handleDeleteItem = useCallback(
+    async (item: JellyfinLibraryItem) => {
+      const confirmed = window.confirm(
+        `Are you sure you want to delete "${item.title}"?\n\nThis will permanently delete its media files from Jellyfin and remove it from ${
+          item.type === "movie" ? "Radarr" : "Sonarr"
+        }.`
+      )
+      if (!confirmed) return
 
-  const { availabilityMap: movieAvailability } = useBatchAvailability(movieRefs)
-  const { availabilityMap: tvAvailability } = useBatchAvailability(tvRefs)
+      try {
+        const res = await fetch("/api/library/delete", {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            jellyfinId: item.jellyfinId,
+            type: item.type,
+            tmdbId: item.tmdbId ?? undefined,
+            tvdbId: item.tvdbId ?? undefined,
+          }),
+        })
 
-  const isLoading = moviesLoading || seriesLoading
-  const hasError = moviesError || seriesError
-
-  const handleRefresh = useCallback(() => {
-    mutateMovies()
-    mutateSeries()
-  }, [mutateMovies, mutateSeries])
+        if (res.ok) {
+          toast(`Deleted "${item.title}" from Jellyfin & ${item.type === "movie" ? "Radarr" : "Sonarr"}`, "success")
+          await refreshLibrary()
+        } else {
+          const errData = await res.json().catch(() => ({}))
+          toast(errData.error || "Failed to delete item", "error")
+        }
+      } catch {
+        toast("Error deleting item from library", "error")
+      }
+    },
+    [refreshLibrary, toast]
+  )
 
   if (isLoading) {
     return (
@@ -121,103 +106,103 @@ export function LibraryPage() {
     )
   }
 
-  if (hasError) {
+  if (error || data?.error) {
     return (
       <div className="p-6">
         <h1 className="mb-6 text-2xl font-bold">My Library</h1>
-        <p className="text-muted">Unable to connect to Radarr or Sonarr. Make sure the services are running.</p>
-        <Button onClick={handleRefresh} variant="secondary" className="mt-4">
-          <RefreshCw className="mr-1 size-4" />
-          Retry
-        </Button>
+        <p className="text-muted">
+          Unable to connect to Jellyfin server. Make sure Jellyfin is running.
+        </p>
+        {isAdmin && (
+          <Button onClick={handleScanLibrary} disabled={isScanning} variant="secondary" className="mt-4">
+            <RefreshCw className={`mr-1 size-4 ${isScanning ? "animate-spin text-accent" : ""}`} />
+            {isScanning ? "Scanning Jellyfin..." : "Scan Library"}
+          </Button>
+        )}
       </div>
     )
   }
 
-  const downloadedMovies = movieItems.filter((m) => m.hasFile)
-  const requestedMovies = movieItems.filter((m) => !m.hasFile)
-
   return (
     <div className="p-6">
       <div className="mb-6 flex items-center justify-between">
-        <h1 className="text-2xl font-bold">My Library</h1>
-        <Button onClick={handleRefresh} variant="ghost" size="sm">
-          <RefreshCw className="mr-1 size-4" />
-          Refresh
-        </Button>
+        <div>
+          <h1 className="text-2xl font-bold">My Library</h1>
+          <p className="text-sm text-muted">
+            Streamable content downloaded to your Jellyfin library
+          </p>
+        </div>
+        {isAdmin && (
+          <Button onClick={handleScanLibrary} disabled={isScanning} variant="ghost" size="sm">
+            <RefreshCw className={`mr-1 size-4 ${isScanning ? "animate-spin text-accent" : ""}`} />
+            {isScanning ? "Scanning Jellyfin..." : "Scan Library"}
+          </Button>
+        )}
       </div>
 
+      {/* Movies Section */}
       <section className="mb-8">
         <h2 className="mb-4 text-xl font-semibold">
-          Movies ({downloadedMovies.length + requestedMovies.length})
+          Movies ({movieItems.length})
         </h2>
         {movieItems.length === 0 ? (
-          <p className="text-muted">No movies in your library yet. Browse trending to find something to watch!</p>
+          <p className="text-muted">
+            No movies in your Jellyfin library yet. Browse trending to find something to watch!
+          </p>
         ) : (
-          <div className="space-y-6">
-            {downloadedMovies.length > 0 && (
-              <div>
-                <h3 className="mb-3 text-sm text-muted">Downloaded</h3>
-                <div className="grid grid-cols-2 gap-6 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-5 2xl:grid-cols-6">
-                  {downloadedMovies.map((m) => (
-                    <MovieCard
-                      key={m.tmdbId}
-                      item={{
-                        id: m.tmdbId,
-                        title: m.title,
-                        poster_path: getPosterUrl(m.images, "radarr"),
-                        release_date: String(m.year),
-                      }}
-                      type="movie"
-                      availabilityState={movieAvailability[`movie-${m.tmdbId}`]}
-                    />
-                  ))}
-                </div>
-              </div>
-            )}
-            {requestedMovies.length > 0 && (
-              <div>
-                <h3 className="mb-3 text-sm text-muted">Requested</h3>
-                <div className="grid grid-cols-2 gap-6 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-5 2xl:grid-cols-6">
-                  {requestedMovies.map((m) => (
-                    <MovieCard
-                      key={m.tmdbId}
-                      item={{
-                        id: m.tmdbId,
-                        title: m.title,
-                        poster_path: getPosterUrl(m.images, "radarr"),
-                        release_date: String(m.year),
-                      }}
-                      type="movie"
-                      availabilityState={movieAvailability[`movie-${m.tmdbId}`]}
-                    />
-                  ))}
-                </div>
-              </div>
-            )}
+          <div className="grid grid-cols-2 gap-6 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-5 2xl:grid-cols-6">
+            {movieItems.map((m) => {
+              const tmdbId = m.tmdbId ?? 0
+              return (
+                <MovieCard
+                  key={m.jellyfinId}
+                  item={{
+                    id: tmdbId,
+                    title: m.title,
+                    poster_path: m.posterUrl,
+                    release_date: m.year ? String(m.year) : undefined,
+                  }}
+                  type="movie"
+                  availabilityState={{
+                    status: "in_library",
+                    jellyfinItemId: m.jellyfinId,
+                  }}
+                  disabled={!m.tmdbId}
+                  onDelete={isAdmin ? () => handleDeleteItem(m) : undefined}
+                />
+              )
+            })}
           </div>
         )}
       </section>
 
+      {/* TV Shows Section */}
       <section>
-        <h2 className="mb-4 text-xl font-semibold">TV Shows ({seriesItems.length})</h2>
+        <h2 className="mb-4 text-xl font-semibold">
+          TV Shows ({seriesItems.length})
+        </h2>
         {seriesItems.length === 0 ? (
-          <p className="text-muted">No TV shows in your library yet.</p>
+          <p className="text-muted">No TV shows in your Jellyfin library yet.</p>
         ) : (
           <div className="grid grid-cols-2 gap-6 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-5 2xl:grid-cols-6">
             {seriesItems.map((s) => {
-              const resolvedId = tvTmdbIds[s.tvdbId] ?? s.tvdbId
+              const tmdbId = s.tmdbId ?? 0
               return (
                 <MovieCard
-                  key={s.tvdbId}
+                  key={s.jellyfinId}
                   item={{
-                    id: resolvedId,
+                    id: tmdbId,
                     name: s.title,
-                    poster_path: getPosterUrl(s.images, "sonarr"),
-                    first_air_date: String(s.year),
+                    poster_path: s.posterUrl,
+                    first_air_date: s.year ? String(s.year) : undefined,
                   }}
                   type="tv"
-                  availabilityState={tvAvailability[`tv-${s.tvdbId}`]}
+                  availabilityState={{
+                    status: "in_library",
+                    jellyfinItemId: s.jellyfinId,
+                  }}
+                  disabled={!s.tmdbId}
+                  onDelete={isAdmin ? () => handleDeleteItem(s) : undefined}
                 />
               )
             })}

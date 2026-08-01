@@ -6,9 +6,10 @@ import { useRouter } from "next/navigation"
 import { getImageUrl, formatYear, formatRating } from "@/lib/utils"
 import { AvailabilityBadge } from "@/components/AvailabilityBadge"
 import { BookmarkButton } from "@/components/BookmarkButton"
-import { Star } from "lucide-react"
+import { Star, Trash2 } from "lucide-react"
 import { IconPlay, IconAdd } from "@/components/ui/icons"
 import type { AvailabilityResult } from "@/app/api/availability/route"
+import type { ElementType } from "react"
 
 export type MovieCardItem = {
   id: number
@@ -46,10 +47,14 @@ export function MovieCard({
   item,
   type,
   availabilityState,
+  onDelete,
+  disabled = false,
 }: {
   item: MovieCardItem
   type: "movie" | "tv"
   availabilityState?: AvailabilityResult
+  onDelete?: (item: MovieCardItem, type: "movie" | "tv") => void
+  disabled?: boolean
 }) {
   const href = type === "movie" ? `/movie/${item.id}` : `/tv/${item.id}`
   const router = useRouter()
@@ -57,9 +62,13 @@ export function MovieCard({
   const dateStr = item.release_date ?? item.first_air_date ?? ""
   const year = formatYear(dateStr)
   const posterUrl = getImageUrl(item.poster_path, "w500")
+  const Wrapper = (disabled ? "div" : Link) as ElementType
 
   return (
-    <Link href={href} className="group relative block w-full flex-shrink-0">
+    <Wrapper
+      href={href}
+      className={`group relative block w-full flex-shrink-0${disabled ? " cursor-default" : ""}`}
+    >
       {/* Poster Image Container */}
       <div className="relative aspect-[2/3] w-full overflow-hidden rounded-none bg-card shadow-md">
         <Image
@@ -67,6 +76,7 @@ export function MovieCard({
           alt={title}
           fill
           sizes="(max-width: 640px) 50vw, (max-width: 1024px) 25vw, 16vw"
+          unoptimized={posterUrl.startsWith("/api/")}
           className="object-cover"
         />
 
@@ -132,47 +142,64 @@ export function MovieCard({
 
         {/* Bottom Action Bar (Crunchyroll Orange/Accent Icons) */}
         <div className="flex items-center gap-3 pt-2">
-          <button
-            className="text-accent hover:scale-110 transition-transform cursor-pointer"
-            title="Watch Now"
-            aria-label="Watch Now"
-            onClick={(e) => {
-              e.preventDefault()
-              e.stopPropagation()
-              // The watch page resolves availability (and, for series, picks
-              // the next episode) before starting playback.
-              router.push(`/watch?tmdb=${item.id}&type=${type}`)
-            }}
-          >
-            <IconPlay className="size-5 fill-accent text-accent" />
-          </button>
-          <BookmarkButton
-            itemId={availabilityState?.jellyfinItemId || String(item.id)}
-            tmdbId={item.id}
-            jellyfinId={availabilityState?.jellyfinItemId}
-            mediaType={type}
-            title={title}
-            posterPath={item.poster_path}
-            overview={item.overview}
-            releaseYear={year}
-            variant="icon"
-            className="!p-1.5 border-none bg-transparent hover:bg-white/10"
-          />
-          <button
-            className="text-accent hover:scale-110 transition-transform cursor-pointer"
-            title="Request / Add to Library"
-            aria-label="Request or Add to Library"
-            onClick={(e) => {
-              e.preventDefault()
-              e.stopPropagation()
-              router.push(href)
-            }}
-          >
-            <IconAdd className="size-5" />
-          </button>
-
+          {!disabled && (
+            <>
+              <button
+                className="text-accent hover:scale-110 transition-transform cursor-pointer"
+                title="Watch Now"
+                aria-label="Watch Now"
+                onClick={(e) => {
+                  e.preventDefault()
+                  e.stopPropagation()
+                  // The watch page resolves availability (and, for series, picks
+                  // the next episode) before starting playback.
+                  router.push(`/watch?tmdb=${item.id}&type=${type}`)
+                }}
+              >
+                <IconPlay className="size-5 fill-accent text-accent" />
+              </button>
+              <BookmarkButton
+                itemId={availabilityState?.jellyfinItemId || String(item.id)}
+                tmdbId={item.id}
+                jellyfinId={availabilityState?.jellyfinItemId}
+                mediaType={type}
+                title={title}
+                posterPath={item.poster_path}
+                overview={item.overview}
+                releaseYear={year}
+                variant="icon"
+                className="!p-1.5 border-none bg-transparent hover:bg-white/10"
+              />
+              <button
+                className="text-accent hover:scale-110 transition-transform cursor-pointer"
+                title="Request / Add to Library"
+                aria-label="Request or Add to Library"
+                onClick={(e) => {
+                  e.preventDefault()
+                  e.stopPropagation()
+                  router.push(href)
+                }}
+              >
+                <IconAdd className="size-5" />
+              </button>
+            </>
+          )}
+          {onDelete && (
+            <button
+              className="ml-auto text-red-500 hover:text-red-400 hover:scale-110 transition-transform cursor-pointer"
+              title="Delete from Jellyfin & Radarr/Sonarr"
+              aria-label="Delete from Library"
+              onClick={(e) => {
+                e.preventDefault()
+                e.stopPropagation()
+                onDelete(item, type)
+              }}
+            >
+              <Trash2 className="size-5" />
+            </button>
+          )}
         </div>
       </div>
-    </Link>
+    </Wrapper>
   )
 }
