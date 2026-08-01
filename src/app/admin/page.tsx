@@ -409,22 +409,26 @@ export default function AdminDashboardPage() {
                       <td className="p-3 uppercase font-bold text-[10px] text-amber-300">{t.state}</td>
                       <td className="p-3 text-right">
                         <div className="flex items-center justify-end gap-1">
-                          <button
-                            disabled={actionLoading === t.hash}
-                            onClick={() => handleTorrentAction("pause", t.hash, t.name)}
-                            className="p-1.5 hover:bg-surface text-gray-300 hover:text-white disabled:opacity-50 transition-colors cursor-pointer"
-                            title="Pause Torrent"
-                          >
-                            <Pause className="size-4" />
-                          </button>
-                          <button
-                            disabled={actionLoading === t.hash}
-                            onClick={() => handleTorrentAction("resume", t.hash, t.name)}
-                            className="p-1.5 hover:bg-surface text-gray-300 hover:text-emerald-400 disabled:opacity-50 transition-colors cursor-pointer"
-                            title="Resume Torrent"
-                          >
-                            <Play className="size-4" />
-                          </button>
+                          {!t.hash.startsWith("radarr_") && !t.hash.startsWith("sonarr_") && (
+                            <>
+                              <button
+                                disabled={actionLoading === t.hash}
+                                onClick={() => handleTorrentAction("pause", t.hash, t.name)}
+                                className="p-1.5 hover:bg-surface text-gray-300 hover:text-white disabled:opacity-50 transition-colors cursor-pointer"
+                                title="Pause Torrent"
+                              >
+                                <Pause className="size-4" />
+                              </button>
+                              <button
+                                disabled={actionLoading === t.hash}
+                                onClick={() => handleTorrentAction("resume", t.hash, t.name)}
+                                className="p-1.5 hover:bg-surface text-gray-300 hover:text-emerald-400 disabled:opacity-50 transition-colors cursor-pointer"
+                                title="Resume Torrent"
+                              >
+                                <Play className="size-4" />
+                              </button>
+                            </>
+                          )}
                           <button
                             disabled={actionLoading === t.hash}
                             onClick={() => handleTorrentAction("delete", t.hash, t.name)}

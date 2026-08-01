@@ -1,7 +1,7 @@
 "use client"
 
 import useSWR from "swr"
-import { useState, useEffect, useCallback, useMemo } from "react"
+import { useState, useCallback, useMemo } from "react"
 import { Skeleton } from "@/components/ui/skeleton"
 import { MovieCard } from "@/components/MovieCard"
 import { RefreshCw } from "lucide-react"
@@ -10,12 +10,6 @@ import { useToast } from "@/components/Toast"
 import type { JellyfinLibraryItem } from "@/app/api/library/route"
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json())
-const tmdbIdFetcher = async (tvdbId: number): Promise<number> => {
-  const res = await fetch(`/api/tmdb-id?tvdbId=${tvdbId}`)
-  if (!res.ok) return tvdbId
-  const data = await res.json()
-  return data.tmdbId ?? tvdbId
-}
 
 export function LibraryPage() {
   const { toast } = useToast()
@@ -30,21 +24,19 @@ export function LibraryPage() {
     series: JellyfinLibraryItem[]
     total: number
     error?: string
-  }>("/api/library?refresh=true", fetcher)
+  }>("/api/library", fetcher)
 
   const movieItems = useMemo(() => data?.movies ?? [], [data?.movies])
   const seriesItems = useMemo(() => data?.series ?? [], [data?.series])
 
-  const [tvTmdbIds, setTvTmdbIds] = useState<Record<number, number>>({})
-
-  useEffect(() => {
-    seriesItems.forEach(async (s) => {
-      if (!s.tmdbId && s.tvdbId && !tvTmdbIds[s.tvdbId]) {
-        const tmdbId = await tmdbIdFetcher(s.tvdbId)
-        setTvTmdbIds((prev) => ({ ...prev, [s.tvdbId!]: tmdbId }))
-      }
+  // Re-fetch the library bypassing the server's short-TTL cache (e.g. after
+  // a scan or delete so the UI reflects the change immediately).
+  const refreshLibrary = useCallback(async () => {
+    await mutate(async () => {
+      const res = await fetch("/api/library?refresh=true")
+      return res.json()
     })
-  }, [seriesItems, tvTmdbIds])
+  }, [mutate])
 
   const handleScanLibrary = useCallback(async () => {
     setIsScanning(true)
@@ -58,10 +50,10 @@ export function LibraryPage() {
     } catch {
       toast("Error connecting to server", "error")
     } finally {
-      await mutate()
+      await refreshLibrary()
       setIsScanning(false)
     }
-  }, [mutate, toast])
+  }, [refreshLibrary, toast])
 
   const handleDeleteItem = useCallback(
     async (item: JellyfinLibraryItem) => {
@@ -86,7 +78,7 @@ export function LibraryPage() {
 
         if (res.ok) {
           toast(`Deleted "${item.title}" from Jellyfin & ${item.type === "movie" ? "Radarr" : "Sonarr"}`, "success")
-          await mutate()
+          await refreshLibrary()
         } else {
           const errData = await res.json().catch(() => ({}))
           toast(errData.error || "Failed to delete item", "error")
@@ -95,7 +87,7 @@ export function LibraryPage() {
         toast("Error deleting item from library", "error")
       }
     },
-    [mutate, toast]
+    [refreshLibrary, toast]
   )
 
   if (isLoading) {
@@ -121,10 +113,12 @@ export function LibraryPage() {
         <p className="text-muted">
           Unable to connect to Jellyfin server. Make sure Jellyfin is running.
         </p>
-        <Button onClick={handleScanLibrary} disabled={isScanning} variant="secondary" className="mt-4">
-          <RefreshCw className={`mr-1 size-4 ${isScanning ? "animate-spin text-accent" : ""}`} />
-          {isScanning ? "Scanning Jellyfin..." : "Scan Library"}
-        </Button>
+        {isAdmin && (
+          <Button onClick={handleScanLibrary} disabled={isScanning} variant="secondary" className="mt-4">
+            <RefreshCw className={`mr-1 size-4 ${isScanning ? "animate-spin text-accent" : ""}`} />
+            {isScanning ? "Scanning Jellyfin..." : "Scan Library"}
+          </Button>
+        )}
       </div>
     )
   }
@@ -138,10 +132,12 @@ export function LibraryPage() {
             Streamable content downloaded to your Jellyfin library
           </p>
         </div>
-        <Button onClick={handleScanLibrary} disabled={isScanning} variant="ghost" size="sm">
-          <RefreshCw className={`mr-1 size-4 ${isScanning ? "animate-spin text-accent" : ""}`} />
-          {isScanning ? "Scanning Jellyfin..." : "Scan Library"}
-        </Button>
+        {isAdmin && (
+          <Button onClick={handleScanLibrary} disabled={isScanning} variant="ghost" size="sm">
+            <RefreshCw className={`mr-1 size-4 ${isScanning ? "animate-spin text-accent" : ""}`} />
+            {isScanning ? "Scanning Jellyfin..." : "Scan Library"}
+          </Button>
+        )}
       </div>
 
       {/* Movies Section */}
@@ -171,6 +167,7 @@ export function LibraryPage() {
                     status: "in_library",
                     jellyfinItemId: m.jellyfinId,
                   }}
+                  disabled={!m.tmdbId}
                   onDelete={isAdmin ? () => handleDeleteItem(m) : undefined}
                 />
               )
@@ -189,7 +186,7 @@ export function LibraryPage() {
         ) : (
           <div className="grid grid-cols-2 gap-6 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-5 2xl:grid-cols-6">
             {seriesItems.map((s) => {
-              const tmdbId = s.tmdbId ?? (s.tvdbId ? tvTmdbIds[s.tvdbId] : undefined) ?? 0
+              const tmdbId = s.tmdbId ?? 0
               return (
                 <MovieCard
                   key={s.jellyfinId}
@@ -204,6 +201,7 @@ export function LibraryPage() {
                     status: "in_library",
                     jellyfinItemId: s.jellyfinId,
                   }}
+                  disabled={!s.tmdbId}
                   onDelete={isAdmin ? () => handleDeleteItem(s) : undefined}
                 />
               )

@@ -1,9 +1,27 @@
-import { NextResponse } from "next/server"
+import { NextRequest, NextResponse } from "next/server"
 import { authenticate, getAllItems, JellyfinItem } from "@/lib/jellyfin"
 import { setJellyfinIndex } from "@/lib/cache"
 import { tmdbProxyFetch } from "@/lib/tmdb-proxy"
+import { getSession } from "@/lib/auth"
+import { checkRateLimit } from "@/lib/rate-limit"
+import { SingleFlight } from "@/lib/circuit-breaker"
 
 export const dynamic = "force-dynamic"
+
+const CACHE_TTL_MS = 30_000
+const ID_CACHE_TTL_MS = 3_600_000
+const BATCH_SIZE = 10
+
+type LibraryCacheEntry = { data: string; userId: string; timestamp: number }
+let libraryCache: LibraryCacheEntry | null = null
+
+const tvdbToTmdbCache = new Map<number, { tmdbId: number | null; timestamp: number }>()
+
+function parseProviderId(value: string | undefined | null): number | null {
+  if (!value) return null
+  const parsed = parseInt(value, 10)
+  return Number.isNaN(parsed) ? null : parsed
+}
 
 export interface JellyfinLibraryItem {
   jellyfinId: string
@@ -23,30 +41,51 @@ type ExtendedJellyfinItem = JellyfinItem & {
   PremiereDate?: string
   DateCreated?: string
   DateLastMediaAdded?: string
-  Overview?: string
 }
 
 async function resolveTmdbIdFromTvdb(tvdbId: number): Promise<number | null> {
+  const cached = tvdbToTmdbCache.get(tvdbId)
+  if (cached && Date.now() - cached.timestamp < ID_CACHE_TTL_MS) {
+    return cached.tmdbId
+  }
   try {
     const res = await tmdbProxyFetch(`/3/find/${tvdbId}?external_source=tvdb_id`, { timeoutMs: 3_000 })
     if (!res.ok) return null
     const data = await res.json()
     const tvResults = data.tv_results ?? []
     const movieResults = data.movie_results ?? []
-    if (tvResults.length > 0) return tvResults[0].id
-    if (movieResults.length > 0) return movieResults[0].id
-    return null
+    const resolved = tvResults.length > 0 ? tvResults[0].id : movieResults.length > 0 ? movieResults[0].id : null
+    tvdbToTmdbCache.set(tvdbId, { tmdbId: resolved, timestamp: Date.now() })
+    return resolved
   } catch {
     return null
   }
 }
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
-    const { token, userId } = await authenticate()
-    const rawItems: JellyfinItem[] = await getAllItems(token, userId)
+    const session = await getSession()
+    if (!session) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+    }
 
-    // Update internal Jellyfin index cache for availability mapping
+    if (!checkRateLimit(`library:${session.userId}`, { windowMs: 10_000, maxRequests: 30 })) {
+      return NextResponse.json({ error: "Rate limit exceeded" }, { status: 429 })
+    }
+
+    const refresh = request.nextUrl.searchParams.get("refresh") === "true"
+    if (!refresh && libraryCache && libraryCache.userId === session.userId && Date.now() - libraryCache.timestamp < CACHE_TTL_MS) {
+      return new NextResponse(libraryCache.data, {
+        headers: { "Content-Type": "application/json", "Cache-Control": "private, max-age=30" },
+      })
+    }
+
+    const { token, userId } = await authenticate()
+    const rawItems: JellyfinItem[] = await SingleFlight.execute(`library-items:${session.userId}`, () =>
+      getAllItems(token, userId)
+    )
+
+    // Update the internal Jellyfin index only on an actual refetch.
     setJellyfinIndex(rawItems)
 
     const movies: JellyfinLibraryItem[] = []
@@ -57,8 +96,8 @@ export async function GET() {
     for (const rawItem of rawItems) {
       const item = rawItem as ExtendedJellyfinItem
       const type = item.Type === "Series" ? "tv" : "movie"
-      const tmdbId = item.ProviderIds?.Tmdb ? parseInt(item.ProviderIds.Tmdb, 10) : null
-      const tvdbId = item.ProviderIds?.Tvdb ? parseInt(item.ProviderIds.Tvdb, 10) : null
+      const tmdbId = parseProviderId(item.ProviderIds?.Tmdb)
+      const tvdbId = parseProviderId(item.ProviderIds?.Tvdb)
       const imdbId = item.ProviderIds?.Imdb ?? null
 
       let year: number | null = null
@@ -73,8 +112,8 @@ export async function GET() {
         jellyfinId: item.Id,
         title: item.Name,
         type,
-        tmdbId: isNaN(tmdbId as number) ? null : tmdbId,
-        tvdbId: isNaN(tvdbId as number) ? null : tvdbId,
+        tmdbId,
+        tvdbId,
         imdbId,
         year,
         posterUrl: `/api/jellyfin/image/${item.Id}?type=Primary`,
@@ -92,11 +131,12 @@ export async function GET() {
       }
     }
 
-    // Resolve missing TMDB IDs for series in parallel (batch limit of 10 for performance)
-    if (tvdbResolveQueue.length > 0) {
-      const toResolve = tvdbResolveQueue.slice(0, 10)
+    // Resolve all missing TMDB IDs for series server-side in bounded batches.
+    // The 1h id cache keeps repeat resolutions (across the 30s route cache) cheap.
+    for (let i = 0; i < tvdbResolveQueue.length; i += BATCH_SIZE) {
+      const batch = tvdbResolveQueue.slice(i, i + BATCH_SIZE)
       await Promise.all(
-        toResolve.map(async (entry) => {
+        batch.map(async (entry) => {
           if (entry.item.tvdbId) {
             const resolved = await resolveTmdbIdFromTvdb(entry.item.tvdbId)
             if (resolved) {
@@ -107,10 +147,11 @@ export async function GET() {
       )
     }
 
-    return NextResponse.json({
-      movies,
-      series,
-      total: movies.length + series.length,
+    const payload = JSON.stringify({ movies, series, total: movies.length + series.length })
+    libraryCache = { data: payload, userId: session.userId, timestamp: Date.now() }
+
+    return new NextResponse(payload, {
+      headers: { "Content-Type": "application/json", "Cache-Control": "private, max-age=30" },
     })
   } catch (err) {
     const message = err instanceof Error ? err.message : "Failed to fetch Jellyfin library"

@@ -1,8 +1,15 @@
 import { NextResponse } from "next/server"
 import { triggerLibraryScan } from "@/lib/jellyfin"
 import { invalidateAll } from "@/lib/cache"
+import { getSession } from "@/lib/auth"
+import { isAdminUser } from "@/lib/rbac"
 
 export async function POST() {
+  const session = await getSession()
+  if (!isAdminUser(session)) {
+    return NextResponse.json({ error: "Forbidden: Admin access required" }, { status: 403 })
+  }
+
   try {
     const ok = await triggerLibraryScan()
     if (!ok) {

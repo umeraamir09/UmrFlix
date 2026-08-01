@@ -4,10 +4,13 @@ const nextConfig: NextConfig = {
   images: {
     formats: ["image/avif", "image/webp"],
     minimumCacheTTL: 86400,
+    // No `search` constraint: local proxy images (e.g. /api/jellyfin/image/...)
+    // carry query strings like ?type=Primary. Those /api/ paths render via
+    // `unoptimized` in MovieCard, but a plain local image with a query string
+    // must also match here.
     localPatterns: [
       {
         pathname: "/**",
-        search: "",
       },
     ],
     remotePatterns: [

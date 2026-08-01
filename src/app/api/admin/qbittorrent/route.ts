@@ -84,6 +84,9 @@ export async function POST(request: NextRequest) {
     if (!action || !hashes || !Array.isArray(hashes) || hashes.length === 0) {
       return NextResponse.json({ error: "Missing action or hashes array" }, { status: 400 })
     }
+    if (action !== "pause" && action !== "resume" && action !== "delete") {
+      return NextResponse.json({ error: "Invalid action" }, { status: 400 })
+    }
 
     const qbitHashes: string[] = []
     const radarrIds: number[] = []
@@ -103,6 +106,15 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // Radarr/Sonarr queue items have no pause/resume semantics — surface that
+    // instead of silently returning success.
+    if ((action === "pause" || action === "resume") && qbitHashes.length === 0) {
+      return NextResponse.json(
+        { error: "Pause/resume is not supported for Radarr/Sonarr queue items" },
+        { status: 400 }
+      )
+    }
+
     let success = true
 
     if (qbitHashes.length > 0) {
@@ -115,8 +127,6 @@ export async function POST(request: NextRequest) {
       } else if (action === "delete") {
         const ok = await deleteTorrents(qbitHashes, Boolean(deleteFiles))
         if (!ok) success = false
-      } else {
-        return NextResponse.json({ error: "Invalid action" }, { status: 400 })
       }
     }
 

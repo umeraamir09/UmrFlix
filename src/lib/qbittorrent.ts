@@ -73,9 +73,15 @@ async function getAuthCookie(): Promise<string | null> {
     }
 
     if (!cookieStr) {
-      const headerVal = res.headers.get("set-cookie")
-      if (headerVal) {
-        cookieStr = extractQBitCookie(headerVal)
+      // `get("set-cookie")` throws in undici when multiple set-cookie headers
+      // are present; the getSetCookie() branch above already handles those.
+      try {
+        const headerVal = res.headers.get("set-cookie")
+        if (headerVal) {
+          cookieStr = extractQBitCookie(headerVal)
+        }
+      } catch {
+        /* covered by getSetCookie path */
       }
     }
 
@@ -172,7 +178,11 @@ export async function getTorrents(): Promise<QBittorrentItem[]> {
 }
 
 export async function getTransferInfo(): Promise<QBitTransferInfo | null> {
-  return qbitFetch<QBitTransferInfo>("/transfer/info")
+  const result = await qbitFetch<QBitTransferInfo>("/transfer/info")
+  if (!result || typeof result !== "object" || typeof (result as QBitTransferInfo).dl_info_speed !== "number") {
+    return null
+  }
+  return result as QBitTransferInfo
 }
 
 export async function getDiskSpace(): Promise<number | null> {
@@ -190,6 +200,9 @@ export async function pauseTorrents(hashes: string[]): Promise<boolean> {
     body: params.toString(),
   })
   if (result === null) {
+    // NOTE: /torrents/stop is a hard stop (pauses AND stops seeding), whereas
+    // /torrents/pause keeps the torrent active but idle. Fall back only when
+    // pause is unavailable on the server.
     result = await qbitFetch<unknown>("/torrents/stop", {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },

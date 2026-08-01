@@ -16,12 +16,18 @@ export async function DELETE(request: NextRequest) {
     const body = await request.json()
     const { jellyfinId, type, tmdbId, tvdbId } = body
 
-    if (!jellyfinId) {
-      return NextResponse.json({ error: "jellyfinId is required" }, { status: 400 })
+    if (!jellyfinId || typeof jellyfinId !== "string" || !/^[a-zA-Z0-9._-]+$/.test(jellyfinId)) {
+      return NextResponse.json({ error: "Invalid jellyfinId" }, { status: 400 })
+    }
+    if (type !== "movie" && type !== "tv") {
+      return NextResponse.json({ error: "type must be 'movie' or 'tv'" }, { status: 400 })
     }
 
     // 1. Delete media folder / item from Jellyfin
     const jfDeleted = await deleteJellyfinItem(jellyfinId)
+    if (!jfDeleted) {
+      return NextResponse.json({ error: "Failed to delete item from Jellyfin" }, { status: 500 })
+    }
 
     // 2. Delete media & show/movie entry from Radarr / Sonarr
     if (type === "movie" && tmdbId) {
@@ -46,7 +52,7 @@ export async function DELETE(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      jellyfinDeleted: jfDeleted,
+      jellyfinDeleted: true,
       message: "Item removed from library and media automation",
     })
   } catch (err) {
