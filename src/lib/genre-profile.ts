@@ -62,8 +62,28 @@ export type BecauseYouWatchedResult = {
 // ── id → genres resolution cache ──
 
 const genreCache = new Map<string, { ids: number[]; timestamp: number }>()
+const MAX_GENRE_CACHE_ENTRIES = 2000
+let lastGenreCacheSweep = 0
+
+function sweepGenreCache() {
+  const now = Date.now()
+  if (now - lastGenreCacheSweep < 60_000) return
+  lastGenreCacheSweep = now
+
+  for (const [key, entry] of genreCache) {
+    if (now - entry.timestamp >= GENRE_TTL) genreCache.delete(key)
+  }
+  if (genreCache.size > MAX_GENRE_CACHE_ENTRIES) {
+    const overflow = genreCache.size - MAX_GENRE_CACHE_ENTRIES
+    const oldest = [...genreCache.entries()]
+      .sort((a, b) => a[1].timestamp - b[1].timestamp)
+      .slice(0, overflow)
+    for (const [key] of oldest) genreCache.delete(key)
+  }
+}
 
 function getCachedGenreIds(key: string): number[] | null {
+  sweepGenreCache()
   const entry = genreCache.get(key)
   if (!entry) return null
   if (Date.now() - entry.timestamp >= GENRE_TTL) {
@@ -209,6 +229,25 @@ async function buildProfile(userId: string): Promise<GenreProfile> {
 // ── Per-user profile cache ──
 
 const profileCache = new Map<string, { profile: GenreProfile; timestamp: number }>()
+const MAX_PROFILE_CACHE_ENTRIES = 500
+let lastProfileCacheSweep = 0
+
+function sweepProfileCache() {
+  const now = Date.now()
+  if (now - lastProfileCacheSweep < 60_000) return
+  lastProfileCacheSweep = now
+
+  for (const [key, entry] of profileCache) {
+    if (now - entry.timestamp >= PROFILE_TTL) profileCache.delete(key)
+  }
+  if (profileCache.size > MAX_PROFILE_CACHE_ENTRIES) {
+    const overflow = profileCache.size - MAX_PROFILE_CACHE_ENTRIES
+    const oldest = [...profileCache.entries()]
+      .sort((a, b) => a[1].timestamp - b[1].timestamp)
+      .slice(0, overflow)
+    for (const [key] of oldest) profileCache.delete(key)
+  }
+}
 
 export function invalidateGenreProfileCache() {
   profileCache.clear()
@@ -217,6 +256,7 @@ export function invalidateGenreProfileCache() {
 
 export async function getUserGenreProfile(userId: string): Promise<GenreProfile> {
   const key = userId || "default"
+  sweepProfileCache()
   const cached = profileCache.get(key)
   if (cached && Date.now() - cached.timestamp < PROFILE_TTL) return cached.profile
 

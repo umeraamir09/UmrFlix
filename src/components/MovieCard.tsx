@@ -21,6 +21,13 @@ export type MovieCardItem = {
   vote_average?: number
   overview?: string
   media_type?: string
+  // Server-computed availability (e.g. the genre "Available Now" row).
+  // When present the client skips its own availability round-trip.
+  availabilityStatus?: {
+    status: string
+    progress?: number
+    jellyfinItemId?: string
+  }
   // Smart badges
   badge?: string | { type: "new" | "airing" | "popular" | "top10" | "liked"; label: string }
   airingLabel?: string // e.g., "New Episode Friday"

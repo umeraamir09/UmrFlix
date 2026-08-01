@@ -81,7 +81,11 @@ export default async function GenrePage({
       {/* Hero Billboard */}
       {heroItems.length > 0 && <HeroBillboard items={heroItems} />}
 
-      <div className="mx-auto max-w-[1600px] px-4 sm:px-6 md:px-8 space-y-12 relative z-20 -mt-28 sm:-mt-36 md:-mt-44">
+      <div
+        className={`mx-auto max-w-[1600px] px-4 sm:px-6 md:px-8 space-y-12 relative z-20 ${
+          heroItems.length > 0 ? "-mt-28 sm:-mt-36 md:-mt-44" : ""
+        }`}
+      >
         {/* Header & Genre Switcher */}
         <div className="space-y-4">
           <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 border-b border-border/50 pb-4">

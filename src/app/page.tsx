@@ -26,7 +26,12 @@ interface JellyfinSeries extends JellyfinApiItem {
   Type: "Series"
 }
 
-export const dynamic = "force-dynamic"
+// ISR bounds the per-request cost of the homepage's heavy server-side build
+// (trending, Jellyfin items, TVMaze lookups, recommendations, hero logos) to at
+// most once an hour; the hero rotation (timeSeed) advances with each
+// regeneration. All personalized surfaces on the page (Continue Watching and
+// the dynamic rows) are client-fetched, so the cached shell stays correct.
+export const revalidate = 3600
 
 function seededShuffle<T>(arr: T[], seed: number): T[] {
   const shuffled = [...arr]
@@ -113,6 +118,9 @@ export default async function HomePage() {
     let jellyfinSeries: JellyfinApiItem[] = []
     try {
       const { token } = await authenticate()
+      // Pre-existing: the token doubles as userId, resolving against the
+      // server's single Jellyfin account. Until multi-account support lands,
+      // per-app-user profile data is effectively identical for everyone.
       const allItems = await getAllItems(token, token)
       jellyfinSeries = allItems.filter((i: JellyfinApiItem) => i.Type === "Series")
 

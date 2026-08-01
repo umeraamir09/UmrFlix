@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { getSession, setSessionCookie } from "@/lib/auth"
 import { canMakeRequest, incrementRequestCount } from "@/lib/rbac"
 import { createRequest, getAllRequests } from "@/lib/requests-store"
+import { invalidateAll } from "@/lib/cache"
 
 export async function GET() {
   try {
@@ -74,6 +75,10 @@ export async function POST(request: NextRequest) {
       const updatedSession = incrementRequestCount(session)
       await setSessionCookie(updatedSession)
     }
+
+    // A new request changes the availability of the requested title
+    // (in_radarr/in_sonarr/downloading), so drop cached availability rows.
+    invalidateAll()
 
     return NextResponse.json(requestItem, { status: 201 })
   } catch (e) {

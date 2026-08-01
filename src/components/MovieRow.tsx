@@ -5,6 +5,7 @@ import useSWR from "swr"
 import { MovieCard, MovieCardItem } from "@/components/MovieCard"
 import { useBatchAvailability } from "@/lib/use-availability"
 import { filterDisplayableContent } from "@/lib/catalog"
+import type { AvailabilityResult } from "@/app/api/availability/route"
 import { ChevronLeft, ChevronRight } from "lucide-react"
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json())
@@ -43,12 +44,19 @@ export function MovieRow({
   const getItemType = (item: MovieCardItem): "movie" | "tv" =>
     item.media_type === "tv" || item.media_type === "movie" ? item.media_type : type
 
-  const availabilityRefs = items.map((item) => ({
-    tmdbId: item.id,
-    type: getItemType(item),
-  }))
+  // Items that already carry a server-computed availabilityStatus (genre
+  // "Available Now" row) skip the client-side availability round-trip.
+  const availabilityRefs = items
+    .filter((item) => !item.availabilityStatus)
+    .map((item) => ({
+      tmdbId: item.id,
+      type: getItemType(item),
+    }))
 
   const { availabilityMap } = useBatchAvailability(availabilityRefs)
+
+  const availabilityFor = (item: MovieCardItem, itemType: "movie" | "tv"): AvailabilityResult | undefined =>
+    (item.availabilityStatus as AvailabilityResult | undefined) ?? availabilityMap[`${itemType}-${item.id}`]
 
   const checkScroll = useCallback(() => {
     if (scrollRef.current) {
@@ -144,7 +152,7 @@ export function MovieRow({
                     key={item.id}
                     item={item}
                     type={itemType}
-                    availabilityState={availabilityMap[`${itemType}-${item.id}`]}
+                    availabilityState={availabilityFor(item, itemType)}
                   />
                 )
               })}

@@ -56,7 +56,9 @@ export function isUnreleasedStatus(status?: string): boolean {
 export function isOnlyInCinemas(item: CatalogItem): boolean {
   // If item is already available in user's library, it is not cinema-only
   if ('availabilityStatus' in item && item.availabilityStatus) {
-    const avail = (item as any).availabilityStatus
+    const avail = (
+      item as { availabilityStatus: { status: string; progress?: number; jellyfinItemId?: string } }
+    ).availabilityStatus
     if (avail.status === 'in_library' || avail.status === 'downloading') {
       return false
     }
@@ -84,13 +86,19 @@ export function isOnlyInCinemas(item: CatalogItem): boolean {
     const diffMs = today.getTime() - releaseDate.getTime()
     const diffDays = diffMs / (1000 * 60 * 60 * 24)
 
-    // Future date -> unreleased / announced
+    // Future date -> unreleased / announced. This is redundant with isReleased()
+    // in the default filter path, but it still matters when includeFutureReleases
+    // is set: the item is then treated as cinema-only rather than passable.
     if (releaseDate > today) {
       return true
     }
 
-    // Is it a movie within the 30-day theatrical window?
-    const isMovieItem = 'release_date' in item || ('title' in item && !('name' in item))
+    // Is it a movie within the 30-day theatrical window? Use a truthy release_date
+    // check instead of key presence: recommendation/profile rows always carry a
+    // release_date key (value undefined for TV), so 'release_date' in item alone
+    // would misclassify TV shows with a recent first_air_date as cinema-only.
+    const isMovieItem =
+      ('release_date' in item && !!item.release_date) || ('title' in item && !('name' in item))
     if (isMovieItem && diffDays >= 0 && diffDays <= THEATRICAL_WINDOW_DAYS) {
       return true
     }

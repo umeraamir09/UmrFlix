@@ -232,19 +232,23 @@ export function getGenreIdsForMediaType(
 
 export type GenreFilterItem = {
   name: string
-  id: number
+  id?: number
+  slug?: string
 }
 
+// Use the genre slug (unique per pill) rather than the first TMDB id. Ids
+// overlap between genres (e.g. "Sci-Fi" 878 and "Sci-Fi & Fantasy" 878,14),
+// which made the two pills carry an identical id and filter ambiguously.
 export function getMovieGenres(): GenreFilterItem[] {
   return GENRES.filter((genre) => genre.movieGenreIds.length > 0).map((genre) => ({
     name: genre.name,
-    id: genre.movieGenreIds[0],
+    slug: genre.slug,
   }))
 }
 
 export function getTvGenres(): GenreFilterItem[] {
   return GENRES.filter((genre) => genre.tvGenreIds.length > 0).map((genre) => ({
     name: genre.name,
-    id: genre.tvGenreIds[0],
+    slug: genre.slug,
   }))
 }

@@ -242,9 +242,12 @@ export function SearchResults() {
 
   const rawResults: any[] = searchData?.results ?? []
 
-  // Filter out unreleased, announced, & cinema-only items
+  // Filter out unreleased, announced, & cinema-only items.
+  // Browse mode stays strict (no theatre-only titles); a typed query should
+  // still surface movies that are currently in the theatrical window, so
+  // cinema-only items are kept there.
   const results = useMemo(() => {
-    let items = filterDisplayableContent(rawResults)
+    let items = filterDisplayableContent(rawResults, { includeCinemas: !isBrowseMode })
     if (isBrowseMode && sort === "name") {
       items = [...items].sort((a, b) => {
         const aTitle = (a.title || a.name || "").toLowerCase()

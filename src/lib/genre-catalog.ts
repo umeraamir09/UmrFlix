@@ -96,17 +96,20 @@ function buildDiscoverParams(
 
 function toRowItems<T extends TmdbMovie | TmdbTvShow>(
   results: T[],
-  mediaType: "movie" | "tv"
+  mediaType: "movie" | "tv",
+  options?: { includeCinemas?: boolean }
 ): RowItem[] {
-  return filterDisplayableContent(filterReleasedContent(results)).map((item) =>
-    toRowItem(item, mediaType)
-  )
+  const includeCinemas = options?.includeCinemas
+  return filterDisplayableContent(filterReleasedContent(results, { includeCinemas }), {
+    includeCinemas,
+  }).map((item) => toRowItem(item, mediaType))
 }
 
 async function fetchMixedDiscover(
   genre: GenreDef,
   template: DiscoverTemplate,
-  limit = ROW_LIMIT
+  limit = ROW_LIMIT,
+  options?: { includeCinemas?: boolean }
 ): Promise<RowItem[]> {
   const [movieData, tvData] = await Promise.all([
     genre.movieGenreIds.length > 0
@@ -117,8 +120,8 @@ async function fetchMixedDiscover(
       : Promise.resolve(null),
   ])
 
-  const movieItems = toRowItems(movieData?.results ?? [], "movie")
-  const tvItems = toRowItems(tvData?.results ?? [], "tv")
+  const movieItems = toRowItems(movieData?.results ?? [], "movie", options)
+  const tvItems = toRowItems(tvData?.results ?? [], "tv", options)
   return dedupeByTmdbId([...movieItems, ...tvItems]).slice(0, limit)
 }
 
@@ -202,6 +205,19 @@ async function resolveTvdbId(tmdbId: number): Promise<number | null> {
   return null
 }
 
+async function resolveTvdbIdsInBatches(
+  ids: number[],
+  batchSize = 5
+): Promise<Map<number, number | null>> {
+  const map = new Map<number, number | null>()
+  for (let i = 0; i < ids.length; i += batchSize) {
+    const batch = ids.slice(i, i + batchSize)
+    const resolved = await Promise.all(batch.map((id) => resolveTvdbId(id)))
+    batch.forEach((id, index) => map.set(id, resolved[index]))
+  }
+  return map
+}
+
 function checkMovieAvailability(tmdbId: number, maps: AvailabilityMaps): AvailabilityStatus {
   const movie = maps.movies.get(tmdbId)
   if (!movie) return { status: "not_requested" }
@@ -233,15 +249,12 @@ async function buildAvailableRowItems(genre: GenreDef): Promise<RowItem[]> {
     buildAvailabilityMaps(),
   ])
 
-  const tvdbCache = new Map<number, number | null>()
   const tvItems = rawItems.filter((item) => item.media_type === "tv")
   const movieItems = rawItems.filter((item) => item.media_type !== "tv")
 
-  await Promise.all(
-    tvItems.map(async (item) => {
-      if (!tvdbCache.has(item.id)) tvdbCache.set(item.id, await resolveTvdbId(item.id))
-    })
-  )
+  // Resolve TVDB ids in small batches to avoid firing up to 60 concurrent
+  // TMDB /external_ids requests (each miss can also hit the L2 Convex store).
+  const tvdbCache = await resolveTvdbIdsInBatches(tvItems.map((item) => item.id))
 
   const annotated: { item: RowItem; status: AvailabilityStatus }[] = []
   for (const item of movieItems) {
@@ -300,12 +313,34 @@ async function buildHeroItems(genre: GenreDef): Promise<BillboardItem[]> {
 // ── Row cache (slug:userId:row) ──
 
 const rowCache = new Map<string, { value: unknown; timestamp: number }>()
+const MAX_ROW_CACHE_ENTRIES = 500
+let lastRowCacheSweep = 0
+
+function sweepRowCache() {
+  const now = Date.now()
+  if (now - lastRowCacheSweep < 60_000) return
+  lastRowCacheSweep = now
+
+  for (const [key, entry] of rowCache) {
+    if (now - entry.timestamp >= CACHE_TTL) rowCache.delete(key)
+  }
+  // Bound the cache: rows are keyed per slug:userId:rowId, so on a multi-user
+  // deployment they would otherwise grow without limit for the process lifetime.
+  if (rowCache.size > MAX_ROW_CACHE_ENTRIES) {
+    const overflow = rowCache.size - MAX_ROW_CACHE_ENTRIES
+    const oldest = [...rowCache.entries()]
+      .sort((a, b) => a[1].timestamp - b[1].timestamp)
+      .slice(0, overflow)
+    for (const [key] of oldest) rowCache.delete(key)
+  }
+}
 
 function rowCacheKey(slug: string, userId: string, rowId: string): string {
   return `${slug}:${userId}:${rowId}`
 }
 
 async function getCachedRow<T>(key: string, build: () => Promise<T>): Promise<T> {
+  sweepRowCache()
   const cached = rowCache.get(key)
   if (cached && Date.now() - cached.timestamp < CACHE_TTL) return cached.value as T
 
@@ -354,9 +389,14 @@ export async function getGenrePageData(
   const profile = await getUserGenreProfile(uid)
   const personalize = profile.hasEnoughSignals
 
+  // The hero is identical for every user of a genre, so it is cached under a
+  // shared key instead of being rebuilt (2 discover calls + up to 5 logo
+  // fetches) on every request.
+  const heroCacheKey = rowCacheKey(slug, "shared", "hero")
+
   const [heroItems, topPicks, trending, available, acclaimed, newRecent, hiddenGems, because, decadeItems] =
     await Promise.all([
-      buildHeroItems(genre),
+      getCachedRow<BillboardItem[]>(heroCacheKey, () => buildHeroItems(genre)),
       personalize
         ? getCachedRow<RowItem[]>(key("top-picks"), () => getGenreTopPicks(uid, genre, ROW_LIMIT))
         : Promise.resolve([] as RowItem[]),
@@ -371,13 +411,25 @@ export async function getGenrePageData(
         })
       ),
       getCachedRow<RowItem[]>(key("new-recent"), () =>
-        fetchMixedDiscover(genre, { sortBy: "release_date", dateRange: { lte: today } })
+        fetchMixedDiscover(
+          genre,
+          { sortBy: "release_date", dateRange: { lte: today } },
+          ROW_LIMIT,
+          // "The latest releases" is meaningless if everything inside the
+          // 30-day theatrical window is stripped out.
+          { includeCinemas: true }
+        )
       ),
       getCachedRow<RowItem[]>(key("hidden-gems"), () =>
-        fetchMixedDiscover(genre, {
-          sortBy: "vote_average",
-          voteCountGte: { movie: 30, tv: 15 },
-        })
+        fetchMixedDiscover(
+          genre,
+          {
+            sortBy: "vote_average",
+            voteCountGte: { movie: 30, tv: 15 },
+          },
+          ROW_LIMIT,
+          { includeCinemas: true }
+        )
       ),
       personalize
         ? getCachedRow<BecauseYouWatchedResult>(key("because"), () =>
@@ -387,10 +439,15 @@ export async function getGenrePageData(
       Promise.all(
         decades.map((decade) =>
           getCachedRow<RowItem[]>(key(`decade-${decade.label}`), () =>
-            fetchMixedDiscover(genre, {
-              sortBy: "release_date",
-              dateRange: { gte: decade.gte, lte: decade.lte },
-            })
+            fetchMixedDiscover(
+              genre,
+              {
+                sortBy: "release_date",
+                dateRange: { gte: decade.gte, lte: decade.lte },
+              },
+              ROW_LIMIT,
+              { includeCinemas: true }
+            )
           )
         )
       ),
