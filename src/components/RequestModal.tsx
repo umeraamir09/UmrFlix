@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react"
 import useSWR from "swr"
 import { Button } from "@/components/ui/button"
-import { X, Loader2, HardDrive, Tag as TagIcon, Check, Layers, Film, Tv } from "lucide-react"
+import { X, Loader2, HardDrive, Tag as TagIcon, Check, Layers, Film, Tv, Clock } from "lucide-react"
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json())
 
@@ -54,12 +54,21 @@ export function RequestModal({
   const endpoint = type === "movie" ? "/api/radarr/profiles" : "/api/sonarr/profiles"
   const { data, error, isLoading } = useSWR<ProfilesData>(endpoint, fetcher)
 
+  const { data: availabilityData } = useSWR<{ results: Record<string, { status: string; requestedByUsername?: string }> }>(
+    tmdbId ? `/api/availability?tmdbId=${tmdbId}&type=${type}` : null,
+    fetcher
+  )
+
+  const currentAvail = availabilityData?.results?.[`${type}-${tmdbId}`]
+  const isPending = currentAvail?.status === "pending"
+  const existingRequester = currentAvail?.requestedByUsername
+
   // Filter out "Any" profile from selection
   const filteredQualityProfiles = data?.qualityProfiles?.filter((p) => p.name.trim().toLowerCase() !== "any") || []
 
   const [qualityProfileId, setQualityProfileId] = useState<number | null>(null)
   const [rootFolderPath, setRootFolderPath] = useState<string | null>(null)
-  const [minimumAvailability, setMinimumAvailability] = useState<string>("announced")
+  const [minimumAvailability, setMinimumAvailability] = useState<string>("released")
   const [selectedTagIds, setSelectedTagIds] = useState<number[]>([])
 
   // Default season monitoring selection set to initialSeasonMode or "first"
@@ -374,6 +383,18 @@ export function RequestModal({
               )}
             </div>
 
+            {isPending && (
+              <div className="p-3.5 bg-amber-950/50 border border-amber-700/60 text-amber-200 text-xs space-y-1">
+                <div className="flex items-center gap-1.5 font-bold uppercase text-amber-400">
+                  <Clock className="size-4 animate-pulse" /> Request Already Pending
+                </div>
+                <p>
+                  This item has already been requested by{" "}
+                  <span className="font-bold text-amber-100">{existingRequester || "another user"}</span>, please wait for an admin to approve the request
+                </p>
+              </div>
+            )}
+
             {submitError && (
               <p className="text-xs font-semibold text-red-400 bg-red-950/30 p-2.5 border border-red-900/40">
                 {submitError}
@@ -388,7 +409,7 @@ export function RequestModal({
               <Button variant="secondary" onClick={onClose} disabled={submitting}>
                 Cancel
               </Button>
-              <Button variant="accent" onClick={handleSubmit} disabled={submitting}>
+              <Button variant="accent" onClick={handleSubmit} disabled={submitting || isPending}>
                 {submitting ? (
                   <span className="flex items-center gap-2">
                     <Loader2 className="size-4 animate-spin" /> Submitting...

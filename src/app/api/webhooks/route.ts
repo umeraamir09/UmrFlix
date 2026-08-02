@@ -37,7 +37,7 @@ export async function POST(req: NextRequest) {
       })
       // A grab or download changes availability state, so drop the cached
       // "Available Now / In Your Library" rows, genre profiles, etc.
-      invalidateAll()
+      await invalidateAll()
     } else {
       // General fall-through event broadcast
       eventBus.emitEvent({

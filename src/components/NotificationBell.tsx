@@ -109,7 +109,7 @@ export function NotificationBell() {
     <div className="relative h-full flex items-center" ref={menuRef}>
       <button
         onClick={() => setOpen(!open)}
-        className="relative p-2.5 text-gray-300 hover:text-white hover:bg-surface-hover transition-colors rounded-none"
+        className="relative p-2.5 text-white hover:text-gray-300 transition-colors rounded-none"
         title="Notifications"
         aria-label="View Notifications"
       >

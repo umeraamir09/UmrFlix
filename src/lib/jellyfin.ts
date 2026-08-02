@@ -160,7 +160,7 @@ export async function getAllItems(token: string, userId: string): Promise<Jellyf
       limit: String(limit),
       startIndex: String(startIndex),
       recursive: "true",
-      fields: "ProviderIds",
+      fields: "ProviderIds,UserData",
       includeItemTypes: "Movie,Series",
     })
     const res = await jellyfinFetch(`${BASE}/Users/${userId}/Items?${params}`, {
@@ -248,6 +248,47 @@ export async function getResumeItems(
 }
 
 /**
+ * Fetches the "next up" episodes for the authenticated user — the next
+ * unwatched episode per series. `enableResumable=false` keeps episodes that
+ * are already in progress out of the results, so the same episode never
+ * appears in both Continue Watching and Next Up.
+ */
+export async function getNextUpItems(
+  limit = 12,
+): Promise<JellyfinResumeItem[]> {
+  try {
+    const { token, userId } = await authenticate()
+
+    const params = new URLSearchParams({
+      userId,
+      limit: String(limit),
+      fields: "ProviderIds,Overview",
+      enableImageTypes: "Primary,Backdrop,Thumb",
+      imageTypeLimit: "1",
+      enableResumable: "false",
+      enableRewatching: "false",
+      enableUserData: "true",
+    })
+
+    const res = await jellyfinFetch(
+      `${BASE}/Shows/NextUp?${params}`,
+      { headers: getAuthHeaders(token) },
+    )
+
+    if (!res.ok) {
+      console.error(`Jellyfin next-up fetch error: ${res.status}`)
+      return []
+    }
+
+    const data: JellyfinResumeResponse = await res.json()
+    return data.Items ?? []
+  } catch (err) {
+    console.error("Failed to fetch Jellyfin next-up items:", err)
+    return []
+  }
+}
+
+/**
  * Build a working image URL for a Jellyfin item.
  * Routes images through the secured `/api/jellyfin/image/[id]` proxy.
  */
@@ -255,7 +296,14 @@ export function buildJellyfinImageUrl(
   item: JellyfinResumeItem,
   type: "Primary" | "Backdrop" | "Thumb" = "Backdrop",
 ): string {
-  // For episodes, try the parent (series) backdrop item if applicable
+  // Episodes carry the exact frame thumbnail as their Primary image — use it
+  // so continue-watching cards show that precise episode frame, not the
+  // generic series backdrop.
+  if (item.Type === "Episode" && item.ImageTags?.Primary) {
+    return `/api/jellyfin/image/${item.Id}?type=Primary`
+  }
+
+  // For episodes without their own thumbnail, try the parent (series) backdrop item if applicable
   if (type === "Backdrop" && item.ParentBackdropItemId && item.ParentBackdropImageTags && item.ParentBackdropImageTags.length > 0) {
     return `/api/jellyfin/image/${item.ParentBackdropItemId}?type=Backdrop`
   }

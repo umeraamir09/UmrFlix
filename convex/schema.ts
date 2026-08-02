@@ -81,6 +81,12 @@ export default defineSchema({
     pendingInvitesJson: v.string(),
     updatedAt: v.number(),
   }).index("by_party_id", ["partyId"]),
+
+  userProfiles: defineTable({
+    userId: v.string(),
+    avatarUrl: v.string(),
+    updatedAt: v.string(),
+  }).index("by_user", ["userId"]),
 })
 
 

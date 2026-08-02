@@ -17,6 +17,7 @@ export interface ContinueWatchingItem {
   timeLeft?: string
   jellyfinItemId?: string
   jellyfinImageUrl?: string
+  isNextUp?: boolean
 }
 
 export function ContinueWatchingCard({
@@ -56,22 +57,29 @@ export function ContinueWatchingCard({
       : "https://image.tmdb.org/t/p/w500/muth4OYamv31pG2LX2jU2u2vY1n.jpg"
 
   return (
-    <Link href={href} className="group block w-full flex-shrink-0">
+    <Link href={href} className="group flex w-full flex-shrink-0 items-start gap-3 sm:block">
       {/* 16:9 Widescreen Image Container */}
-      <div className="relative aspect-video w-full overflow-hidden rounded-none bg-card border border-border/60 shadow-md group-hover:border-accent transition-all duration-300">
+      <div className="relative aspect-video w-[45%] shrink-0 overflow-hidden rounded-none bg-card border border-border/60 shadow-md group-hover:border-accent transition-all duration-300 sm:w-full">
         <Image
           src={backdropUrl}
           alt={item.title}
           fill
-          sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 25vw"
+          sizes="(max-width: 640px) 45vw, (max-width: 1024px) 50vw, 25vw"
           className="object-cover transition-transform duration-300 group-hover:scale-105"
           unoptimized
         />
 
         {/* Time Remaining Badge (Crunchyroll Style) */}
-        {item.timeLeft && (
+        {item.timeLeft && !item.isNextUp && (
           <div className="absolute top-2 right-2 z-10 rounded-none bg-black/80 px-2 py-0.5 text-[10px] font-bold text-white backdrop-blur">
             {item.timeLeft}
+          </div>
+        )}
+
+        {/* NEXT UP Badge */}
+        {item.isNextUp && (
+          <div className="absolute top-2 left-2 z-10 rounded-none bg-accent px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-white shadow">
+            Next Up
           </div>
         )}
 
@@ -83,16 +91,18 @@ export function ContinueWatchingCard({
         </div>
 
         {/* Bottom Red Progress Bar */}
-        <div className="absolute bottom-0 inset-x-0 h-1.5 bg-gray-800">
-          <div
-            className="h-full bg-accent transition-all"
-            style={{ width: `${Math.min(100, Math.max(0, item.progressPercent))}%` }}
-          />
-        </div>
+        {!item.isNextUp && (
+          <div className="absolute bottom-0 inset-x-0 h-1.5 bg-gray-800">
+            <div
+              className="h-full bg-accent transition-all"
+              style={{ width: `${Math.min(100, Math.max(0, item.progressPercent))}%` }}
+            />
+          </div>
+        )}
       </div>
 
       {/* Item Metadata */}
-      <div className="mt-2 space-y-0.5">
+      <div className="min-w-0 flex-1 space-y-0.5 pt-0.5 sm:mt-2 sm:pt-0">
         <div className="flex items-center justify-between gap-1">
           <p className="text-[11px] font-bold uppercase tracking-wider text-gray-400 line-clamp-1">
             {item.title}
@@ -112,7 +122,7 @@ export function ContinueWatchingCard({
             </button>
           )}
         </div>
-        <h4 className="text-xs font-bold text-white line-clamp-1 group-hover:text-accent transition-colors">
+        <h4 className="text-xs font-bold text-white line-clamp-2 sm:line-clamp-1 group-hover:text-accent transition-colors">
           {item.episodeNumber ? `${item.episodeNumber} - ` : ""}{item.episodeTitle || item.title}
         </h4>
         <p className="text-[10px] font-medium text-gray-400">Sub | Dub</p>

@@ -25,8 +25,8 @@ export function ServiceHealthBanner() {
   if (degradedServices.length === 0) return null
 
   return (
-    <div className="bg-amber-900/40 border-b border-amber-500/30 px-4 py-2 text-xs sm:text-sm text-amber-200 flex items-center justify-between gap-3">
-      <div className="flex items-center gap-2">
+    <div className="bg-amber-950/90 border-b border-amber-500/30 px-4 sm:px-6 md:px-8 py-2 text-xs sm:text-sm text-amber-200 flex items-center justify-between gap-3 backdrop-blur-md w-full shrink-0">
+      <div className="mx-auto flex max-w-[1600px] items-center gap-2 w-full">
         <AlertTriangle className="size-4 text-amber-400 shrink-0" />
         <span>
           <strong className="font-semibold text-amber-300">Notice:</strong>{" "}

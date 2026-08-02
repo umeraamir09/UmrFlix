@@ -10,6 +10,7 @@ import { IconSearch, IconClose, IconDownloadNav } from "@/components/ui/icons"
 import { UserProfileMenu } from "@/components/UserProfileMenu"
 import { NotificationBell } from "@/components/NotificationBell"
 import { useEventStream } from "@/lib/use-event-stream"
+import { ServiceHealthBanner } from "@/components/ServiceHealthBanner"
 import { GENRE_CATALOG } from "@/lib/genres"
 
 const NAV_LINKS = [
@@ -32,8 +33,17 @@ export function Navbar() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [categoriesOpen, setCategoriesOpen] = useState(false)
   const [searchOpen, setSearchOpen] = useState(false)
+  const [scrolled, setScrolled] = useState(false)
   const searchContainerRef = useRef<HTMLDivElement>(null)
 
+  useEffect(() => {
+    const handleScroll = () => {
+      setScrolled(window.scrollY > 20)
+    }
+    handleScroll()
+    window.addEventListener("scroll", handleScroll)
+    return () => window.removeEventListener("scroll", handleScroll)
+  }, [])
 
   // Close search menu on route change
   const [prevPathname, setPrevPathname] = useState(pathname)
@@ -53,7 +63,14 @@ export function Navbar() {
   }, [])
 
   return (
-    <header className="fixed top-0 z-50 w-full bg-nav-bg border-b border-border-subtle backdrop-blur-md transition-colors shadow-lg">
+    <header
+      className={`fixed top-0 z-50 w-full transition-all duration-300 ${
+        scrolled
+          ? "bg-black/90 backdrop-blur-md shadow-lg"
+          : "bg-gradient-to-b from-black/90 via-black/40 to-transparent"
+      }`}
+    >
+      <ServiceHealthBanner />
       <div className="mx-auto flex h-16 max-w-[1600px] items-center justify-between px-4 sm:px-6 md:px-8 relative">
 
         {/* Normal Header View */}
@@ -77,10 +94,10 @@ export function Navbar() {
                 <Link
                   key={link.href}
                   href={link.href}
-                  className={`h-full flex items-center px-4 text-sm font-medium transition-colors ${
+                  className={`h-full flex items-center px-3.5 text-sm font-semibold transition-colors ${
                     isActive
-                      ? "bg-surface text-white"
-                      : "text-foreground-muted hover:bg-surface-hover hover:text-white"
+                      ? "text-white font-bold"
+                      : "text-white/80 hover:text-gray-300"
                   }`}
                 >
                   {link.label}
@@ -93,32 +110,32 @@ export function Navbar() {
               <button
                 onMouseEnter={() => setCategoriesOpen(true)}
                 onClick={() => setCategoriesOpen(!categoriesOpen)}
-                className={`h-full flex items-center gap-1.5 px-4 text-sm font-medium transition-colors ${
+                className={`h-full flex items-center gap-1.5 px-3.5 text-sm font-semibold transition-colors ${
                   categoriesOpen
-                    ? "bg-surface-hover text-white"
-                    : "text-foreground-muted hover:bg-surface-hover hover:text-white"
+                    ? "text-gray-300"
+                    : "text-white/80 hover:text-gray-300"
                 }`}
               >
                 <span>Browse By Genre</span>
                 <ChevronDown
                   className={`size-4 transition-transform duration-200 ${
-                    categoriesOpen ? "rotate-180 text-white" : "text-foreground-muted"
+                    categoriesOpen ? "rotate-180 text-gray-300" : "text-white/80"
                   }`}
                 />
               </button>
 
               {categoriesOpen && (
                 <div
-                  className="absolute top-full left-0 w-[640px] border border-border border-t-0 bg-surface-hover p-6 shadow-2xl backdrop-blur-xl flex gap-6 animate-in fade-in slide-in-from-top-1 duration-150 z-50 rounded-none"
+                  className="absolute top-full left-0 w-[640px] bg-black/95 p-6 shadow-2xl backdrop-blur-xl flex gap-6 animate-in fade-in slide-in-from-top-1 duration-150 z-50 rounded-none"
                   onMouseEnter={() => setCategoriesOpen(true)}
                 >
                   {/* Left Column: Quick links */}
-                  <div className="w-52 flex flex-col gap-1.5 pr-6 border-r border-border shrink-0">
+                  <div className="w-52 flex flex-col gap-1.5 pr-6 shrink-0">
                     {QUICK_LINKS.map((quick) => (
                       <Link
                         key={quick.href}
                         href={quick.href}
-                        className="rounded-none px-3 py-2 text-sm font-medium text-gray-200 hover:bg-surface-hover-alt hover:text-white transition-colors"
+                        className="rounded-none px-3 py-2 text-sm font-medium text-white hover:text-gray-300 hover:bg-white/10 transition-colors"
                         onClick={() => setCategoriesOpen(false)}
                       >
                         {quick.label}
@@ -136,7 +153,7 @@ export function Navbar() {
                         <Link
                           key={genre.slug}
                           href={`/genre/${genre.slug}`}
-                          className="text-sm font-medium text-foreground-muted hover:text-white transition-colors"
+                          className="text-sm font-medium text-white/80 hover:text-gray-300 transition-colors"
                           onClick={() => setCategoriesOpen(false)}
                         >
                           {genre.name}
@@ -148,16 +165,13 @@ export function Navbar() {
               )}
             </div>
 
-            {/* Vertical Separator */}
-            <div className="h-4 w-px bg-separator mx-2 self-center" />
-
             {/* My Library */}
             <Link
               href="/library"
-              className={`h-full flex items-center px-4 text-sm font-medium transition-colors ${
+              className={`h-full flex items-center px-3.5 text-sm font-semibold transition-colors ${
                 pathname === "/library"
-                  ? "bg-surface text-white"
-                  : "text-foreground-muted hover:bg-surface-hover hover:text-white"
+                  ? "text-white font-bold"
+                  : "text-white/80 hover:text-gray-300"
               }`}
             >
               My Library
@@ -170,7 +184,7 @@ export function Navbar() {
           {/* Search Button */}
           <Link
             href="/search"
-            className="h-full flex items-center justify-center px-3.5 text-foreground-muted hover:text-white hover:bg-surface-hover transition-colors"
+            className="h-full flex items-center justify-center px-3 text-white/80 hover:text-gray-300 transition-colors"
             title="Search Catalog"
           >
             <IconSearch className="size-5" />
@@ -180,7 +194,7 @@ export function Navbar() {
           <Link
             href="/library"
             title="Watchlist / My Library"
-            className="h-full flex items-center justify-center px-3.5 text-foreground-muted hover:text-white hover:bg-surface-hover transition-colors"
+            className="h-full flex items-center justify-center px-3 text-white/80 hover:text-gray-300 transition-colors"
           >
             <IconDownloadNav className="size-5" />
           </Link>
@@ -191,14 +205,14 @@ export function Navbar() {
           </div>
 
           {/* User Profile & Settings Menu */}
-          <div className="px-2 flex items-center h-full">
+          <div className="px-1 flex items-center h-full">
             <UserProfileMenu />
           </div>
 
           {/* Mobile Drawer Trigger */}
           <button
             onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-            className="h-full flex items-center justify-center px-3 text-gray-300 md:hidden hover:text-white hover:bg-surface-hover transition-colors"
+            className="h-full flex items-center justify-center px-3 text-white hover:text-gray-300 md:hidden transition-colors"
             aria-label="Toggle Navigation Menu"
           >
             {mobileMenuOpen ? <IconClose className="size-6" /> : <Menu className="size-6" />}
@@ -209,17 +223,17 @@ export function Navbar() {
         {searchOpen && (
           <div
             ref={searchContainerRef}
-            className="absolute inset-x-0 top-0 h-16 bg-surface flex items-center justify-between px-4 sm:px-6 md:px-8 z-50 animate-in fade-in slide-in-from-top-4 duration-200"
+            className="absolute inset-x-0 top-0 h-16 bg-black/95 backdrop-blur-md flex items-center justify-between px-4 sm:px-6 md:px-8 z-50 animate-in fade-in slide-in-from-top-4 duration-200"
           >
             <div className="flex-1 max-w-4xl mx-auto flex items-center gap-4">
               <div className="flex-1">
-                <Suspense fallback={<div className="h-9 w-full bg-card rounded-none animate-pulse" />}>
+                <Suspense fallback={<div className="h-9 w-full bg-white/10 rounded-none animate-pulse" />}>
                   <SearchBar />
                 </Suspense>
               </div>
               <button
                 onClick={() => setSearchOpen(false)}
-                className="flex items-center justify-center p-2 text-gray-400 hover:text-white rounded-none hover:bg-gray-800/50 transition-colors"
+                className="flex items-center justify-center p-2 text-white hover:text-gray-300 rounded-none transition-colors"
                 title="Close Search"
               >
                 <IconClose className="size-5" />
@@ -232,14 +246,14 @@ export function Navbar() {
 
       {/* Mobile Drawer Navigation */}
       {mobileMenuOpen && (
-        <div className="border-b border-border bg-surface px-6 py-5 md:hidden space-y-4 animate-in fade-in duration-200">
+        <div className="bg-black/95 backdrop-blur-xl px-6 py-5 md:hidden space-y-4 animate-in fade-in duration-200">
           <div className="space-y-1">
             {NAV_LINKS.map((link) => (
               <Link
                 key={link.href}
                 href={link.href}
                 onClick={() => setMobileMenuOpen(false)}
-                className="block px-3 py-2 rounded-none text-base font-medium text-gray-200 hover:bg-card-hover hover:text-white transition-colors"
+                className="block px-3 py-2 rounded-none text-base font-semibold text-white hover:text-gray-300 transition-colors"
               >
                 {link.label}
               </Link>
@@ -247,12 +261,12 @@ export function Navbar() {
             <Link
               href="/library"
               onClick={() => setMobileMenuOpen(false)}
-              className="block px-3 py-2 rounded-none text-base font-medium text-gray-200 hover:bg-card-hover hover:text-white transition-colors"
+              className="block px-3 py-2 rounded-none text-base font-semibold text-white hover:text-gray-300 transition-colors"
             >
               My Library
             </Link>
           </div>
-          <div className="pt-3 border-t border-border">
+          <div className="pt-3">
             <p className="text-[11px] font-bold text-gray-400 uppercase tracking-wider mb-3">Genres</p>
             <div className="grid grid-cols-2 gap-2.5">
               {GENRE_CATALOG.map((genre) => (
@@ -260,7 +274,7 @@ export function Navbar() {
                   key={genre.slug}
                   href={`/genre/${genre.slug}`}
                   onClick={() => setMobileMenuOpen(false)}
-                  className="text-sm font-medium text-foreground-muted hover:text-white transition-colors"
+                  className="text-sm font-medium text-white hover:text-gray-300 transition-colors"
                 >
                   {genre.name}
                 </Link>

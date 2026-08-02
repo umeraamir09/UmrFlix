@@ -13,8 +13,6 @@ import {
   ShieldCheck,
 } from "lucide-react"
 
-import { usePlayerSettings, type SubtitleMode } from "@/lib/player-settings"
-
 export type UserProfile = {
   userId: string
   username: string
@@ -25,28 +23,12 @@ export type UserProfile = {
   dailyRequestsCount?: number
 }
 
-const SUBTITLE_MODE_OPTIONS: { id: SubtitleMode; label: string; description: string }[] = [
-  {
-    id: "client",
-    label: "Client-side subtitles",
-    description: "Rendered over video (instant switch & custom styling)",
-  },
-  {
-    id: "burn",
-    label: "Burn subtitles into stream",
-    description: "Transcoded into video stream by server",
-  },
-]
-
 export function UserProfileMenu() {
   const router = useRouter()
   const [user, setUser] = useState<UserProfile | null>(null)
   const [loading, setLoading] = useState(true)
   const [open, setOpen] = useState(false)
-  const [showSubtitleSettings, setShowSubtitleSettings] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
-
-  const [playerSettings, updatePlayerSettings] = usePlayerSettings()
 
   useEffect(() => {
     async function fetchMe() {
@@ -113,12 +95,12 @@ export function UserProfileMenu() {
   const initial = user.username.charAt(0).toUpperCase()
 
   return (
-    <div className="relative h-full flex items-center" ref={menuRef}>
+    <div className="relative h-full flex items-center " ref={menuRef}>
       {/* Navbar Avatar Trigger Button */}
       <button
         onClick={() => setOpen(!open)}
-        className={`h-full flex items-center gap-2 px-3 rounded-none border-l border-r border-border transition-colors ${
-          open ? "bg-surface-hover text-white" : "text-gray-200 hover:text-white hover:bg-surface-hover"
+        className={`h-full flex items-center gap-2 px-2.5 rounded-none transition-colors hover:cursor-pointer ${
+          open ? "bg-white/10 text-white" : "text-white/80 hover:text-gray-300"
         }`}
         title={`Account: ${user.username}`}
         aria-label="User Account Menu"
@@ -129,10 +111,10 @@ export function UserProfileMenu() {
           <img
             src={user.avatarUrl}
             alt={user.username}
-            className="size-7 object-cover border border-amber-500/50"
+            className="size-7 object-cover rounded-sm shrink-0"
           />
         ) : (
-          <div className="size-7 bg-accent text-white flex items-center justify-center text-xs font-black uppercase shadow-md">
+          <div className="size-7 bg-accent text-white flex items-center justify-center text-xs font-black uppercase shadow-md shrink-0">
             {initial}
           </div>
         )}
@@ -153,7 +135,7 @@ export function UserProfileMenu() {
                 <img
                   src={user.avatarUrl}
                   alt={user.username}
-                  className="size-11 rounded-full object-cover border-2 border-amber-400 shadow-md"
+                  className="size-11 rounded-sm object-cover shadow-md"
                 />
               ) : (
                 <div className="size-11 rounded-full bg-accent text-white flex items-center justify-center text-base font-black uppercase shadow-md">
@@ -175,9 +157,12 @@ export function UserProfileMenu() {
               </div>
             </div>
             <button
-              onClick={() => router.push("/login")}
-              className="p-1.5 text-gray-400 hover:text-white transition-colors"
-              title="Edit / Switch Account"
+              onClick={() => {
+                setOpen(false)
+                router.push("/account/avatar")
+              }}
+              className="p-1.5 text-gray-400 hover:text-white transition-colors rounded-none hover:bg-surface-hover"
+              title="Edit Profile Avatar"
             >
               <Pencil className="size-4" />
             </button>
@@ -247,9 +232,9 @@ export function UserProfileMenu() {
               <Link
                 href="/admin"
                 onClick={() => setOpen(false)}
-                className="flex items-center gap-3.5 px-4 py-3 text-amber-400 hover:bg-amber-500/10 transition-colors font-bold border-t border-border/40"
+                className="flex items-center gap-3.5 px-4 py-3 hover:bg-surface-hover transition-colors font-bold border-t border-border/40"
               >
-                <ShieldCheck className="size-4 text-amber-400" />
+                <ShieldCheck className="size-4" />
                 <span className="text-sm">Admin Dashboard</span>
               </Link>
             )}

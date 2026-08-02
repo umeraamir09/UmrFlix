@@ -128,9 +128,10 @@ async function fetchMixedDiscover(
 // ── Availability maps ──
 
 type AvailabilityStatus = {
-  status: "in_library" | "downloading" | "in_radarr" | "in_sonarr" | "not_requested"
+  status: "in_library" | "downloading" | "in_radarr" | "in_sonarr" | "pending" | "not_requested"
   progress?: number
   jellyfinItemId?: string
+  requestedByUsername?: string
 }
 
 type AvailabilityMaps = {
@@ -271,6 +272,7 @@ async function buildAvailableRowItems(genre: GenreDef): Promise<RowItem[]> {
     downloading: 1,
     in_radarr: 2,
     in_sonarr: 2,
+    pending: 2,
     not_requested: 3,
   }
   annotated.sort((a, b) => priority[a.status.status] - priority[b.status.status])
