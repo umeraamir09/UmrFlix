@@ -273,7 +273,7 @@ export function getJellyfinItemId(providerKey: string): string | undefined {
 
 // ── Invalidation ──
 
-export function invalidateAll() {
+export async function invalidateAll(): Promise<void> {
   radarrMoviesCache.timestamp = 0
   sonarrSeriesCache.timestamp = 0
   tmdbToTvdbCache.timestamp = 0
@@ -283,21 +283,20 @@ export function invalidateAll() {
   // profiles, recommendations) so library changes are reflected immediately
   // instead of after their 30-minute TTL. Dynamic imports avoid an import
   // cycle (genre-catalog → cache → genre-catalog).
-  void Promise.all([
-    import("./genre-catalog"),
-    import("./genre-profile"),
-    import("./recommendations"),
-  ])
-    .then(
-      ([
-        { invalidateGenreCache },
-        { invalidateGenreProfileCache },
-        { invalidateRecommendationCache },
-      ]) => {
-        invalidateGenreCache()
-        invalidateGenreProfileCache()
-        invalidateRecommendationCache()
-      }
-    )
-    .catch(() => {})
+  try {
+    const [
+      { invalidateGenreCache },
+      { invalidateGenreProfileCache },
+      { invalidateRecommendationCache },
+    ] = await Promise.all([
+      import("./genre-catalog"),
+      import("./genre-profile"),
+      import("./recommendations"),
+    ])
+    invalidateGenreCache()
+    invalidateGenreProfileCache()
+    invalidateRecommendationCache()
+  } catch {
+    /* ignore import errors */
+  }
 }

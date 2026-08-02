@@ -57,31 +57,32 @@ const MARKER_TYPES: MarkerType[] = ["intro", "recap", "outro", "preview"]
 const MIN_MARKER_DURATION = 5
 
 /**
- * Merges marker sources in priority order, taking the first source that
- * produced a given type (native segments > Intro Skipper plugin > chapters).
- * Lower-tier sources only fill in types the higher tiers missed, and the
- * result is sanity-filtered and sorted.
- *
- * Note: only the FIRST marker of each type is kept across all sources — if a
- * source ever returns multiple native segments of the same type (e.g. two
- * intros in a compilation/multi-part item) the extras are dropped. That's
- * fine for standard episodes, where one intro/outro per item is the norm.
+ * Merges marker sources in priority order, taking the source that produced a given
+ * type (native segments > Intro Skipper plugin > chapters). Lower-tier sources only
+ * fill in types the higher tiers missed. All valid markers of that type from the winning
+ * source are preserved (supporting multi-part episodes/compilations with multiple intros/outros).
  */
 function mergeMarkerSources(
   sources: SegmentMarker[][],
   runtimeSeconds: number,
 ): SegmentMarker[] {
-  const byType = new Map<MarkerType, SegmentMarker[]>()
+  const byType = new Map<MarkerType, { source: SegmentMarker[]; markers: SegmentMarker[] }>()
   for (const source of sources) {
     for (const m of source) {
-      const list = byType.get(m.type)
-      if (list) continue
       if (m.end - m.start < MIN_MARKER_DURATION) continue
       if (runtimeSeconds > 0 && m.start >= runtimeSeconds) continue
-      byType.set(m.type, [m])
+
+      const existing = byType.get(m.type)
+      if (existing && existing.source !== source) continue
+
+      if (!existing) {
+        byType.set(m.type, { source, markers: [m] })
+      } else {
+        existing.markers.push(m)
+      }
     }
   }
-  return MARKER_TYPES.flatMap((t) => byType.get(t) ?? []).sort((a, b) => a.start - b.start)
+  return MARKER_TYPES.flatMap((t) => byType.get(t)?.markers ?? []).sort((a, b) => a.start - b.start)
 }
 
 function pickMediaSource(sources: JellyfinMediaSource[]): JellyfinMediaSource | undefined {

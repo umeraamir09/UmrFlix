@@ -29,8 +29,9 @@ interface JellyfinSeries extends JellyfinApiItem {
 // ISR bounds the per-request cost of the homepage's heavy server-side build
 // (trending, Jellyfin items, TVMaze lookups, recommendations, hero logos) to at
 // most once an hour; the hero rotation (timeSeed) advances with each
-// regeneration. All personalized surfaces on the page (Continue Watching and
-// the dynamic rows) are client-fetched, so the cached shell stays correct.
+// regeneration. Continue Watching and dynamic category rows are client-fetched
+// per session, while Top Picks, Because You Watched, and Recently Added rows
+// are pre-rendered into the hourly shared shell.
 export const revalidate = 3600
 
 function seededShuffle<T>(arr: T[], seed: number): T[] {

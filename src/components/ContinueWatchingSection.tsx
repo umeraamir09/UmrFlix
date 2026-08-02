@@ -101,16 +101,24 @@ export function ContinueWatchingSection() {
   // Don't render anything if there's nothing to continue or still loading
   if (loading) {
     return (
-      <section className="space-y-3">
-        <div className="flex items-center justify-between">
+      <section className="relative my-8 space-y-3">
+        <div className="flex items-center justify-between px-1">
           <h2 className="text-xl sm:text-2xl font-black uppercase tracking-tight text-white flex items-center gap-2">
             Continue Watching
           </h2>
         </div>
-        <div className="grid grid-cols-1 gap-3 sm:gap-4">
-          {[...Array(4)].map((_, i) => (
-            <div key={i} className="aspect-video w-full rounded-none bg-card animate-pulse" />
-          ))}
+        <div className="relative w-[calc(100%+(100vw-100%)/2)] overflow-hidden">
+          <div className="grid grid-flow-col auto-cols-[240px] sm:auto-cols-[280px] md:auto-cols-[320px] lg:auto-cols-[360px] gap-4 sm:gap-5 md:gap-6 overflow-x-hidden py-3 px-1">
+            {[...Array(5)].map((_, i) => (
+              <div key={i} className="space-y-2 shrink-0">
+                <div className="aspect-video w-full rounded-none bg-card animate-pulse border border-border/40" />
+                <div className="space-y-1.5 pt-1">
+                  <div className="h-3 w-1/2 bg-card animate-pulse" />
+                  <div className="h-3.5 w-3/4 bg-card animate-pulse" />
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
       </section>
     )

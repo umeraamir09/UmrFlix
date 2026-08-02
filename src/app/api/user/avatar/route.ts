@@ -41,7 +41,13 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Invalid avatarUrl provided." }, { status: 400 })
     }
 
-    // Save choice in Convex (with fallback local store)
+    // Only allow known local avatars to keep the value out of attacker control
+    const avatars = await getAvailableAvatars()
+    if (!avatars.includes(avatarUrl)) {
+      return NextResponse.json({ error: "Invalid avatarUrl provided." }, { status: 400 })
+    }
+
+    // Save user avatar in Convex (with fallback local store)
     await setUserAvatar(session.userId, avatarUrl)
 
     // Update encrypted session cookie

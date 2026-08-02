@@ -48,7 +48,7 @@ export async function DELETE(request: NextRequest) {
     }
 
     // Invalidate local memory caches
-    invalidateAll()
+    await invalidateAll()
 
     return NextResponse.json({
       success: true,
