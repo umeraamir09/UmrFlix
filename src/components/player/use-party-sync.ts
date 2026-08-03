@@ -269,10 +269,13 @@ export function usePartySync({
       }
 
       try {
+        // keepalive: lets the final command survive page unload (e.g. the
+        // pending-seek flush fired from CinemaPlayer's unmount cleanup).
         const res = await fetch(`/api/party/${partyId}/command`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payload),
+          keepalive: true,
         })
         if (res.ok) {
           const data = await res.json()
@@ -541,11 +544,15 @@ export function usePartySync({
     const handleWaiting = () => {
       if (bufferingTimerRef.current) clearTimeout(bufferingTimerRef.current)
       abortRecovery()
-      // Debounce short stalls; ignore stalls caused by an in-flight seek/scrub.
-      // The window is time-bound, so a seek that lands in unbuffered territory
-      // still gets reported once the scrub window expires.
-      bufferingTimerRef.current = setTimeout(() => {
-        if (Date.now() < scrubUntilRef.current) return
+      // Debounce short stalls; defer stalls that begin inside the scrub window
+      // until it expires, so a seek that lands in unbuffered territory is still
+      // reported once the window passes instead of being dropped forever.
+      const reportStall = () => {
+        const waitMs = scrubUntilRef.current - Date.now()
+        if (waitMs > 0) {
+          bufferingTimerRef.current = setTimeout(reportStall, waitMs + PARTY_BUFFERING.STALL_DEBOUNCE_MS)
+          return
+        }
         const v = videoRef.current
         // The stall already cleared within the debounce window (the video has
         // future data again) — reporting it would pause the room for nothing.
@@ -554,7 +561,8 @@ export function usePartySync({
           bufferingReportedRef.current = true
           sendStatus(true, v ? v.currentTime : 0)
         }
-      }, PARTY_BUFFERING.STALL_DEBOUNCE_MS)
+      }
+      bufferingTimerRef.current = setTimeout(reportStall, PARTY_BUFFERING.STALL_DEBOUNCE_MS)
     }
 
     // Recovery is NOT reported on the first canplay/loadeddata: while the room

@@ -8,7 +8,7 @@ import Link from "next/link"
 import { Search, X, ChevronRight, ChevronDown, Loader2 } from "lucide-react"
 import { useBatchAvailability } from "@/lib/use-availability"
 import { AvailabilityBadge } from "@/components/AvailabilityBadge"
-  import { getGenreByParam, getGenreIdsForMediaType, getGenreDiscoverParams } from "@/lib/genres"
+import { getGenreByParam, getGenreIdsForMediaType, getGenreDiscoverParams } from "@/lib/genres"
 import { filterDisplayableContent } from "@/lib/catalog"
 
 const RECENT_SEARCHES_KEY = "umrflix_recent_searches"

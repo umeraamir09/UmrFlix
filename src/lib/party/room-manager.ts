@@ -379,6 +379,22 @@ class PartyRoomManager {
       },
     })
 
+    // Clean leave is not crash cleanup, but the same hold applies: if the
+    // member who just left was the only one buffering, nobody can report
+    // recovery anymore — release the buffer-pause or the room stays paused
+    // forever. (Crash cleanup has its own path in pruneGhostBufferingMembers.)
+    const resumed = this.maybeResume(room)
+    if (resumed) {
+      eventBus.emitEvent({
+        type: "party:state",
+        payload: {
+          partyId,
+          state: resumed,
+          audience,
+        },
+      })
+    }
+
     this.syncToConvex(room)
     return { roomEnded: false, newOwnerId }
   }

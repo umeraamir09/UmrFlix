@@ -122,6 +122,15 @@ export function CinemaPlayer({
     onPartyEnded,
   })
 
+  // Stable handle for unmount-time fire-and-forget commands; the usePartySync
+  // return object is recreated every render, so keep it in a ref (updated in
+  // an effect, per react-hooks/refs) instead of depending on it in effects —
+  // that would flush pending state on every re-render.
+  const partySyncRef = useRef(partySync)
+  useEffect(() => {
+    partySyncRef.current = partySync
+  }, [partySync])
+
   useEffect(() => {
     if (typeof startAtSec === "number" && startAtSec > 0) {
       seekTargetRef.current = startAtSec
@@ -803,12 +812,13 @@ export function CinemaPlayer({
       video.currentTime = t
       if (!party?.partyId) return
 
-      // Coalesce scrub seeks: send at most one command per 500ms, but always
+      // Coalesce scrub seeks: send at most one command per 650ms, but always
       // flush the final drag position (trailing edge) so the room lands where
-      // the user let go — never at a rate-limited stale position.
+      // the user let go — never at a rate-limited stale position. 650ms keeps
+      // a sustained drag under the 20-commands/10s rate limit with headroom.
       const now = Date.now()
       pendingSeekRef.current = t
-      if (now - lastSeekSendAtRef.current >= 500) {
+      if (now - lastSeekSendAtRef.current >= 650) {
         lastSeekSendAtRef.current = now
         const target = pendingSeekRef.current
         pendingSeekRef.current = null
@@ -821,16 +831,26 @@ export function CinemaPlayer({
           pendingSeekRef.current = null
           lastSeekSendAtRef.current = Date.now()
           partySync.sendCommand("seek", target)
-        }, 500)
+        }, 650)
       }
     },
     [party?.partyId, partySync]
   )
 
-  // Flush a pending scrub seek when leaving the page
+  // Flush a pending scrub seek when leaving the page: fire-and-forget the
+  // final drag position so the room isn't left at a stale playhead when the
+  // player unmounts mid-drag.
   useEffect(() => {
     return () => {
-      if (seekFlushTimerRef.current) clearTimeout(seekFlushTimerRef.current)
+      if (seekFlushTimerRef.current) {
+        clearTimeout(seekFlushTimerRef.current)
+        seekFlushTimerRef.current = null
+      }
+      const target = pendingSeekRef.current
+      if (target !== null) {
+        pendingSeekRef.current = null
+        void partySyncRef.current.sendCommand("seek", target)
+      }
     }
   }, [])
 

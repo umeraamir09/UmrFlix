@@ -266,6 +266,46 @@ describe("PartyRoomManager Unit Tests", () => {
     assert.strictEqual(updatedRoom.state!.reason, "buffer-resume")
   })
 
+  test("clean leave by the only buffering member releases the buffer-hold", () => {
+    const snap = roomManager.createRoom("buf_leave_host", "Host", undefined, "item_bp5")
+    assert.ok(snap)
+    roomManager.joinRoom(snap.partyId, guestId, guestName)
+
+    roomManager.setBuffering(snap.partyId, guestId, true, 40)
+    const pausedRoom = roomManager.getRoom(snap.partyId)!
+    assert.strictEqual(pausedRoom.state!.playing, false)
+    assert.strictEqual(pausedRoom.pausedForBuffering, true)
+
+    // The stalled member closes the tab cleanly (leave beacon) — no crash
+    // prune ever runs, but the hold must still release, or the remaining
+    // host is paused forever.
+    const leaveResult = roomManager.leaveRoom(snap.partyId, guestId)
+    assert.strictEqual(leaveResult.roomEnded, false)
+
+    const updatedRoom = roomManager.getRoom(snap.partyId)!
+    assert.strictEqual(updatedRoom.state!.playing, true)
+    assert.strictEqual(updatedRoom.state!.reason, "buffer-resume")
+    // System-generated event: must not carry a clientId or the remaining
+    // member's echo suppression would skip applying the resume
+    assert.strictEqual(updatedRoom.state!.senderClientId, undefined)
+  })
+
+  test("leave by a non-buffering member does not release another member's hold", () => {
+    const snap = roomManager.createRoom("buf_leave2_host", "Host", undefined, "item_bp6")
+    assert.ok(snap)
+    const guest2Id = "user_guest_leave2"
+    roomManager.joinRoom(snap.partyId, guestId, guestName)
+    roomManager.joinRoom(snap.partyId, guest2Id, "GuestL2")
+
+    // Host (non-buffering) leaves while the guest is still stalled
+    roomManager.setBuffering(snap.partyId, guestId, true, 45)
+    roomManager.leaveRoom(snap.partyId, "buf_leave2_host")
+
+    const updatedRoom = roomManager.getRoom(snap.partyId)!
+    assert.strictEqual(updatedRoom.state!.playing, false)
+    assert.strictEqual(updatedRoom.pausedForBuffering, true)
+  })
+
   test("applyCommand compensates sender transport latency via sentAt", () => {
     const snap = roomManager.createRoom("latency_host", "Host", undefined, "item_lat")
     assert.ok(snap)
