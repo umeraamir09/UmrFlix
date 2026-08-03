@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server"
 import { getSession } from "@/lib/auth"
 import { getJellyfinUsers } from "@/lib/jellyfin"
-import { apiError } from "@/lib/api-response"
+import { apiError, NO_STORE_HEADERS } from "@/lib/api-response"
 
 export const dynamic = "force-dynamic"
 
@@ -26,7 +26,7 @@ export async function GET() {
           : undefined,
       }))
 
-    return NextResponse.json({ users })
+    return NextResponse.json({ users }, { headers: NO_STORE_HEADERS })
   } catch (err) {
     console.error("[Party API] Error fetching users:", err)
     return apiError("Failed to fetch user list", 500, "FETCH_USERS_FAILED", String(err))

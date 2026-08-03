@@ -16,7 +16,7 @@ import {
   getTmdbRecommendations,
   type RowItem,
 } from "./recommendations"
-import type { GenreDef } from "./genres"
+import { getGenreDiscoverParams, type GenreDef } from "./genres"
 
 /**
  * Per-user genre affinity engine.
@@ -308,10 +308,18 @@ export async function getGenreTopPicks(
 
   const [movieData, tvData] = await Promise.all([
     genre.movieGenreIds.length > 0
-      ? discoverMovies({ with_genres: genre.movieGenreIds.join(","), sort_by: "popularity.desc" })
+      ? discoverMovies({
+          with_genres: genre.movieGenreIds.join(","),
+          sort_by: "popularity.desc",
+          ...getGenreDiscoverParams(genre, "movie"),
+        })
       : Promise.resolve(null),
     genre.tvGenreIds.length > 0
-      ? discoverTv({ with_genres: genre.tvGenreIds.join(","), sort_by: "popularity.desc" })
+      ? discoverTv({
+          with_genres: genre.tvGenreIds.join(","),
+          sort_by: "popularity.desc",
+          ...getGenreDiscoverParams(genre, "tv"),
+        })
       : Promise.resolve(null),
   ])
 

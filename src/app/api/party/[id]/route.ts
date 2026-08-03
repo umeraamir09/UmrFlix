@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server"
 import { getSession } from "@/lib/auth"
 import { roomManager } from "@/lib/party/room-manager"
-import { apiError } from "@/lib/api-response"
+import { apiError, NO_STORE_HEADERS } from "@/lib/api-response"
 
 export const dynamic = "force-dynamic"
 
@@ -22,5 +22,7 @@ export async function GET(
     return apiError("Party room not found", 404, "ROOM_NOT_FOUND")
   }
 
-  return NextResponse.json(snapshot)
+  // Snapshot polls drive the sync clock — never allow caching (stale
+  // serverNow poisons the drift math).
+  return NextResponse.json(snapshot, { headers: NO_STORE_HEADERS })
 }

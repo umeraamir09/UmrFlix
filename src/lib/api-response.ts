@@ -1,5 +1,12 @@
 import { NextResponse } from "next/server"
 
+/**
+ * Watch Party responses must never be cached by browsers or proxies —
+ * snapshot polls drive the sync clock and a stale `serverNow` poisons every
+ * drift computation. Party routes add this to every response.
+ */
+export const NO_STORE_HEADERS = { "Cache-Control": "no-store" }
+
 export type ApiErrorPayload = {
   error: string
   code: string

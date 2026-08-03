@@ -144,7 +144,7 @@ Since you already have Nginx Proxy Manager running, add a new **Proxy Host**:
 | **Scheme** | `http` |
 | **Forward IP** | Your VPS IP (e.g., `192.168.1.100` or `localhost`) |
 | **Forward Port** | `3000` |
-| **Cache Assets** | Yes (optional, recommended) |
+| **Cache Assets** | No (required for Watch Party — party API routes send `Cache-Control: no-store`, and caching would risk stale sync snapshots) |
 | **Block Common Exploits** | Yes |
 | **Websockets Support** | No (not needed — UmrFlix does not use WebSockets) |
 
@@ -174,23 +174,21 @@ location /api/events {
     proxy_send_timeout 86400s;
 }
 
-# Never cache/buffer Watch Party API (snapshot polls drive the sync clock)
-location /api/party {
-    proxy_pass http://127.0.0.1:3000/api/party;
-    proxy_set_header Host $host;
-    proxy_set_header X-Real-IP $remote_addr;
-    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-    proxy_set_header X-Forwarded-Proto $scheme;
-
-    proxy_buffering off;
-    proxy_cache off;
-}
-
 # Optional: Increase body limit for media proxy streaming
 client_max_body_size 100M;
 proxy_read_timeout 600s;
 proxy_send_timeout 600s;
 ```
+
+> **Do NOT add a `location /api/party` block.** Older versions of this guide
+> included one to "never cache the party API", but it broke the invite picker:
+> a prefix `location /api/party` also matches `/api/party/users` and replaces
+> NPM's default proxy settings for that prefix, which prevents the user list
+> from loading when inviting others. The block is unnecessary — every party
+> API route is `force-dynamic` and sends `Cache-Control: no-store`, so neither
+> NPM nor browsers will ever cache snapshot polls (which drive the sync clock).
+> Leave the default proxy config untouched and set **Cache Assets to No** on
+> the Proxy Host.
 
 > **Important:** If you use the Jellyfin media proxy (`/api/jellyfin/proxy/...`), consider increasing `proxy_read_timeout` significantly (e.g., `3600s`) or bypass the proxy entirely and connect the client directly to your Jellyfin instance.
 
@@ -312,3 +310,4 @@ UmrFlix (Next.js, PM2, port 3000)
 | High memory usage | Media proxy streaming | Disable `/api/jellyfin/proxy` — connect clients directly to Jellyfin |
 | `data/` writes failing | Directory permissions | `sudo chown -R $USER:$USER /opt/umrflix/data` |
 | Watch Party users missing / sync broken | PM2 in cluster mode or Nginx SSE buffering | Run PM2 in single-instance mode (`pm2 restart umrflix -- --fork`) and add `proxy_buffering off;` to NPM for `/api/events` |
+| Invite picker shows no users (Watch Party) | A custom `location /api/party` block added to NPM (from an older version of this guide) | Remove it from the Advanced tab — keep only the `/api/events` SSE block; party routes are already uncacheable via `Cache-Control: no-store` |

@@ -8,7 +8,7 @@ import { filterReleasedContent } from "@/lib/catalog"
 import { generateRecommendations } from "@/lib/recommendations"
 import { getNextEpisode, getAiringLabel, lookupShowByTvdbId } from "@/lib/tvmaze"
 import { authenticate, getAllItems } from "@/lib/jellyfin"
-import { getGenreByParam, getTvGenres } from "@/lib/genres"
+import { getGenreByParam, getTvGenres, getGenreDiscoverParams, buildGenreDiscoverQuery } from "@/lib/genres"
 
 export const revalidate = 1800 // Revalidate page every 30 minutes
 
@@ -47,6 +47,7 @@ export default async function TvShowCatalogPage({
       const genreTvData = await discoverTv({
         with_genres: String(selectedGenreIds),
         sort_by: "popularity.desc",
+        ...getGenreDiscoverParams(selectedGenre, "tv"),
       })
       const tvResults = filterReleasedContent(genreTvData?.results || [])
 
@@ -221,7 +222,10 @@ export default async function TvShowCatalogPage({
               title={`Popular ${selectedGenre.name} Series`}
               subtitle={`Top trending ${selectedGenre.name.toLowerCase()} shows right now`}
               type="tv"
-              endpoint={`/api/tmdb/discover/tv?with_genres=${selectedGenreIds}&sort_by=popularity.desc`}
+              endpoint={`/api/tmdb/discover/tv?${buildGenreDiscoverQuery(selectedGenre, "tv", {
+                with_genres: selectedGenreIds ?? "",
+                sort_by: "popularity.desc",
+              })}`}
             />
 
             {/* Top Rated Genre TV Shows */}
@@ -229,7 +233,11 @@ export default async function TvShowCatalogPage({
               title={`Top Rated ${selectedGenre.name} Series`}
               subtitle={`Highest rated ${selectedGenre.name.toLowerCase()} series of all time`}
               type="tv"
-              endpoint={`/api/tmdb/discover/tv?with_genres=${selectedGenreIds}&sort_by=vote_average.desc&vote_count.gte=50`}
+              endpoint={`/api/tmdb/discover/tv?${buildGenreDiscoverQuery(selectedGenre, "tv", {
+                with_genres: selectedGenreIds ?? "",
+                sort_by: "vote_average.desc",
+                "vote_count.gte": "50",
+              })}`}
             />
 
             {/* Mid-page Spotlight Banner */}
@@ -240,7 +248,10 @@ export default async function TvShowCatalogPage({
               title={`New & Recently Airing ${selectedGenre.name}`}
               subtitle={`Freshly aired ${selectedGenre.name.toLowerCase()} television series`}
               type="tv"
-              endpoint={`/api/tmdb/discover/tv?with_genres=${selectedGenreIds}&sort_by=first_air_date.desc`}
+              endpoint={`/api/tmdb/discover/tv?${buildGenreDiscoverQuery(selectedGenre, "tv", {
+                with_genres: selectedGenreIds ?? "",
+                sort_by: "first_air_date.desc",
+              })}`}
             />
           </>
         ) : (

@@ -1,4 +1,4 @@
-import { getGenreBySlug, type GenreDef } from "./genres"
+import { getGenreBySlug, getGenreDiscoverParams, type GenreDef } from "./genres"
 import {
   tmdbFetch,
   discoverMovies,
@@ -113,10 +113,18 @@ async function fetchMixedDiscover(
 ): Promise<RowItem[]> {
   const [movieData, tvData] = await Promise.all([
     genre.movieGenreIds.length > 0
-      ? discoverMovies({ with_genres: genre.movieGenreIds.join(","), ...buildDiscoverParams(template, "movie") })
+      ? discoverMovies({
+          with_genres: genre.movieGenreIds.join(","),
+          ...buildDiscoverParams(template, "movie"),
+          ...getGenreDiscoverParams(genre, "movie"),
+        })
       : Promise.resolve(null),
     genre.tvGenreIds.length > 0
-      ? discoverTv({ with_genres: genre.tvGenreIds.join(","), ...buildDiscoverParams(template, "tv") })
+      ? discoverTv({
+          with_genres: genre.tvGenreIds.join(","),
+          ...buildDiscoverParams(template, "tv"),
+          ...getGenreDiscoverParams(genre, "tv"),
+        })
       : Promise.resolve(null),
   ])
 
@@ -396,7 +404,7 @@ export async function getGenrePageData(
   // fetches) on every request.
   const heroCacheKey = rowCacheKey(slug, "shared", "hero")
 
-  const [heroItems, topPicks, trending, available, acclaimed, newRecent, hiddenGems, because, decadeItems] =
+  const [heroItems, topPicks, trending, worldLeading, available, acclaimed, newRecent, hiddenGems, because, decadeItems] =
     await Promise.all([
       getCachedRow<BillboardItem[]>(heroCacheKey, () => buildHeroItems(genre)),
       personalize
@@ -405,6 +413,15 @@ export async function getGenrePageData(
       getCachedRow<RowItem[]>(key("trending"), () =>
         fetchMixedDiscover(genre, { sortBy: "popularity" })
       ),
+      genre.slug === "anime"
+        ? getCachedRow<RowItem[]>(key("world-leading"), () =>
+            fetchMixedDiscover(
+              genre,
+              { sortBy: "popularity", voteCountGte: { movie: 100, tv: 50 } },
+              40
+            )
+          )
+        : Promise.resolve([] as RowItem[]),
       getCachedRow<RowItem[]>(key("available"), () => buildAvailableRowItems(genre)),
       getCachedRow<RowItem[]>(key("acclaimed"), () =>
         fetchMixedDiscover(genre, {
@@ -474,6 +491,17 @@ export async function getGenrePageData(
     { id: "top-picks", title: "Top Picks For You", subtitle: "Handpicked from your watch history", type: "mixed" },
     topPicks
   )
+  if (genre.slug === "anime") {
+    pushRow(
+      {
+        id: "world-leading",
+        title: "World Leading Anime",
+        subtitle: "The most iconic and beloved anime of all time",
+        type: "mixed",
+      },
+      worldLeading
+    )
+  }
   pushRow(
     { id: "trending", title: `Trending in ${genre.name}`, subtitle: `What everyone is watching in ${genre.name}`, type: "mixed" },
     trending

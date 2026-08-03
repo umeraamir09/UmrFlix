@@ -8,7 +8,7 @@ import Link from "next/link"
 import { Search, X, ChevronRight, ChevronDown, Loader2 } from "lucide-react"
 import { useBatchAvailability } from "@/lib/use-availability"
 import { AvailabilityBadge } from "@/components/AvailabilityBadge"
-import { getGenreByParam, getGenreIdsForMediaType } from "@/lib/genres"
+  import { getGenreByParam, getGenreIdsForMediaType, getGenreDiscoverParams } from "@/lib/genres"
 import { filterDisplayableContent } from "@/lib/catalog"
 
 const RECENT_SEARCHES_KEY = "umrflix_recent_searches"
@@ -217,6 +217,16 @@ export function SearchResults() {
       params.push(`with_genres=${genreId}`)
     }
 
+    // Extra genre discover filters (e.g. anime -> with_origin_country=JP)
+    if (genreDef) {
+      const mediaTypeForParams = type === "tv" ? "tv" : "movie"
+      for (const [key, value] of Object.entries(
+        getGenreDiscoverParams(genreDef, mediaTypeForParams)
+      )) {
+        params.push(`${key}=${encodeURIComponent(value)}`)
+      }
+    }
+
     // Released only
     const today = new Date().toISOString().split("T")[0]
     if (type === "tv") {
@@ -228,9 +238,13 @@ export function SearchResults() {
     if (genreId && endpoint.includes("trending")) {
       // trending doesn't support filter params, use discover instead
       const mediaType = type || "movie"
-      let url = `/api/tmdb/discover/${mediaType}?sort_by=popularity.desc&with_genres=${genreId}&primary_release_date.lte=${today}`
+      const extras = new URLSearchParams(
+        getGenreDiscoverParams(genreDef!, mediaType as "movie" | "tv")
+      ).toString()
+      const extrasSuffix = extras ? `&${extras}` : ""
+      let url = `/api/tmdb/discover/${mediaType}?sort_by=popularity.desc&with_genres=${genreId}&primary_release_date.lte=${today}${extrasSuffix}`
       if (mediaType === "tv") {
-        url = `/api/tmdb/discover/tv?sort_by=popularity.desc&with_genres=${genreId}&air_date.lte=${today}`
+        url = `/api/tmdb/discover/tv?sort_by=popularity.desc&with_genres=${genreId}&air_date.lte=${today}${extrasSuffix}`
       }
       return url
     }

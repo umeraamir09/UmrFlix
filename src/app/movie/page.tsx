@@ -6,7 +6,7 @@ import { GenreFilterBar } from "@/components/GenreFilterBar"
 import { getTrending, getItemLogo, discoverMovies } from "@/lib/tmdb"
 import { filterReleasedContent } from "@/lib/catalog"
 import { generateRecommendations } from "@/lib/recommendations"
-import { getGenreByParam, getMovieGenres } from "@/lib/genres"
+import { getGenreByParam, getMovieGenres, getGenreDiscoverParams, buildGenreDiscoverQuery } from "@/lib/genres"
 
 export const revalidate = 1800 // Revalidate page every 30 minutes
 
@@ -33,6 +33,7 @@ export default async function MovieCatalogPage({
       const genreMovieData = await discoverMovies({
         with_genres: String(selectedGenreIds),
         sort_by: "popularity.desc",
+        ...getGenreDiscoverParams(selectedGenre, "movie"),
       })
       const movieResults = filterReleasedContent(genreMovieData?.results || [])
 
@@ -176,7 +177,10 @@ export default async function MovieCatalogPage({
               title={`Popular ${selectedGenre.name} Movies`}
               subtitle={`Top trending ${selectedGenre.name.toLowerCase()} films right now`}
               type="movie"
-              endpoint={`/api/tmdb/discover/movie?with_genres=${selectedGenreIds}&sort_by=popularity.desc`}
+              endpoint={`/api/tmdb/discover/movie?${buildGenreDiscoverQuery(selectedGenre, "movie", {
+                with_genres: selectedGenreIds ?? "",
+                sort_by: "popularity.desc",
+              })}`}
             />
 
             {/* Top Rated Genre Movies */}
@@ -184,7 +188,11 @@ export default async function MovieCatalogPage({
               title={`Top Rated ${selectedGenre.name} Masterpieces`}
               subtitle={`Highest critically acclaimed ${selectedGenre.name.toLowerCase()} movies of all time`}
               type="movie"
-              endpoint={`/api/tmdb/discover/movie?with_genres=${selectedGenreIds}&sort_by=vote_average.desc&vote_count.gte=100`}
+              endpoint={`/api/tmdb/discover/movie?${buildGenreDiscoverQuery(selectedGenre, "movie", {
+                with_genres: selectedGenreIds ?? "",
+                sort_by: "vote_average.desc",
+                "vote_count.gte": "100",
+              })}`}
             />
 
             {/* Mid-page Spotlight Banner */}
@@ -195,7 +203,10 @@ export default async function MovieCatalogPage({
               title={`New & Recent ${selectedGenre.name} Releases`}
               subtitle={`Freshly released ${selectedGenre.name.toLowerCase()} movies`}
               type="movie"
-              endpoint={`/api/tmdb/discover/movie?with_genres=${selectedGenreIds}&sort_by=primary_release_date.desc`}
+              endpoint={`/api/tmdb/discover/movie?${buildGenreDiscoverQuery(selectedGenre, "movie", {
+                with_genres: selectedGenreIds ?? "",
+                sort_by: "primary_release_date.desc",
+              })}`}
             />
           </>
         ) : (

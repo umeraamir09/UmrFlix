@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server"
 import { getSession } from "@/lib/auth"
 import { roomManager } from "@/lib/party/room-manager"
-import { apiError } from "@/lib/api-response"
+import { apiError, NO_STORE_HEADERS } from "@/lib/api-response"
 import { checkRateLimit, PARTY_RATE_LIMITS } from "@/lib/rate-limit"
 
 export const dynamic = "force-dynamic"
@@ -36,7 +36,7 @@ export async function POST(req: Request) {
       )
     }
 
-    return NextResponse.json({ partyId: snapshot.partyId, snapshot })
+    return NextResponse.json({ partyId: snapshot.partyId, snapshot }, { headers: NO_STORE_HEADERS })
   } catch (err) {
     console.error("[Party API] Error creating party room:", err)
     return apiError("Failed to create watch party room", 500, "CREATE_ROOM_FAILED", String(err))
@@ -52,7 +52,7 @@ export async function GET() {
 
   try {
     const parties = roomManager.getUserParties(session.userId)
-    return NextResponse.json(parties)
+    return NextResponse.json(parties, { headers: NO_STORE_HEADERS })
   } catch (err) {
     console.error("[Party API] Error getting user parties:", err)
     return apiError("Failed to retrieve user party rooms", 500, "GET_USER_PARTIES_FAILED", String(err))
