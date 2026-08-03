@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server"
 
-import { radarrBreaker, sonarrBreaker, jellyfinBreaker, tmdbBreaker, convexBreaker } from "@/lib/circuit-breaker"
+import { radarrBreaker, sonarrBreaker, jellyfinBreaker, tmdbBreaker, convexBreaker, getAggregateOpen } from "@/lib/circuit-breaker"
 
 async function probeService(
   url: string,
@@ -12,7 +12,7 @@ async function probeService(
   try {
     const controller = new AbortController()
     const timeout = setTimeout(() => controller.abort(), timeoutMs)
-    const res = await fetch(url, { method: "HEAD", headers, signal: controller.signal, redirect: "manual" }).catch(() => null)
+    const res = await fetch(url, { method: "GET", headers, signal: controller.signal, redirect: "follow" }).catch(() => null)
     clearTimeout(timeout)
 
     if (res?.ok) {
@@ -38,9 +38,15 @@ export async function GET() {
     process.env.NEXT_PUBLIC_CONVEX_URL
 
   await Promise.allSettled([
-    probeService(radarrUrl ? `${radarrUrl}/api/v3/system/status` : "", radarrBreaker),
-    probeService(sonarrUrl ? `${sonarrUrl}/api/v3/system/status` : "", sonarrBreaker),
-    probeService(jellyfinUrl ?? "", jellyfinBreaker),
+    probeService(radarrUrl ? `${radarrUrl}/api/v3/system/status` : "", radarrBreaker, 3000, {
+      "X-Api-Key": process.env.RADARR_API_KEY ?? "",
+    }),
+    probeService(sonarrUrl ? `${sonarrUrl}/api/v3/system/status` : "", sonarrBreaker, 3000, {
+      "X-Api-Key": process.env.SONARR_API_KEY ?? "",
+    }),
+    // /System/Info/Public is Jellyfin's unauthenticated liveness endpoint —
+    // probing the origin root can 30x-redirect to /web/ and false-flag the server.
+    probeService(jellyfinUrl ? `${jellyfinUrl.replace(/\/$/, "")}/System/Info/Public` : "", jellyfinBreaker),
     tmdbProxyUrl && tmdbProxySecret
       ? probeService(
           new URL("/3/configuration", tmdbProxyUrl).toString(),
@@ -52,15 +58,27 @@ export async function GET() {
     probeService(convexUrl ?? "", convexBreaker),
   ])
 
+  // Per-user Jellyfin breakers live in the registry (not the shared global).
+  // Report them as an aggregate so /health still flags widespread request-side
+  // outages without letting any one session's failures block another's.
+  const jellyfinAggregate = getAggregateOpen("jellyfin:")
+
   const breakers = {
     radarr: radarrBreaker.getState(),
     sonarr: sonarrBreaker.getState(),
     jellyfin: jellyfinBreaker.getState(),
+    jellyfinSessions: {
+      state: jellyfinAggregate.anyOpen ? "OPEN" : jellyfinBreaker.getState().state,
+      openCount: jellyfinAggregate.openCount,
+      name: "Jellyfin (per-user)",
+    },
     tmdb: tmdbBreaker.getState(),
     convex: convexBreaker.getState(),
   }
 
-  const isDegraded = Object.values(breakers).some((b) => b.state === "OPEN")
+  const isDegraded =
+    Object.values(breakers).some((b) => b.state === "OPEN") ||
+    jellyfinAggregate.anyOpen
 
   return NextResponse.json({
     status: isDegraded ? "degraded" : "ok",

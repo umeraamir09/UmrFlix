@@ -1021,6 +1021,10 @@ export function CinemaPlayer({
         onEnded={() => {
           playerLog.info("video", "ended")
           reporter.stop()
+          // In a watch party only the host advances to the next item; every
+          // other member holds at the end and follows the host's party:item
+          // broadcast — per-tab end timers would desync the group.
+          if (party?.partyId && !partySync.isOwner) return
           if (nextEpisode && onNextEpisode) {
             setNextPrompt({ secondsLeft: NEXT_EPISODE_COUNTDOWN })
           }

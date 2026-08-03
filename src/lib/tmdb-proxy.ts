@@ -60,21 +60,30 @@ export async function tmdbProxyFetch(path: string, options?: TmdbProxyFetchOptio
         return res
       }
       if (res.status >= 300) {
-        breaker.recordFailure()
-        throw new Error(`HTTP Error ${res.status}: ${res.statusText}`)
+        lastError = new Error(`HTTP Error ${res.status}: ${res.statusText}`)
+        attempt++
+        if (attempt <= retries) {
+          await new Promise((r) => setTimeout(r, 250 * attempt))
+          continue
+        }
+        break
       }
       return res
     } catch (err) {
       clearTimeout(timeoutId)
       lastError = err
-      if (err instanceof Error && (err.name === "AbortError" || err.message.includes("fetch failed"))) {
-        breaker.recordFailure()
-      }
       attempt++
       if (attempt <= retries) {
         await new Promise((r) => setTimeout(r, 250 * attempt))
+        continue
       }
     }
+  }
+
+  // Record a failure once per logical request (after retries are exhausted),
+  // so a single transient request can't abruptly trip the breaker.
+  if (lastError != null) {
+    breaker.recordFailure()
   }
 
   throw lastError

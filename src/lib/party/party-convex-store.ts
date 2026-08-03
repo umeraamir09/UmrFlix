@@ -89,6 +89,11 @@ export async function loadAllRoomsFromConvex(): Promise<PartyRoom[]> {
         const members: PartyMember[] = JSON.parse(rec.membersJson || "[]")
         const pendingInvites: string[] = JSON.parse(rec.pendingInvitesJson || "[]")
         const state: PartyState | null = rec.stateJson ? JSON.parse(rec.stateJson) : null
+        if (state) {
+          // Rebase the timeline: the persisted updatedAt predates the restart, so
+          // predictedPosition would extrapolate a playhead far into the future.
+          state.updatedAt = Date.now()
+        }
 
         const membersMap = new Map<string, PartyMember>()
         const lastSeenAtMap = new Map<string, number>()
@@ -107,6 +112,8 @@ export async function loadAllRoomsFromConvex(): Promise<PartyRoom[]> {
           pendingInvites: new Set(pendingInvites),
           lastSeenAt: lastSeenAtMap,
           bufferingTimers: new Map(),
+          pausedForBuffering: false,
+          forceClearedAt: new Map(),
         })
       } catch (e) {
         console.error(`[PartyConvexStore] Error parsing room ${rec.partyId}:`, e)

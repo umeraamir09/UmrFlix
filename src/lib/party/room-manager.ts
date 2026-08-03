@@ -15,6 +15,8 @@ export type PartyRoom = {
   pendingInvites: Set<string>
   lastSeenAt: Map<string, number>
   bufferingTimers: Map<string, NodeJS.Timeout>
+  pausedForBuffering: boolean
+  forceClearedAt: Map<string, number>
 }
 
 export const ROOM_LIMITS = {
@@ -31,7 +33,9 @@ class PartyRoomManager {
   constructor() {
     // Background garbage collection every 5 minutes
     if (typeof window === "undefined") {
-      setInterval(() => this.reapStaleRooms(), 5 * 60 * 1000)
+      const gcTimer = setInterval(() => this.reapStaleRooms(), 5 * 60 * 1000)
+      // Don't keep a Node process alive just for GC (tests, scripts)
+      gcTimer.unref?.()
       // Hydrate from Convex database on server startup
       void this.hydrateFromConvex()
     }
@@ -161,6 +165,8 @@ class PartyRoomManager {
       pendingInvites: new Set(),
       lastSeenAt: new Map([[ownerId, now]]),
       bufferingTimers: new Map(),
+      pausedForBuffering: false,
+      forceClearedAt: new Map(),
     }
 
     this.rooms.set(partyId, room)
@@ -364,12 +370,35 @@ class PartyRoomManager {
       return room.state
     }
 
-    // Check if anyone is buffering before allowing manual play command
+    // Manual play while a member is buffering: only the host may force-resume
+    // over a buffer-hold. The stuck member is LEFT BEHIND — their buffering
+    // flag is cleared (so the room no longer waits on them) and they sit in
+    // the flap-hysteresis window so their recovery report can't instantly
+    // re-pause the room; they re-align to the group via normal drift sync.
     if (cmd.type === "play") {
-      const bufferingMember = Array.from(room.members.values()).find((m) => m.buffering)
-      if (bufferingMember) {
-        // Reject play command while a member is buffering
-        return room.state
+      const bufferingMembers = Array.from(room.members.values()).filter((m) => m.buffering)
+      if (bufferingMembers.length > 0) {
+        if (room.ownerId !== userId) {
+          return room.state
+        }
+        for (const m of bufferingMembers) {
+          m.buffering = false
+          this.clearBufferingTimer(room, m.userId)
+          room.forceClearedAt.set(m.userId, Date.now())
+        }
+        const membersArray = Array.from(room.members.values()).sort(
+          (a, b) => a.joinedAt - b.joinedAt
+        )
+        eventBus.emitEvent({
+          type: "party:membership",
+          payload: {
+            partyId,
+            action: "leave",
+            ownerId: room.ownerId,
+            members: membersArray,
+            audience: Array.from(room.members.keys()),
+          },
+        })
       }
     }
 
@@ -396,6 +425,12 @@ class PartyRoomManager {
     }
 
     room.state = newState
+
+    // A command that starts playback clears the buffer-pause hold; paused seeks
+    // / rate changes during a buffer-pause keep it so buffering can still resume.
+    if (isPlaying) {
+      room.pausedForBuffering = false
+    }
 
     const audience = Array.from(room.members.keys())
     eventBus.emitEvent({
@@ -427,6 +462,7 @@ class PartyRoomManager {
     }
 
     room.state = newState
+    room.pausedForBuffering = false
 
     const audience = Array.from(room.members.keys())
 
@@ -463,14 +499,30 @@ class PartyRoomManager {
     if (!room || !room.members.has(userId)) return null
 
     const member = room.members.get(userId)!
+
+    // "Left behind" marker: this member was force-cleared during an extended
+    // buffer (stuck timeout or host force-resume). Ignore fresh stall reports
+    // so a hopeless network can't drag the room into a pause loop — the room
+    // plays on without them. The marker lifts on their first genuine recovery
+    // (buffering=false), after which their stalls pause the room normally.
+    if (buffering) {
+      if (room.forceClearedAt.has(userId)) {
+        member.lastSeenAt = Date.now()
+        room.lastSeenAt.set(userId, member.lastSeenAt)
+        return room.state
+      }
+    } else {
+      room.forceClearedAt.delete(userId)
+    }
+
     member.buffering = buffering
     member.lastSeenAt = Date.now()
     room.lastSeenAt.set(userId, member.lastSeenAt)
 
-    // Manage buffering eviction timer cleanly
+    // Manage buffering timer cleanly (never evicts a member — see clearStuckBuffering)
     this.clearBufferingTimer(room, userId)
     if (buffering) {
-      this.evictStuckBuffering(partyId, userId)
+      this.clearStuckBuffering(partyId, userId)
     }
 
     if (!room.state) return null
@@ -487,21 +539,36 @@ class PartyRoomManager {
           : room.state.positionSec
       )
 
+      room.pausedForBuffering = true
+
       newState = {
         ...room.state,
         playing: false,
         positionSec: currentPos,
         updatedAt: now,
         version: room.state.version + 1,
+        // System-generated event, not a user command: never inherit the last
+        // commander's clientId or that client's echo suppression will skip
+        // applying the pause (and its reposition) entirely.
+        senderClientId: undefined,
         reason: "buffer-pause",
       }
-    } else if (!isAnyBuffering && !room.state.playing && room.state.reason === "buffer-pause") {
-      // Resume everyone when buffering clears
+    } else if (
+      !isAnyBuffering &&
+      !room.state.playing &&
+      room.pausedForBuffering
+    ) {
+      // Resume everyone when the last buffering member clears — even if a
+      // manual pause / seek happened during the buffer-pause, we auto-resume.
+      room.pausedForBuffering = false
+
       newState = {
         ...room.state,
         playing: true,
         updatedAt: now,
         version: room.state.version + 1,
+        // See buffer-pause: must not inherit senderClientId (echo suppression).
+        senderClientId: undefined,
         reason: "buffer-resume",
       }
     }
@@ -523,7 +590,14 @@ class PartyRoomManager {
     return room.state
   }
 
-  private evictStuckBuffering(partyId: string, userId: string) {
+  /**
+   * If a member stays in `buffering` for too long, they are NOT evicted.
+   * Instead they are LEFT BEHIND: their `buffering` flag is cleared, the room
+   * resumes, and the member is marked in `forceClearedAt` so their recovery
+   * chatter can't re-pause the room until they genuinely come back; the sync
+   * engine re-aligns them once their client reports a fresh position.
+   */
+  private clearStuckBuffering(partyId: string, userId: string) {
     const room = this.rooms.get(partyId)
     if (!room) return
 
@@ -534,60 +608,38 @@ class PartyRoomManager {
       const stillMember = stillRoom.members.get(userId)
       if (!stillMember || !stillMember.buffering) return
 
-      // Remove the stuck member
-      stillRoom.members.delete(userId)
-      stillRoom.lastSeenAt.delete(userId)
+      // Clear the stuck flag — the member is never removed from the room
+      stillMember.buffering = false
+      stillRoom.forceClearedAt.set(userId, Date.now())
 
+      // Emit membership update so all clients refresh member.buffering state
       const audience = Array.from(stillRoom.members.keys())
       const membersArray = Array.from(stillRoom.members.values()).sort(
         (a, b) => a.joinedAt - b.joinedAt
       )
 
-      // Transfer ownership if needed
-      if (stillRoom.ownerId === userId && stillRoom.members.size > 0) {
-        stillRoom.ownerId = membersArray[0].userId
-        eventBus.emitEvent({
-          type: "party:membership",
-          payload: {
-            partyId,
-            action: "owner-changed",
-            ownerId: stillRoom.ownerId,
-            members: membersArray,
-            audience,
-          },
-        })
-      } else if (stillRoom.members.size === 0) {
-        this.clearAllBufferingTimers(stillRoom)
-        this.rooms.delete(partyId)
-        this.removeFromConvex(partyId)
-        eventBus.emitEvent({
-          type: "party:ended",
-          payload: { partyId, audience: [userId] },
-        })
-        return
-      }
-
-      // Emit membership update so clients see the member removed
       eventBus.emitEvent({
         type: "party:membership",
         payload: {
           partyId,
-          action: "leave",
+          action: "join",
           ownerId: stillRoom.ownerId,
           members: membersArray,
           audience,
         },
       })
 
-      // Emit updated state in case this unblocks a buffer-pause
-      if (stillRoom.state && stillRoom.state.reason === "buffer-pause") {
+      // If this unblocks a buffer-pause, resume everyone
+      if (stillRoom.state && !stillRoom.state.playing && stillRoom.pausedForBuffering) {
         const isAnyStillBuffering = membersArray.some((m) => m.buffering)
         if (!isAnyStillBuffering) {
+          stillRoom.pausedForBuffering = false
           stillRoom.state = {
             ...stillRoom.state,
             playing: true,
             updatedAt: Date.now(),
             version: stillRoom.state.version + 1,
+            senderClientId: undefined,
             reason: "buffer-resume",
           }
           eventBus.emitEvent({
@@ -603,6 +655,7 @@ class PartyRoomManager {
 
       this.syncToConvex(stillRoom)
     }, 30_000)
+    timer.unref?.()
 
     room.bufferingTimers.set(userId, timer)
   }

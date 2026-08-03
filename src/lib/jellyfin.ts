@@ -1,14 +1,39 @@
 import { env } from "./env"
 import { getSession } from "./auth"
-import { jellyfinBreaker } from "./circuit-breaker"
+import { getBreaker } from "./circuit-breaker"
+import type { CircuitBreaker } from "./circuit-breaker"
 import type { TrickplayInfo } from "./playback-types"
 import { applyStreamParams, type StreamOptions } from "./url-utils"
 
 const BASE = env("JELLYFIN_URL")
 const TIMEOUT = 8_000
 
-async function jellyfinFetch(url: string, options?: RequestInit): Promise<Response> {
-  if (!jellyfinBreaker.canExecute()) {
+export type JellyfinAuth = {
+  token: string
+  userId: string
+  serverUrl: string
+  breaker: CircuitBreaker
+}
+
+// Break a Jellyfin server URL down to the identity used for per-session
+// circuit-breaker scoping. Data requests are keyed by `${server}:${userId}` so
+// one user's failures never open the breaker another user depends on; the
+// credential-only auth call is keyed by server alone (no user exists yet).
+function serverUrlOf(url: string): string {
+  try {
+    return new URL(url).origin
+  } catch {
+    return BASE || "jellyfin"
+  }
+}
+
+function breakerKey(serverUrl: string, userId?: string): string {
+  return userId ? `jellyfin:${serverUrl}:${userId}` : `jellyfin:${serverUrl}`
+}
+
+async function jellyfinFetch(url: string, options?: RequestInit, breaker?: CircuitBreaker): Promise<Response> {
+  const circuit = breaker ?? getBreaker(breakerKey(serverUrlOf(url)))
+  if (!circuit.canExecute()) {
     throw new Error(`Jellyfin service is currently unavailable (circuit open).`)
   }
 
@@ -16,15 +41,15 @@ async function jellyfinFetch(url: string, options?: RequestInit): Promise<Respon
   const id = setTimeout(() => controller.abort(), TIMEOUT)
   try {
     const res = await fetch(url, { ...options, signal: controller.signal })
-    if (res.status === 401) cachedToken = null // re-auth next time
+    if (res.status === 401) tokenCache.delete(serverUrlOf(url)) // re-auth next time
     if (res.ok || res.status < 500) {
-      jellyfinBreaker.recordSuccess()
+      circuit.recordSuccess()
     } else {
-      jellyfinBreaker.recordFailure()
+      circuit.recordFailure()
     }
     return res
   } catch (err) {
-    jellyfinBreaker.recordFailure()
+    circuit.recordFailure()
     throw err
   } finally {
     clearTimeout(id)
@@ -60,63 +85,85 @@ export type JellyfinItemsResponse = {
   TotalRecordCount: number
 }
 
-let cachedToken: { token: string; userId: string; serverUrl?: string } | null = null
-let authPromise: Promise<{ token: string; userId: string; serverUrl?: string }> | null = null
+// Fallback credentials cache — only used when there is NO active user session
+// (server-side flows like watch party). Scoped per server URL and never shared
+// across different accounts, so one session can't leak or clobber another's token.
+const tokenCache = new Map<string, { token: string; userId: string; serverUrl: string }>()
+const authPromises = new Map<string, Promise<{ token: string; userId: string; serverUrl: string }>>()
 
-export async function authenticate(): Promise<{ token: string; userId: string; serverUrl?: string }> {
+export async function authenticate(): Promise<JellyfinAuth> {
   // Check active user session first (server-side)
   try {
     const session = await getSession()
     if (session?.accessToken && session?.userId) {
+      const serverUrl = session.serverUrl || BASE || "http://localhost:8096"
       return {
         token: session.accessToken,
         userId: session.userId,
-        serverUrl: session.serverUrl,
+        serverUrl,
+        breaker: getBreaker(breakerKey(serverUrl, session.userId), {
+          name: `Jellyfin:${serverUrl}`,
+          failureThreshold: 3,
+          resetTimeoutMs: 30_000,
+        }),
       }
     }
   } catch {
     /* fallback to environment credentials */
   }
 
-  if (cachedToken) return cachedToken
+  const serverUrl = BASE || "http://localhost:8096"
+  const cached = tokenCache.get(serverUrl)
+  if (cached) return { ...cached, breaker: getBreaker(breakerKey(serverUrl, cached.userId)) }
 
-  if (authPromise) return authPromise
+  const inFlight = authPromises.get(serverUrl)
+  if (inFlight) {
+    const resolved = await inFlight
+    return { ...resolved, breaker: getBreaker(breakerKey(serverUrl, resolved.userId)) }
+  }
 
-  authPromise = (async () => {
+  const promise = (async () => {
     try {
-      const serverUrl = BASE || "http://localhost:8096"
-      const res = await jellyfinFetch(`${serverUrl}/Users/AuthenticateByName`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "X-Emby-Authorization":
-            'MediaBrowser Client="UmrFlix", Device="UmrFlixServer", DeviceId="umrflix-server-001", Version="1.0.0"',
+      const res = await jellyfinFetch(
+        `${serverUrl}/Users/AuthenticateByName`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-Emby-Authorization":
+              'MediaBrowser Client="UmrFlix", Device="UmrFlixServer", DeviceId="umrflix-server-001", Version="1.0.0"',
+          },
+          body: JSON.stringify({
+            Username: env("JELLYFIN_USERNAME"),
+            Pw: env("JELLYFIN_PASSWORD"),
+          }),
         },
-        body: JSON.stringify({
-          Username: env("JELLYFIN_USERNAME"),
-          Pw: env("JELLYFIN_PASSWORD"),
-        }),
-      })
+        // No user identity exists yet — auth failures trip the server-scoped breaker
+        getBreaker(breakerKey(serverUrl), { name: `Jellyfin:${serverUrl}`, failureThreshold: 3, resetTimeoutMs: 30_000 }),
+      )
 
       if (!res.ok) {
         const body = await res.text().catch(() => "(no body)")
         console.error(`Jellyfin auth error: ${res.status}`, body)
-        cachedToken = null
+        tokenCache.delete(serverUrl)
         throw new Error(`Jellyfin auth error: ${res.status}`)
       }
 
       const data: JellyfinAuthResponse = await res.json()
-      cachedToken = { token: data.AccessToken, userId: data.User.Id, serverUrl }
-      return cachedToken
+      const cached = { token: data.AccessToken, userId: data.User.Id, serverUrl }
+      tokenCache.set(serverUrl, cached)
+      return cached
     } catch (err) {
-      cachedToken = null
+      tokenCache.delete(serverUrl)
       throw err
     } finally {
-      authPromise = null
+      authPromises.delete(serverUrl)
     }
   })()
 
-  return authPromise
+  authPromises.set(serverUrl, promise)
+  const resolved = await promise
+  return { ...resolved, breaker: getBreaker(breakerKey(serverUrl, resolved.userId)) }
 }
 
 
@@ -143,7 +190,7 @@ export async function getItemsByProviderIds(
   })
   const res = await jellyfinFetch(`${BASE}/Users/${userId}/Items?${params}`, {
     headers: getAuthHeaders(token),
-  })
+  }, getBreaker(breakerKey(BASE || "http://localhost:8096", userId)))
   if (!res.ok) return []
   const data: JellyfinItemsResponse = await res.json()
   return data.Items ?? []
@@ -165,7 +212,7 @@ export async function getAllItems(token: string, userId: string): Promise<Jellyf
     })
     const res = await jellyfinFetch(`${BASE}/Users/${userId}/Items?${params}`, {
       headers: getAuthHeaders(token),
-    })
+    }, getBreaker(breakerKey(BASE || "http://localhost:8096", userId)))
     if (!res.ok) break
     const data: JellyfinItemsResponse = await res.json()
     const items = data.Items ?? []
@@ -218,7 +265,7 @@ export async function getResumeItems(
   limit = 12,
 ): Promise<JellyfinResumeItem[]> {
   try {
-    const { token, userId } = await authenticate()
+    const { token, userId, breaker } = await authenticate()
 
     const params = new URLSearchParams({
       limit: String(limit),
@@ -232,6 +279,7 @@ export async function getResumeItems(
     const res = await jellyfinFetch(
       `${BASE}/Users/${userId}/Items/Resume?${params}`,
       { headers: getAuthHeaders(token) },
+      breaker,
     )
 
     if (!res.ok) {
@@ -257,7 +305,7 @@ export async function getNextUpItems(
   limit = 12,
 ): Promise<JellyfinResumeItem[]> {
   try {
-    const { token, userId } = await authenticate()
+    const { token, userId, breaker } = await authenticate()
 
     const params = new URLSearchParams({
       userId,
@@ -273,6 +321,7 @@ export async function getNextUpItems(
     const res = await jellyfinFetch(
       `${BASE}/Shows/NextUp?${params}`,
       { headers: getAuthHeaders(token) },
+      breaker,
     )
 
     if (!res.ok) {
@@ -455,7 +504,7 @@ export function pickTrickplayInfo(
  * and the PlaySessionId used for progress reporting.
  */
 export async function getPlaybackInfo(itemId: string): Promise<JellyfinPlaybackInfo> {
-  const { token, userId } = await authenticate()
+  const { token, userId, breaker } = await authenticate()
 
   // Device profile modelled on jellyfin-web: broad direct-play for modern
   // browser containers, HLS transcoding fallback for everything else
@@ -483,6 +532,7 @@ export async function getPlaybackInfo(itemId: string): Promise<JellyfinPlaybackI
       headers: getAuthHeaders(token),
       body: JSON.stringify({ DeviceProfile: deviceProfile }),
     },
+    breaker,
   )
   if (!res.ok) throw new Error(`Jellyfin PlaybackInfo error: ${res.status}`)
   return res.json()
@@ -490,11 +540,11 @@ export async function getPlaybackInfo(itemId: string): Promise<JellyfinPlaybackI
 
 /** Full detail for one item, including UserData (resume position) and Chapters. */
 export async function getItemDetail(itemId: string): Promise<JellyfinItemDetail | null> {
-  const { token, userId } = await authenticate()
+  const { token, userId, breaker } = await authenticate()
   const params = new URLSearchParams({ fields: "Chapters,Overview,MediaSources,Trickplay" })
   const res = await jellyfinFetch(`${BASE}/Users/${userId}/Items/${itemId}?${params}`, {
     headers: getAuthHeaders(token),
-  })
+  }, breaker)
   if (!res.ok) return null
   return res.json()
 }
@@ -517,7 +567,7 @@ export type PlaybackReport = {
  * POST /Sessions/Playing | /Sessions/Playing/Progress | /Sessions/Playing/Stopped
  */
 export async function reportPlaybackState(report: PlaybackReport): Promise<void> {
-  const { token } = await authenticate()
+  const { token, breaker } = await authenticate()
   const path =
     report.event === "start"
       ? "/Sessions/Playing"
@@ -540,7 +590,7 @@ export async function reportPlaybackState(report: PlaybackReport): Promise<void>
       PlayMethod: report.playMethod ?? "Transcode",
       RepeatMode: "RepeatNone",
     }),
-  }).catch(() => {
+  }, breaker).catch(() => {
     /* progress reporting must never throw */
   })
 }
@@ -548,21 +598,21 @@ export async function reportPlaybackState(report: PlaybackReport): Promise<void>
 /** Mark an item as fully watched (played). Throws so callers/route handlers
  *  can surface failures instead of silently reporting success. */
 export async function markItemPlayed(itemId: string): Promise<void> {
-  const { token, userId } = await authenticate()
+  const { token, userId, breaker } = await authenticate()
   await jellyfinFetch(`${BASE}/Users/${userId}/PlayedItems/${itemId}`, {
     method: "POST",
     headers: getAuthHeaders(token),
     body: JSON.stringify({}),
-  })
+  }, breaker)
 }
 
 /** Mark an item as unwatched. Throws so callers/route handlers can surface failures. */
 export async function markItemUnplayed(itemId: string): Promise<void> {
-  const { token, userId } = await authenticate()
+  const { token, userId, breaker } = await authenticate()
   await jellyfinFetch(`${BASE}/Users/${userId}/PlayedItems/${itemId}`, {
     method: "DELETE",
     headers: getAuthHeaders(token),
-  })
+  }, breaker)
 }
 
 // ── Stream URL builders (quality / track aware) ──
@@ -621,10 +671,10 @@ type IntroSkipperSegment = { start: number; end: number }
 export async function getIntroSkipperSegments(
   itemId: string,
 ): Promise<Record<string, IntroSkipperSegment> | null> {
-  const { token } = await authenticate()
+  const { token, breaker } = await authenticate()
   const res = await jellyfinFetch(`${BASE}/Episode/${itemId}/IntroSkipperSegments`, {
     headers: getAuthHeaders(token),
-  }).catch(() => null)
+  }, breaker).catch(() => null)
   if (!res || !res.ok) return null
 
   try {
@@ -662,10 +712,10 @@ export type JellyfinMediaSegment = {
  * (older server / no segments), so callers can fall back to other sources.
  */
 export async function getMediaSegments(itemId: string): Promise<JellyfinMediaSegment[] | null> {
-  const { token } = await authenticate()
+  const { token, breaker } = await authenticate()
   const res = await jellyfinFetch(`${BASE}/MediaSegments/${itemId}`, {
     headers: getAuthHeaders(token),
-  }).catch(() => null)
+  }, breaker).catch(() => null)
   if (!res || !res.ok) return null
 
   try {
@@ -719,18 +769,18 @@ export type JellyfinEpisode = {
 }
 
 export async function getSeasons(seriesId: string): Promise<JellyfinSeason[]> {
-  const { token, userId } = await authenticate()
+  const { token, userId, breaker } = await authenticate()
   const params = new URLSearchParams({ userId, fields: "ItemCounts" })
   const res = await jellyfinFetch(`${BASE}/Shows/${seriesId}/Seasons?${params}`, {
     headers: getAuthHeaders(token),
-  })
+  }, breaker)
   if (!res.ok) return []
   const data = await res.json()
   return data.Items ?? []
 }
 
 export async function getEpisodes(seriesId: string, seasonId?: string): Promise<JellyfinEpisode[]> {
-  const { token, userId } = await authenticate()
+  const { token, userId, breaker } = await authenticate()
   const params = new URLSearchParams({
     userId,
     fields: "Overview,MediaSources,ItemCounts",
@@ -740,7 +790,7 @@ export async function getEpisodes(seriesId: string, seasonId?: string): Promise<
   if (seasonId) params.set("seasonId", seasonId)
   const res = await jellyfinFetch(`${BASE}/Shows/${seriesId}/Episodes?${params}`, {
     headers: getAuthHeaders(token),
-  })
+  }, breaker)
   if (!res.ok) return []
   const data = await res.json()
   return data.Items ?? []
@@ -749,7 +799,14 @@ export async function getEpisodes(seriesId: string, seasonId?: string): Promise<
 // ── Favorites / Watchlist Sync ──
 
 export async function getUserFavorites(overrideUserId?: string, overrideToken?: string): Promise<JellyfinItem[]> {
-  const auth = overrideUserId && overrideToken ? { userId: overrideUserId, token: overrideToken } : await authenticate()
+  const auth =
+    overrideUserId && overrideToken
+      ? {
+          userId: overrideUserId,
+          token: overrideToken,
+          breaker: getBreaker(breakerKey(BASE || "http://localhost:8096", overrideUserId)),
+        }
+      : await authenticate()
   const params = new URLSearchParams({
     userId: auth.userId,
     filters: "IsFavorite",
@@ -760,7 +817,7 @@ export async function getUserFavorites(overrideUserId?: string, overrideToken?: 
 
   const res = await jellyfinFetch(`${BASE}/Users/${auth.userId}/Items?${params}`, {
     headers: getAuthHeaders(auth.token),
-  })
+  }, auth.breaker)
 
   if (!res.ok) return []
   const data: JellyfinItemsResponse = await res.json()
@@ -773,14 +830,21 @@ export async function setFavoriteItem(
   overrideUserId?: string,
   overrideToken?: string
 ): Promise<boolean> {
-  const auth = overrideUserId && overrideToken ? { userId: overrideUserId, token: overrideToken } : await authenticate()
+  const auth =
+    overrideUserId && overrideToken
+      ? {
+          userId: overrideUserId,
+          token: overrideToken,
+          breaker: getBreaker(breakerKey(BASE || "http://localhost:8096", overrideUserId)),
+        }
+      : await authenticate()
   const path = `${BASE}/Users/${auth.userId}/FavoriteItems/${itemId}`
   const method = isFavorite ? "POST" : "DELETE"
 
   const res = await jellyfinFetch(path, {
     method,
     headers: getAuthHeaders(auth.token),
-  }).catch(() => null)
+  }, auth.breaker).catch(() => null)
 
   return Boolean(res && res.ok)
 }
@@ -817,10 +881,10 @@ export type JellyfinSession = {
 
 export async function getActiveSessions(): Promise<JellyfinSession[]> {
   try {
-    const { token } = await authenticate()
+    const { token, breaker } = await authenticate()
     const res = await jellyfinFetch(`${BASE}/Sessions`, {
       headers: getAuthHeaders(token),
-    })
+    }, breaker)
     if (!res.ok) return []
     const data: JellyfinSession[] = await res.json()
     return data.filter((s) => s.NowPlayingItem != null)
@@ -831,11 +895,11 @@ export async function getActiveSessions(): Promise<JellyfinSession[]> {
 
 export async function stopSession(sessionId: string): Promise<boolean> {
   try {
-    const { token } = await authenticate()
+    const { token, breaker } = await authenticate()
     const res = await jellyfinFetch(`${BASE}/Sessions/${sessionId}/Stop`, {
       method: "POST",
       headers: getAuthHeaders(token),
-    })
+    }, breaker)
     return res.ok
   } catch {
     return false
@@ -850,10 +914,10 @@ export type JellyfinUserPublic = {
 
 export async function getJellyfinUsers(): Promise<JellyfinUserPublic[]> {
   try {
-    const { token } = await authenticate()
+    const { token, breaker } = await authenticate()
     const res = await jellyfinFetch(`${BASE}/Users`, {
       headers: getAuthHeaders(token),
-    })
+    }, breaker)
     if (!res.ok) return []
     const users: JellyfinUserPublic[] = await res.json()
     return users ?? []
@@ -869,11 +933,11 @@ export async function getJellyfinUsers(): Promise<JellyfinUserPublic[]> {
  */
 export async function triggerLibraryScan(): Promise<boolean> {
   try {
-    const { token } = await authenticate()
+    const { token, breaker } = await authenticate()
     const res = await jellyfinFetch(`${BASE}/Library/Refresh`, {
       method: "POST",
       headers: getAuthHeaders(token),
-    })
+    }, breaker)
     return res.ok
   } catch (err) {
     console.error("Failed to trigger Jellyfin library scan:", err)
@@ -887,11 +951,11 @@ export async function triggerLibraryScan(): Promise<boolean> {
  */
 export async function deleteJellyfinItem(itemId: string): Promise<boolean> {
   try {
-    const { token } = await authenticate()
+    const { token, breaker } = await authenticate()
     const res = await jellyfinFetch(`${BASE}/Items/${itemId}`, {
       method: "DELETE",
       headers: getAuthHeaders(token),
-    })
+    }, breaker)
     return res.ok
   } catch (err) {
     console.error(`Failed to delete Jellyfin item ${itemId}:`, err)
