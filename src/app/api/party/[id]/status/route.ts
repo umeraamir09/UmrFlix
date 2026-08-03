@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import { getSession } from "@/lib/auth"
 import { roomManager } from "@/lib/party/room-manager"
+import { isValidPositionSec } from "@/lib/party/protocol"
 import { apiError } from "@/lib/api-response"
 import { checkRateLimit, PARTY_RATE_LIMITS } from "@/lib/rate-limit"
 
@@ -27,6 +28,9 @@ export async function POST(
 
     if (typeof buffering !== "boolean") {
       return apiError("buffering boolean is required", 400, "INVALID_STATUS_PAYLOAD")
+    }
+    if (positionSec !== undefined && !isValidPositionSec(positionSec)) {
+      return apiError("positionSec must be a finite number within bounds", 400, "INVALID_STATUS_PAYLOAD")
     }
 
     const state = roomManager.setBuffering(id, session.userId, buffering, positionSec)

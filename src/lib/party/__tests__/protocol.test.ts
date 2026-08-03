@@ -1,6 +1,13 @@
 import assert from "node:assert"
 import { test, describe } from "node:test"
-import { predictedPosition, DRIFT_THRESHOLDS, type PartyState } from "../protocol"
+import {
+  predictedPosition,
+  DRIFT_THRESHOLDS,
+  sanitizePartyCommand,
+  isValidPositionSec,
+  isValidPlaybackRate,
+  type PartyState,
+} from "../protocol"
 
 describe("Party Sync Protocol Math", () => {
   test("predictedPosition calculates exact playhead based on elapsed time", () => {
@@ -51,7 +58,91 @@ describe("Party Sync Protocol Math", () => {
   })
 
   test("drift thresholds are properly structured", () => {
-    assert.strictEqual(DRIFT_THRESHOLDS.MICRO_LOWER, 0.15)
-    assert.strictEqual(DRIFT_THRESHOLDS.MICRO_UPPER, 0.75)
+    assert.strictEqual(DRIFT_THRESHOLDS.MICRO_LOWER, 0.12)
+    assert.strictEqual(DRIFT_THRESHOLDS.MICRO_UPPER, 0.3)
+    assert.strictEqual(DRIFT_THRESHOLDS.MID_UPPER, 1.0)
+    assert.strictEqual(DRIFT_THRESHOLDS.SEEK_HARD, 1.0)
+  })
+
+  test("isValidPositionSec rejects NaN, Infinity, negatives and out-of-bound values", () => {
+    assert.strictEqual(isValidPositionSec(12.5), true)
+    assert.strictEqual(isValidPositionSec(0), true)
+    assert.strictEqual(isValidPositionSec(NaN), false)
+    assert.strictEqual(isValidPositionSec(Infinity), false)
+    assert.strictEqual(isValidPositionSec(-1), false)
+    assert.strictEqual(isValidPositionSec(25 * 60 * 60), false)
+    assert.strictEqual(isValidPositionSec("12"), false)
+  })
+
+  test("isValidPlaybackRate enforces the UI whitelist", () => {
+    for (const rate of [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2]) {
+      assert.strictEqual(isValidPlaybackRate(rate), true)
+    }
+    assert.strictEqual(isValidPlaybackRate(1.1), false)
+    assert.strictEqual(isValidPlaybackRate(0), false)
+    assert.strictEqual(isValidPlaybackRate(4), false)
+    assert.strictEqual(isValidPlaybackRate("1"), false)
+  })
+
+  test("sanitizePartyCommand accepts well-formed commands", () => {
+    const cmd = sanitizePartyCommand({
+      type: "seek",
+      positionSec: 42,
+      clientId: "tab_abc",
+      commandId: "cmd_1",
+    })
+    assert.ok(cmd)
+    assert.strictEqual(cmd.type, "seek")
+    assert.strictEqual(cmd.positionSec, 42)
+  })
+
+  test("sanitizePartyCommand rejects poisoned payloads", () => {
+    assert.strictEqual(
+      sanitizePartyCommand({ type: "seek", positionSec: NaN, clientId: "t", commandId: "c" }),
+      null
+    )
+    assert.strictEqual(
+      sanitizePartyCommand({ type: "rate", playbackRate: 99, clientId: "t", commandId: "c" }),
+      null
+    )
+    assert.strictEqual(
+      sanitizePartyCommand({ type: "explode", clientId: "t", commandId: "c" }),
+      null
+    )
+    assert.strictEqual(sanitizePartyCommand({ type: "play", commandId: "c" }), null)
+    assert.strictEqual(sanitizePartyCommand(null), null)
+    assert.strictEqual(sanitizePartyCommand("play"), null)
+  })
+
+  test("sanitizePartyCommand accepts valid sentAt and rejects malformed ones", () => {
+    assert.ok(
+      sanitizePartyCommand({
+        type: "play",
+        positionSec: 10,
+        sentAt: 1_700_000_000_000,
+        clientId: "t",
+        commandId: "c",
+      })
+    )
+    assert.strictEqual(
+      sanitizePartyCommand({
+        type: "play",
+        positionSec: 10,
+        sentAt: NaN,
+        clientId: "t",
+        commandId: "c",
+      }),
+      null
+    )
+    assert.strictEqual(
+      sanitizePartyCommand({
+        type: "play",
+        positionSec: 10,
+        sentAt: "soon",
+        clientId: "t",
+        commandId: "c",
+      }),
+      null
+    )
   })
 })

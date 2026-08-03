@@ -91,6 +91,37 @@ export const convexBreaker =
   globalForBreakers.convexBreaker ??
   (globalForBreakers.convexBreaker = new CircuitBreaker({ name: "Convex", failureThreshold: 5, resetTimeoutMs: 45_000 }))
 
+// ── Per-identity breaker registry ──
+// Lets service clients scope breakers by an identity key (e.g. `${serverUrl}:${userId}`)
+// so that one session's failures never trip the breaker that other sessions depend on.
+// The aggregate helpers are read-only observability — they never mutate breaker state.
+
+const globalForRegistry = globalThis as unknown as { __breakerStore?: Map<string, CircuitBreaker> }
+
+const breakerStore: Map<string, CircuitBreaker> =
+  globalForRegistry.__breakerStore ?? (globalForRegistry.__breakerStore = new Map())
+
+export function getBreaker(key: string, options?: CircuitBreakerOptions): CircuitBreaker {
+  const existing = breakerStore.get(key)
+  if (existing) return existing
+  const created = new CircuitBreaker(options)
+  breakerStore.set(key, created)
+  return created
+}
+
+export function getAggregateOpen(keyPrefix?: string): { anyOpen: boolean; openCount: number } {
+  let openCount = 0
+  for (const [key, breaker] of breakerStore) {
+    if (keyPrefix && !key.startsWith(keyPrefix)) continue
+    if (breaker.state === "OPEN") openCount++
+  }
+  return { anyOpen: openCount > 0, openCount }
+}
+
+export function resetBreaker(key: string): void {
+  breakerStore.delete(key)
+}
+
 // ── Single-Flight Request Coalescer ──
 export class SingleFlight {
   private static inFlight = new Map<string, Promise<unknown>>()

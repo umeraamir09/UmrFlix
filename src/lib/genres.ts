@@ -15,6 +15,15 @@ export type GenreDef = {
   movieGenreIds: number[]
   tvGenreIds: number[]
   aliases?: string[]
+  /**
+   * Extra TMDB discover filters applied on top of the genre ids, per media
+   * type (e.g. "anime" restricts Animation titles to Japanese origin with
+   * { movie: { with_origin_country: "JP" }, tv: { with_origin_country: "JP" } }).
+   */
+  discoverParams?: {
+    movie?: Record<string, string>
+    tv?: Record<string, string>
+  }
 }
 
 export const GENRES: GenreDef[] = [
@@ -32,6 +41,18 @@ export const GENRES: GenreDef[] = [
     description: "Epic quests, daring explorers, and journeys into the unknown.",
     movieGenreIds: [12],
     tvGenreIds: [],
+  },
+  {
+    slug: "anime",
+    name: "Anime",
+    description: "Japanese animation — shonen epics, slice-of-life gems, and everything in between.",
+    movieGenreIds: [16],
+    tvGenreIds: [16],
+    aliases: ["Anime Only"],
+    discoverParams: {
+      movie: { with_origin_country: "JP" },
+      tv: { with_origin_country: "JP" },
+    },
   },
   {
     slug: "animation",
@@ -228,6 +249,30 @@ export function getGenreIdsForMediaType(
   mediaType: "movie" | "tv"
 ): number[] {
   return mediaType === "tv" ? genre.tvGenreIds : genre.movieGenreIds
+}
+
+/**
+ * Extra TMDB discover params for a genre (beyond with_genres), or {} when the
+ * genre has no additional filters.
+ */
+export function getGenreDiscoverParams(
+  genre: GenreDef,
+  mediaType: "movie" | "tv"
+): Record<string, string> {
+  return genre.discoverParams?.[mediaType] ?? {}
+}
+
+/**
+ * Builds the full discover query string for a genre: base params merged with
+ * the genre's extra discover filters (genre filters win on conflicts).
+ */
+export function buildGenreDiscoverQuery(
+  genre: GenreDef,
+  mediaType: "movie" | "tv",
+  baseParams: Record<string, string>
+): string {
+  const params = { ...baseParams, ...getGenreDiscoverParams(genre, mediaType) }
+  return new URLSearchParams(params).toString()
 }
 
 export type GenreFilterItem = {

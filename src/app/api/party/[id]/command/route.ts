@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server"
 import { getSession } from "@/lib/auth"
 import { roomManager } from "@/lib/party/room-manager"
-import type { PartyCommand } from "@/lib/party/protocol"
+import { sanitizePartyCommand } from "@/lib/party/protocol"
 import { apiError } from "@/lib/api-response"
 import { checkRateLimit, PARTY_RATE_LIMITS } from "@/lib/rate-limit"
 
@@ -23,9 +23,9 @@ export async function POST(
 
   const { id } = await params
   try {
-    const cmd: PartyCommand = await req.json()
-    if (!cmd || !cmd.type || !cmd.clientId || !cmd.commandId) {
-      return apiError("Invalid command payload structure", 400, "INVALID_COMMAND")
+    const cmd = sanitizePartyCommand(await req.json())
+    if (!cmd) {
+      return apiError("Invalid command payload", 400, "INVALID_COMMAND")
     }
 
     const state = roomManager.applyCommand(id, session.userId, cmd)

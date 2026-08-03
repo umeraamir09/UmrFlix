@@ -24,6 +24,7 @@ The goal is to use the reference image as a design referece and follow the user'
 - Install deps: npm install
 - Start dev server: npm run dev
 - Lint: npm run lint
+- Watch Party protocol/manager tests: npm run test:party
 - Production build: npm run build
 - Start production server: npm run start
 
@@ -37,3 +38,7 @@ The goal is to use the reference image as a design referece and follow the user'
 - There are no dedicated test scripts in this repo today; use lint/build plus manual verification for behavior changes.
 - The /watch route intentionally renders a fullscreen player experience without the standard navbar/footer chrome.
 - Watch Party engine lives under `src/lib/party/` (in-memory ephemeral rooms, protocol math, `roomManager` globalThis singleton), `/api/party/*` route handlers, `src/components/player/use-party-sync.ts` hook, and `/watch?party=[id]` room route.
+- Watch Party requires a single Node process (PM2 fork mode; see DEPLOY_VPS.md). Convex persistence is restart-survival only; hydrated room states get their `updatedAt` rebased to load time.
+- Party command/status payloads must validate through `sanitizePartyCommand` / `isValidPositionSec` in src/lib/party/protocol.ts (playbackRate whitelist: 0.5–2). System-generated states (buffer-pause/buffer-resume) must never carry `senderClientId` or echo suppression will skip them on that client. Commands carry `sentAt` (server-space capture time) so the server advances `positionSec` by the transport delay — never add latency-compensation paths that skip the 2s clamp in `applyCommand`.
+- Strict buffer-hold: while ANY member reports `buffering`, the room stays paused — `play` commands from anyone (host included) are rejected; there is no force-resume and no stuck-timeout. The room resumes only via the system `buffer-resume` after every member's client reports a genuine recovery. Recovery is gated client-side (`PARTY_BUFFERING` in protocol.ts): a member must prove 8s buffered ahead sustained over a 2s grace window (or be genuinely playing). The only exception is crash cleanup: a buffering member whose heartbeat has been silent for 90s is treated as departed (pruned, membership broadcast, room resumes if they were the last holder) — presence cleanup, never an eviction of a live member. Keep the time-bound scrub/seek window (`scrubUntilRef`, 2.5s) — an event-only flag can wedge a member out of sync when `seeked` is delayed by buffering.
+- In a party, only the host advances at end-of-media; other members hold at end and follow the host's party:item broadcast.

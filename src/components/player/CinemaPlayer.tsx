@@ -92,6 +92,13 @@ export function CinemaPlayer({
   const watchedReportedRef = useRef(false)
   const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const debugAutoOpenedRef = useRef(false)
+  // Scrub seek coalescing: the seek bar fires onSeek on every pointermove
+  // (60Hz+ during a drag). Without throttling, a single drag floods the
+  // command endpoint and trips the 20-per-10s rate limit, dropping the final
+  // position and leaving the room at a stale playhead.
+  const lastSeekSendAtRef = useRef(0)
+  const pendingSeekRef = useRef<number | null>(null)
+  const seekFlushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   // Once playback has started (or autoplay is requested) stream rebuilds keep playing
   const playIntentRef = useRef(autoPlay)
   // Tracks whether a stream has ever been attached — used to preserve the
@@ -114,6 +121,15 @@ export function CinemaPlayer({
     onItemChange: onPartyItemChange,
     onPartyEnded,
   })
+
+  // Stable handle for unmount-time fire-and-forget commands; the usePartySync
+  // return object is recreated every render, so keep it in a ref (updated in
+  // an effect, per react-hooks/refs) instead of depending on it in effects —
+  // that would flush pending state on every re-render.
+  const partySyncRef = useRef(partySync)
+  useEffect(() => {
+    partySyncRef.current = partySync
+  }, [partySync])
 
   useEffect(() => {
     if (typeof startAtSec === "number" && startAtSec > 0) {
@@ -794,13 +810,49 @@ export function CinemaPlayer({
       const video = videoRef.current
       if (!video) return
       video.currentTime = t
+      if (!party?.partyId) return
 
-      if (party?.partyId) {
-        partySync.sendCommand("seek", t)
+      // Coalesce scrub seeks: send at most one command per 650ms, but always
+      // flush the final drag position (trailing edge) so the room lands where
+      // the user let go — never at a rate-limited stale position. 650ms keeps
+      // a sustained drag under the 20-commands/10s rate limit with headroom.
+      const now = Date.now()
+      pendingSeekRef.current = t
+      if (now - lastSeekSendAtRef.current >= 650) {
+        lastSeekSendAtRef.current = now
+        const target = pendingSeekRef.current
+        pendingSeekRef.current = null
+        partySync.sendCommand("seek", target)
+      } else {
+        if (seekFlushTimerRef.current) clearTimeout(seekFlushTimerRef.current)
+        seekFlushTimerRef.current = setTimeout(() => {
+          const target = pendingSeekRef.current
+          if (target === null) return
+          pendingSeekRef.current = null
+          lastSeekSendAtRef.current = Date.now()
+          partySync.sendCommand("seek", target)
+        }, 650)
       }
     },
     [party?.partyId, partySync]
   )
+
+  // Flush a pending scrub seek when leaving the page: fire-and-forget the
+  // final drag position so the room isn't left at a stale playhead when the
+  // player unmounts mid-drag.
+  useEffect(() => {
+    return () => {
+      if (seekFlushTimerRef.current) {
+        clearTimeout(seekFlushTimerRef.current)
+        seekFlushTimerRef.current = null
+      }
+      const target = pendingSeekRef.current
+      if (target !== null) {
+        pendingSeekRef.current = null
+        void partySyncRef.current.sendCommand("seek", target)
+      }
+    }
+  }, [])
 
   const rebuildAtPosition = useCallback((apply: () => void) => {
     seekTargetRef.current = videoRef.current?.currentTime ?? 0
@@ -1021,6 +1073,10 @@ export function CinemaPlayer({
         onEnded={() => {
           playerLog.info("video", "ended")
           reporter.stop()
+          // In a watch party only the host advances to the next item; every
+          // other member holds at the end and follows the host's party:item
+          // broadcast — per-tab end timers would desync the group.
+          if (party?.partyId && !partySync.isOwner) return
           if (nextEpisode && onNextEpisode) {
             setNextPrompt({ secondsLeft: NEXT_EPISODE_COUNTDOWN })
           }
