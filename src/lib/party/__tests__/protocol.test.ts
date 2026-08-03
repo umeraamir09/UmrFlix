@@ -58,8 +58,10 @@ describe("Party Sync Protocol Math", () => {
   })
 
   test("drift thresholds are properly structured", () => {
-    assert.strictEqual(DRIFT_THRESHOLDS.MICRO_LOWER, 0.15)
-    assert.strictEqual(DRIFT_THRESHOLDS.MICRO_UPPER, 0.35)
+    assert.strictEqual(DRIFT_THRESHOLDS.MICRO_LOWER, 0.12)
+    assert.strictEqual(DRIFT_THRESHOLDS.MICRO_UPPER, 0.3)
+    assert.strictEqual(DRIFT_THRESHOLDS.MID_UPPER, 1.0)
+    assert.strictEqual(DRIFT_THRESHOLDS.SEEK_HARD, 1.0)
   })
 
   test("isValidPositionSec rejects NaN, Infinity, negatives and out-of-bound values", () => {
@@ -110,5 +112,37 @@ describe("Party Sync Protocol Math", () => {
     assert.strictEqual(sanitizePartyCommand({ type: "play", commandId: "c" }), null)
     assert.strictEqual(sanitizePartyCommand(null), null)
     assert.strictEqual(sanitizePartyCommand("play"), null)
+  })
+
+  test("sanitizePartyCommand accepts valid sentAt and rejects malformed ones", () => {
+    assert.ok(
+      sanitizePartyCommand({
+        type: "play",
+        positionSec: 10,
+        sentAt: 1_700_000_000_000,
+        clientId: "t",
+        commandId: "c",
+      })
+    )
+    assert.strictEqual(
+      sanitizePartyCommand({
+        type: "play",
+        positionSec: 10,
+        sentAt: NaN,
+        clientId: "t",
+        commandId: "c",
+      }),
+      null
+    )
+    assert.strictEqual(
+      sanitizePartyCommand({
+        type: "play",
+        positionSec: 10,
+        sentAt: "soon",
+        clientId: "t",
+        commandId: "c",
+      }),
+      null
+    )
   })
 })

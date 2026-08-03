@@ -17,6 +17,10 @@ export type PartyCommand = {
   playbackRate?: number
   clientId: string
   commandId: string
+  /** Server-space epoch ms at the moment the position was captured. Lets the
+   *  server advance positionSec by the transport delay so receivers
+   *  extrapolate to the issuer's true playhead. */
+  sentAt?: number
 }
 
 export type PartyMember = {
@@ -80,16 +84,33 @@ export function sanitizePartyCommand(raw: unknown): PartyCommand | null {
   }
   if (cmd.positionSec !== undefined && !isValidPositionSec(cmd.positionSec)) return null
   if (cmd.playbackRate !== undefined && !isValidPlaybackRate(cmd.playbackRate)) return null
+  if (cmd.sentAt !== undefined && (typeof cmd.sentAt !== "number" || !Number.isFinite(cmd.sentAt))) {
+    return null
+  }
   return cmd as PartyCommand
 }
 
 export const DRIFT_THRESHOLDS = {
-  MICRO_LOWER: 0.15, // seconds
-  MICRO_UPPER: 0.35, // seconds
-  MICRO_ADJUST: 0.03, // 3% playback rate adjustment
-  MID_UPPER: 1.5, // seconds
-  MID_ADJUST: 0.08, // 8% playback rate adjustment
-  SEEK_THRESHOLD: 0.25, // seconds – immediate reposition when applying peer state
-  SEEK_HARD: 1.5, // seconds – hard seek beyond the micro/mid bands
+  MICRO_LOWER: 0.12, // seconds
+  MICRO_UPPER: 0.3, // seconds
+  MICRO_ADJUST: 0.05, // 5% playback rate adjustment
+  MID_UPPER: 1.0, // seconds
+  MID_ADJUST: 0.12, // 12% playback rate adjustment
+  SEEK_THRESHOLD: 0.2, // seconds – immediate reposition when applying peer state
+  SEEK_HARD: 1.0, // seconds – hard seek beyond the micro/mid bands
   RESEEK_GUARD: 0.1, // seconds – minimum reposition delta to avoid oscillation
 }
+
+// Client-side buffering policy for watch parties. The room waits for a
+// stalled member until they prove a genuine recovery — never force-resumes
+// while someone is still buffering.
+export const PARTY_BUFFERING = {
+  STALL_DEBOUNCE_MS: 400, // stall → server report latency
+  RECOVERY_BUFFER_AHEAD_SEC: 8, // buffered ahead required to release the room pause
+  RECOVERY_GRACE_MS: 2000, // sustained playable state before reporting recovery
+  RECOVERY_POLL_MS: 500, // recovery check cadence
+  SCRUB_IGNORE_MS: 2500, // after a seek begins, suppress stall reports/repositions
+}
+
+// Server-space clock used by sentAt / latency compensation
+export const MAX_COMMAND_TRANSPORT_MS = 2000

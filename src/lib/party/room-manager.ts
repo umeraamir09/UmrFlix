@@ -1,5 +1,6 @@
 import { eventBus } from "../event-bus"
 import type { PartyCommand, PartyMember, PartyRoomSnapshot, PartyState } from "./protocol"
+import { MAX_COMMAND_TRANSPORT_MS, MAX_PARTY_POSITION_SEC } from "./protocol"
 import {
   persistRoomToConvex,
   deleteRoomFromConvex,
@@ -14,10 +15,12 @@ export type PartyRoom = {
   members: Map<string, PartyMember>
   pendingInvites: Set<string>
   lastSeenAt: Map<string, number>
-  bufferingTimers: Map<string, NodeJS.Timeout>
   pausedForBuffering: boolean
-  forceClearedAt: Map<string, number>
 }
+
+/** A buffering member whose tab died mid-stall can never report recovery.
+ *  Treat them as departed after this much silence from their heartbeat. */
+const GHOST_BUFFER_TIMEOUT_MS = 90_000
 
 export const ROOM_LIMITS = {
   MAX_ROOMS_PER_USER: 5,
@@ -64,21 +67,6 @@ class PartyRoomManager {
     void deleteRoomFromConvex(partyId)
   }
 
-  private clearAllBufferingTimers(room: PartyRoom) {
-    for (const timer of room.bufferingTimers.values()) {
-      clearTimeout(timer)
-    }
-    room.bufferingTimers.clear()
-  }
-
-  private clearBufferingTimer(room: PartyRoom, userId: string) {
-    const existing = room.bufferingTimers.get(userId)
-    if (existing) {
-      clearTimeout(existing)
-      room.bufferingTimers.delete(userId)
-    }
-  }
-
   private reapStaleRooms() {
     const now = Date.now()
     const MAX_INACTIVE_MS = 30 * 60 * 1000 // 30 minutes
@@ -90,7 +78,6 @@ class PartyRoomManager {
       }
 
       if (room.members.size === 0 || now - newestActivity > MAX_INACTIVE_MS) {
-        this.clearAllBufferingTimers(room)
         this.rooms.delete(roomId)
         this.removeFromConvex(roomId)
         eventBus.emitEvent({
@@ -164,9 +151,7 @@ class PartyRoomManager {
       members: new Map([[ownerId, ownerMember]]),
       pendingInvites: new Set(),
       lastSeenAt: new Map([[ownerId, now]]),
-      bufferingTimers: new Map(),
       pausedForBuffering: false,
-      forceClearedAt: new Map(),
     }
 
     this.rooms.set(partyId, room)
@@ -187,7 +172,103 @@ class PartyRoomManager {
       const now = Date.now()
       member.lastSeenAt = now
       room.lastSeenAt.set(userId, now)
+      this.pruneGhostBufferingMembers(room)
     }
+  }
+
+  /**
+   * Strict buffer-hold resume: transitions a paused-for-buffering room back to
+   * playing when NO member is buffering anymore. Returns the new state (and
+   * sets it on the room) or null when no transition applies.
+   */
+  private maybeResume(room: PartyRoom): PartyState | null {
+    if (!room.state || !room.pausedForBuffering || room.state.playing) return null
+    const isAnyBuffering = Array.from(room.members.values()).some((m) => m.buffering)
+    if (isAnyBuffering) return null
+
+    room.pausedForBuffering = false
+    const newState: PartyState = {
+      ...room.state,
+      playing: true,
+      updatedAt: Date.now(),
+      version: room.state.version + 1,
+      // System-generated event, not a user command: never inherit the last
+      // commander's clientId or that client's echo suppression will skip
+      // applying the resume (see buffer-pause).
+      senderClientId: undefined,
+      reason: "buffer-resume",
+    }
+    room.state = newState
+    return newState
+  }
+
+  /**
+   * Crash cleanup, NOT eviction: a member whose tab died mid-stall can never
+   * send `buffering=false`, which would otherwise hold the room paused
+   * forever. Members that haven't sent a heartbeat in GHOST_BUFFER_TIMEOUT_MS
+   * are treated as departed — removed, membership broadcast, and the room
+   * resumed if they were the last one holding it. Present members (fresh
+   * heartbeat) are never touched.
+   */
+  private pruneGhostBufferingMembers(room: PartyRoom): void {
+    const now = Date.now()
+    let removed = false
+    let ownerRemoved = false
+    for (const [userId, member] of room.members.entries()) {
+      if (!member.buffering) continue
+      if (now - member.lastSeenAt <= GHOST_BUFFER_TIMEOUT_MS) continue
+      room.members.delete(userId)
+      room.lastSeenAt.delete(userId)
+      removed = true
+      if (room.ownerId === userId) ownerRemoved = true
+    }
+    if (!removed) return
+
+    if (room.members.size === 0) {
+      this.rooms.delete(room.id)
+      this.removeFromConvex(room.id)
+      eventBus.emitEvent({
+        type: "party:ended",
+        payload: { partyId: room.id, audience: [] },
+      })
+      return
+    }
+
+    if (ownerRemoved) {
+      // Transfer ownership to the oldest remaining member
+      const remainingMembers = Array.from(room.members.values()).sort(
+        (a, b) => a.joinedAt - b.joinedAt
+      )
+      room.ownerId = remainingMembers[0].userId
+    }
+
+    const membersArray = Array.from(room.members.values()).sort(
+      (a, b) => a.joinedAt - b.joinedAt
+    )
+    eventBus.emitEvent({
+      type: "party:membership",
+      payload: {
+        partyId: room.id,
+        action: ownerRemoved ? "owner-changed" : "leave",
+        ownerId: room.ownerId,
+        members: membersArray,
+        audience: Array.from(room.members.keys()),
+      },
+    })
+
+    const resumed = this.maybeResume(room)
+    if (resumed) {
+      eventBus.emitEvent({
+        type: "party:state",
+        payload: {
+          partyId: room.id,
+          state: resumed,
+          audience: Array.from(room.members.keys()),
+        },
+      })
+    }
+
+    this.syncToConvex(room)
   }
 
   public getSnapshot(partyId: string, currentUserId: string): PartyRoomSnapshot | null {
@@ -263,12 +344,10 @@ class PartyRoomManager {
     const room = this.rooms.get(partyId)
     if (!room) return { roomEnded: false }
 
-    this.clearBufferingTimer(room, userId)
     room.members.delete(userId)
     room.lastSeenAt.delete(userId)
 
     if (room.members.size === 0) {
-      this.clearAllBufferingTimers(room)
       this.rooms.delete(partyId)
       this.removeFromConvex(partyId)
       return { roomEnded: true }
@@ -345,7 +424,6 @@ class PartyRoomManager {
     if (!room || room.ownerId !== ownerId) return false
 
     const audience = Array.from(room.members.keys())
-    this.clearAllBufferingTimers(room)
     this.rooms.delete(partyId)
     this.removeFromConvex(partyId)
 
@@ -365,40 +443,20 @@ class PartyRoomManager {
     const room = this.rooms.get(partyId)
     if (!room || !room.members.has(userId)) return null
 
+    this.pruneGhostBufferingMembers(room)
+
     // Only owner can change playback rate
     if (cmd.type === "rate" && room.ownerId !== userId) {
       return room.state
     }
 
-    // Manual play while a member is buffering: only the host may force-resume
-    // over a buffer-hold. The stuck member is LEFT BEHIND — their buffering
-    // flag is cleared (so the room no longer waits on them) and they sit in
-    // the flap-hysteresis window so their recovery report can't instantly
-    // re-pause the room; they re-align to the group via normal drift sync.
+    // Strict buffer-hold: nobody — not even the host — may play while any
+    // member is buffering. The room resumes exclusively via buffer-resume
+    // once every member's client reports a genuine recovery.
     if (cmd.type === "play") {
-      const bufferingMembers = Array.from(room.members.values()).filter((m) => m.buffering)
-      if (bufferingMembers.length > 0) {
-        if (room.ownerId !== userId) {
-          return room.state
-        }
-        for (const m of bufferingMembers) {
-          m.buffering = false
-          this.clearBufferingTimer(room, m.userId)
-          room.forceClearedAt.set(m.userId, Date.now())
-        }
-        const membersArray = Array.from(room.members.values()).sort(
-          (a, b) => a.joinedAt - b.joinedAt
-        )
-        eventBus.emitEvent({
-          type: "party:membership",
-          payload: {
-            partyId,
-            action: "leave",
-            ownerId: room.ownerId,
-            members: membersArray,
-            audience: Array.from(room.members.keys()),
-          },
-        })
+      const isAnyBuffering = Array.from(room.members.values()).some((m) => m.buffering)
+      if (isAnyBuffering) {
+        return room.state
       }
     }
 
@@ -409,7 +467,19 @@ class PartyRoomManager {
         : room.state.positionSec
       : 0
 
-    const newPos = cmd.positionSec ?? currentPos
+    // Sender-RTT compensation: the position was captured on the client one
+    // transport round-trip before we stamp `updatedAt`. Advance it by the
+    // elapsed time so every receiver extrapolates to the issuer's true
+    // playhead instead of lagging one RTT behind on every command. Pauses
+    // capture the exact stop point, so they are not advanced. The elapsed
+    // window is clamped so a poisoned `sentAt` can't distort the playhead.
+    let newPos = cmd.positionSec ?? currentPos
+    if (cmd.positionSec !== undefined && cmd.type !== "pause" && cmd.sentAt !== undefined) {
+      const elapsedMs = Math.min(MAX_COMMAND_TRANSPORT_MS, Math.max(0, now - cmd.sentAt))
+      const rate = cmd.playbackRate ?? room.state?.playbackRate ?? 1.0
+      newPos = Math.min(MAX_PARTY_POSITION_SEC, newPos + (elapsedMs / 1000) * rate)
+    }
+
     const newRate = cmd.playbackRate ?? room.state?.playbackRate ?? 1.0
     const isPlaying = cmd.type === "play" ? true : cmd.type === "pause" ? false : room.state?.playing ?? true
 
@@ -498,32 +568,12 @@ class PartyRoomManager {
     const room = this.rooms.get(partyId)
     if (!room || !room.members.has(userId)) return null
 
+    this.pruneGhostBufferingMembers(room)
+
     const member = room.members.get(userId)!
-
-    // "Left behind" marker: this member was force-cleared during an extended
-    // buffer (stuck timeout or host force-resume). Ignore fresh stall reports
-    // so a hopeless network can't drag the room into a pause loop — the room
-    // plays on without them. The marker lifts on their first genuine recovery
-    // (buffering=false), after which their stalls pause the room normally.
-    if (buffering) {
-      if (room.forceClearedAt.has(userId)) {
-        member.lastSeenAt = Date.now()
-        room.lastSeenAt.set(userId, member.lastSeenAt)
-        return room.state
-      }
-    } else {
-      room.forceClearedAt.delete(userId)
-    }
-
     member.buffering = buffering
     member.lastSeenAt = Date.now()
     room.lastSeenAt.set(userId, member.lastSeenAt)
-
-    // Manage buffering timer cleanly (never evicts a member — see clearStuckBuffering)
-    this.clearBufferingTimer(room, userId)
-    if (buffering) {
-      this.clearStuckBuffering(partyId, userId)
-    }
 
     if (!room.state) return null
 
@@ -553,24 +603,10 @@ class PartyRoomManager {
         senderClientId: undefined,
         reason: "buffer-pause",
       }
-    } else if (
-      !isAnyBuffering &&
-      !room.state.playing &&
-      room.pausedForBuffering
-    ) {
+    } else {
       // Resume everyone when the last buffering member clears — even if a
       // manual pause / seek happened during the buffer-pause, we auto-resume.
-      room.pausedForBuffering = false
-
-      newState = {
-        ...room.state,
-        playing: true,
-        updatedAt: now,
-        version: room.state.version + 1,
-        // See buffer-pause: must not inherit senderClientId (echo suppression).
-        senderClientId: undefined,
-        reason: "buffer-resume",
-      }
+      newState = this.maybeResume(room)
     }
 
     if (newState) {
@@ -588,76 +624,6 @@ class PartyRoomManager {
 
     this.syncToConvex(room)
     return room.state
-  }
-
-  /**
-   * If a member stays in `buffering` for too long, they are NOT evicted.
-   * Instead they are LEFT BEHIND: their `buffering` flag is cleared, the room
-   * resumes, and the member is marked in `forceClearedAt` so their recovery
-   * chatter can't re-pause the room until they genuinely come back; the sync
-   * engine re-aligns them once their client reports a fresh position.
-   */
-  private clearStuckBuffering(partyId: string, userId: string) {
-    const room = this.rooms.get(partyId)
-    if (!room) return
-
-    const timer = setTimeout(() => {
-      const stillRoom = this.rooms.get(partyId)
-      if (!stillRoom) return
-      stillRoom.bufferingTimers.delete(userId)
-      const stillMember = stillRoom.members.get(userId)
-      if (!stillMember || !stillMember.buffering) return
-
-      // Clear the stuck flag — the member is never removed from the room
-      stillMember.buffering = false
-      stillRoom.forceClearedAt.set(userId, Date.now())
-
-      // Emit membership update so all clients refresh member.buffering state
-      const audience = Array.from(stillRoom.members.keys())
-      const membersArray = Array.from(stillRoom.members.values()).sort(
-        (a, b) => a.joinedAt - b.joinedAt
-      )
-
-      eventBus.emitEvent({
-        type: "party:membership",
-        payload: {
-          partyId,
-          action: "join",
-          ownerId: stillRoom.ownerId,
-          members: membersArray,
-          audience,
-        },
-      })
-
-      // If this unblocks a buffer-pause, resume everyone
-      if (stillRoom.state && !stillRoom.state.playing && stillRoom.pausedForBuffering) {
-        const isAnyStillBuffering = membersArray.some((m) => m.buffering)
-        if (!isAnyStillBuffering) {
-          stillRoom.pausedForBuffering = false
-          stillRoom.state = {
-            ...stillRoom.state,
-            playing: true,
-            updatedAt: Date.now(),
-            version: stillRoom.state.version + 1,
-            senderClientId: undefined,
-            reason: "buffer-resume",
-          }
-          eventBus.emitEvent({
-            type: "party:state",
-            payload: {
-              partyId,
-              state: stillRoom.state,
-              audience,
-            },
-          })
-        }
-      }
-
-      this.syncToConvex(stillRoom)
-    }, 30_000)
-    timer.unref?.()
-
-    room.bufferingTimers.set(userId, timer)
   }
 
   public getUserParties(userId: string): {

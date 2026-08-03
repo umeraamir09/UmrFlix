@@ -111,9 +111,7 @@ export async function loadAllRoomsFromConvex(): Promise<PartyRoom[]> {
           members: membersMap,
           pendingInvites: new Set(pendingInvites),
           lastSeenAt: lastSeenAtMap,
-          bufferingTimers: new Map(),
           pausedForBuffering: false,
-          forceClearedAt: new Map(),
         })
       } catch (e) {
         console.error(`[PartyConvexStore] Error parsing room ${rec.partyId}:`, e)

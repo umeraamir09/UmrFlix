@@ -202,7 +202,7 @@ describe("PartyRoomManager Unit Tests", () => {
     assert.strictEqual(state.playing, false) // play rejected, room stays paused
   })
 
-  test("host can force-resume over a buffer-hold; laggard is left behind", () => {
+  test("host play is ALSO rejected during a buffer-hold (strict — no force-resume)", () => {
     const snap = roomManager.createRoom("buf_play_host", "Host", undefined, "item_bp2")
     assert.ok(snap)
     roomManager.joinRoom(snap.partyId, guestId, guestName)
@@ -216,44 +216,99 @@ describe("PartyRoomManager Unit Tests", () => {
       commandId: "cmd_bp2",
     })
     assert.ok(state)
-    assert.strictEqual(state.playing, true)
+    assert.strictEqual(state.playing, false) // nobody resumes over a hold
 
     const room = roomManager.getRoom(snap.partyId)!
-    // Laggard's flag cleared and marked as left behind
-    assert.strictEqual(room.members.get(guestId)!.buffering, false)
-    assert.strictEqual(room.forceClearedAt.has(guestId), true)
+    // The buffering member is never cleared or left behind — the room waits
+    assert.strictEqual(room.members.get(guestId)!.buffering, true)
+
+    // Only a genuine recovery report releases the hold
+    const resState = roomManager.setBuffering(snap.partyId, guestId, false, 20)
+    assert.ok(resState)
+    assert.strictEqual(resState.playing, true)
+    assert.strictEqual(resState.reason, "buffer-resume")
   })
 
-  test("left-behind member stalls are ignored until they recover once", () => {
+  test("no auto force-clear: a repeated stall after recovery pauses the room again", () => {
     const snap = roomManager.createRoom("buf_lag_host", "Host", undefined, "item_bp3")
     assert.ok(snap)
     roomManager.joinRoom(snap.partyId, guestId, guestName)
 
-    // Guest stalls, host force-resumes, guest is left behind
     roomManager.setBuffering(snap.partyId, guestId, true, 20)
-    roomManager.applyCommand(snap.partyId, "buf_lag_host", {
-      type: "play",
-      positionSec: 20,
-      clientId: "tab_host",
-      commandId: "cmd_bp3",
-    })
+    roomManager.setBuffering(snap.partyId, guestId, false, 20)
 
-    // Laggard still stalling -> report ignored, room keeps playing
-    const stillPlaying = roomManager.setBuffering(snap.partyId, guestId, true, 20)
-    assert.ok(stillPlaying)
-    assert.strictEqual(stillPlaying.playing, true)
-
-    // Laggard recovers -> marker lifts
-    const afterRecovery = roomManager.setBuffering(snap.partyId, guestId, false, 25)
-    assert.ok(afterRecovery)
-    const room = roomManager.getRoom(snap.partyId)!
-    assert.strictEqual(room.forceClearedAt.has(guestId), false)
-
-    // A NEW stall now pauses the room again (normal sync behavior)
+    // A NEW stall must always pause the room — there is no force-cleared path
     const pausedAgain = roomManager.setBuffering(snap.partyId, guestId, true, 25)
     assert.ok(pausedAgain)
     assert.strictEqual(pausedAgain.playing, false)
     assert.strictEqual(pausedAgain.reason, "buffer-pause")
+  })
+
+  test("ghost member (crashed tab mid-stall) is pruned by heartbeat and room resumes", () => {
+    const snap = roomManager.createRoom("buf_ghost_host", "Host", undefined, "item_bp4")
+    assert.ok(snap)
+    roomManager.joinRoom(snap.partyId, guestId, guestName)
+
+    roomManager.setBuffering(snap.partyId, guestId, true, 30)
+
+    // Simulate the member's tab dying mid-stall: stale lastSeenAt, never recovers
+    const room = roomManager.getRoom(snap.partyId)!
+    const stale = Date.now() - 100_000
+    room.lastSeenAt.set(guestId, stale)
+    room.members.get(guestId)!.lastSeenAt = stale
+
+    // A live member's heartbeat triggers the prune
+    const resState = roomManager.touchPresence(snap.partyId, "buf_ghost_host")
+    assert.ok(resState === undefined)
+    const updatedRoom = roomManager.getRoom(snap.partyId)!
+    assert.strictEqual(updatedRoom.members.has(guestId), false)
+    assert.strictEqual(updatedRoom.state!.playing, true)
+    assert.strictEqual(updatedRoom.state!.reason, "buffer-resume")
+  })
+
+  test("applyCommand compensates sender transport latency via sentAt", () => {
+    const snap = roomManager.createRoom("latency_host", "Host", undefined, "item_lat")
+    assert.ok(snap)
+
+    // Play captured ~150ms before the server processes it: position advances
+    const sentAt = Date.now() - 150
+    const state = roomManager.applyCommand(snap.partyId, "latency_host", {
+      type: "play",
+      positionSec: 100,
+      sentAt,
+      clientId: "tab_host",
+      commandId: "cmd_lat1",
+    })
+    assert.ok(state)
+    assert.ok(state.positionSec > 100 + 0.1, `expected advance, got ${state.positionSec}`)
+    assert.ok(state.positionSec <= 100 + 0.5)
+
+    // Pauses capture the exact stop point — never advanced
+    const pauseState = roomManager.applyCommand(snap.partyId, "latency_host", {
+      type: "pause",
+      positionSec: state.positionSec,
+      sentAt: Date.now() - 120,
+      clientId: "tab_host",
+      commandId: "cmd_lat2",
+    })
+    assert.ok(pauseState)
+    assert.strictEqual(pauseState.positionSec, state.positionSec)
+  })
+
+  test("applyCommand clamps sentAt compensation so poisoned timestamps can't distort the playhead", () => {
+    const snap = roomManager.createRoom("latency_clamp_host", "Host", undefined, "item_lat2")
+    assert.ok(snap)
+
+    // sentAt 60s in the past — compensation saturates at the 2s clamp
+    const state = roomManager.applyCommand(snap.partyId, "latency_clamp_host", {
+      type: "play",
+      positionSec: 50,
+      sentAt: Date.now() - 60_000,
+      clientId: "tab_host",
+      commandId: "cmd_lat3",
+    })
+    assert.ok(state)
+    assert.ok(state.positionSec >= 51.9 && state.positionSec <= 52.5, `got ${state.positionSec}`)
   })
 
   test("capacity limits constants are properly defined", () => {

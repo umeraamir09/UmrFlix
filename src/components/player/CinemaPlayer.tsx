@@ -92,6 +92,13 @@ export function CinemaPlayer({
   const watchedReportedRef = useRef(false)
   const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const debugAutoOpenedRef = useRef(false)
+  // Scrub seek coalescing: the seek bar fires onSeek on every pointermove
+  // (60Hz+ during a drag). Without throttling, a single drag floods the
+  // command endpoint and trips the 20-per-10s rate limit, dropping the final
+  // position and leaving the room at a stale playhead.
+  const lastSeekSendAtRef = useRef(0)
+  const pendingSeekRef = useRef<number | null>(null)
+  const seekFlushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   // Once playback has started (or autoplay is requested) stream rebuilds keep playing
   const playIntentRef = useRef(autoPlay)
   // Tracks whether a stream has ever been attached — used to preserve the
@@ -794,13 +801,38 @@ export function CinemaPlayer({
       const video = videoRef.current
       if (!video) return
       video.currentTime = t
+      if (!party?.partyId) return
 
-      if (party?.partyId) {
-        partySync.sendCommand("seek", t)
+      // Coalesce scrub seeks: send at most one command per 500ms, but always
+      // flush the final drag position (trailing edge) so the room lands where
+      // the user let go — never at a rate-limited stale position.
+      const now = Date.now()
+      pendingSeekRef.current = t
+      if (now - lastSeekSendAtRef.current >= 500) {
+        lastSeekSendAtRef.current = now
+        const target = pendingSeekRef.current
+        pendingSeekRef.current = null
+        partySync.sendCommand("seek", target)
+      } else {
+        if (seekFlushTimerRef.current) clearTimeout(seekFlushTimerRef.current)
+        seekFlushTimerRef.current = setTimeout(() => {
+          const target = pendingSeekRef.current
+          if (target === null) return
+          pendingSeekRef.current = null
+          lastSeekSendAtRef.current = Date.now()
+          partySync.sendCommand("seek", target)
+        }, 500)
       }
     },
     [party?.partyId, partySync]
   )
+
+  // Flush a pending scrub seek when leaving the page
+  useEffect(() => {
+    return () => {
+      if (seekFlushTimerRef.current) clearTimeout(seekFlushTimerRef.current)
+    }
+  }, [])
 
   const rebuildAtPosition = useCallback((apply: () => void) => {
     seekTargetRef.current = videoRef.current?.currentTime ?? 0

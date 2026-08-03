@@ -5,6 +5,7 @@ import { useToast } from "@/components/Toast"
 import { acquireSharedEventSource } from "@/lib/use-event-stream"
 import {
   DRIFT_THRESHOLDS,
+  PARTY_BUFFERING,
   PartyCommand,
   PartyCommandType,
   PartyMember,
@@ -56,7 +57,11 @@ export function usePartySync({
   const serverOffsetRef = useRef<number>(0)
   const bufferingTimerRef = useRef<NodeJS.Timeout | null>(null)
   const bufferingReportedRef = useRef<boolean>(false)
-  const isSeekingOrScrubbingRef = useRef<boolean>(false)
+  const scrubUntilRef = useRef<number>(0)
+  const recoveryCheckRef = useRef<{
+    timer: NodeJS.Timeout | null
+    startedAt: number
+  } | null>(null)
   const prevMembersRef = useRef<PartyMember[]>([])
   const userIdRef = useRef<string | null>(null)
   const isOwnerRef = useRef<boolean>(false)
@@ -80,15 +85,18 @@ export function usePartySync({
       const video = videoRef.current
       if (!video || state.senderClientId === clientId) return
 
-      // Don't fight the user's in-flight scrub on the same item
-      if (isSeekingOrScrubbingRef.current) return
-
-      // Play / Pause parity
+      // Play / Pause parity — always enforced, even mid-scrub: a buffer-hold
+      // must never be skipped because the user is dragging the seek bar.
       if (state.playing && video.paused) {
         video.play().catch(() => {})
       } else if (!state.playing && !video.paused) {
         video.pause()
       }
+
+      // Don't reposition while the user is actively scrubbing or right after
+      // a seek that hasn't settled (seeking into an unbuffered region can
+      // delay `seeked` by seconds — the window is time-bound, not event-bound).
+      if (Date.now() < scrubUntilRef.current) return
 
       const serverNowEst = Date.now() + serverOffsetRef.current
       let targetPos = predictedPosition(state, serverNowEst)
@@ -243,6 +251,21 @@ export function usePartySync({
         playbackRate,
         clientId,
         commandId,
+        // Server-space capture time so the server can advance the position by
+        // the transport delay — otherwise every command leaves the group
+        // targeting a playhead one RTT behind the issuer.
+        sentAt: Date.now() + serverOffsetRef.current,
+      }
+
+      const revertLocal = () => {
+        const v = videoRef.current
+        if (!v) return
+        if (type === "play" && !v.paused) v.pause()
+        if (type === "pause" && v.paused) v.play().catch(() => {})
+        if (type === "rate") {
+          const roomRate = partyStateRef.current?.playbackRate ?? 1.0
+          v.playbackRate = roomRate
+        }
       }
 
       try {
@@ -257,9 +280,24 @@ export function usePartySync({
             versionRef.current = data.state.version
             setPartyState(data.state)
           }
+          // Rejected by room rules (play refused during a buffer-hold, rate
+          // refused for non-owners): the server echoes the current state, so
+          // revert the optimistic local change and let the UI tell the truth.
+          if (data.state) {
+            const s = data.state as PartyState
+            const v = videoRef.current
+            if (type === "play" && s.playing === false && v && !v.paused) v.pause()
+            if (type === "rate" && s.playbackRate && v && v.playbackRate !== s.playbackRate) {
+              v.playbackRate = s.playbackRate
+            }
+          }
+        } else {
+          // 429 / 403 / 5xx — the command didn't land: undo the local action
+          revertLocal()
         }
       } catch (err) {
         console.error("[usePartySync] Send command failed:", err)
+        revertLocal()
       }
     },
     [partyId, clientId, videoRef]
@@ -484,29 +522,83 @@ export function usePartySync({
     const video = videoRef.current
     if (!video || !partyId) return
 
-    const handleWaiting = () => {
-      if (bufferingTimerRef.current) clearTimeout(bufferingTimerRef.current)
-      // Debounce waiting for 1s (ignore micro-stalls); report once per episode.
-      // Lower latency here = peers pause sooner and drift apart less.
-      bufferingTimerRef.current = setTimeout(() => {
-        // `waiting` also fires during seeks/scrubs — don't pause the room for that
-        if (isSeekingOrScrubbingRef.current) return
-        if (!bufferingReportedRef.current) {
-          bufferingReportedRef.current = true
-          sendStatus(true, video.currentTime)
-        }
-      }, 1000)
+    const abortRecovery = () => {
+      if (recoveryCheckRef.current) {
+        if (recoveryCheckRef.current.timer) clearTimeout(recoveryCheckRef.current.timer)
+        recoveryCheckRef.current = null
+      }
     }
 
-    // Recovery signals — report buffering ended on whichever fires first
+    const finishRecovery = () => {
+      abortRecovery()
+      if (bufferingReportedRef.current) {
+        bufferingReportedRef.current = false
+        const v = videoRef.current
+        sendStatus(false, v ? v.currentTime : 0)
+      }
+    }
+
+    const handleWaiting = () => {
+      if (bufferingTimerRef.current) clearTimeout(bufferingTimerRef.current)
+      abortRecovery()
+      // Debounce short stalls; ignore stalls caused by an in-flight seek/scrub.
+      // The window is time-bound, so a seek that lands in unbuffered territory
+      // still gets reported once the scrub window expires.
+      bufferingTimerRef.current = setTimeout(() => {
+        if (Date.now() < scrubUntilRef.current) return
+        const v = videoRef.current
+        // The stall already cleared within the debounce window (the video has
+        // future data again) — reporting it would pause the room for nothing.
+        if (v && v.readyState >= 3) return
+        if (!bufferingReportedRef.current) {
+          bufferingReportedRef.current = true
+          sendStatus(true, v ? v.currentTime : 0)
+        }
+      }, PARTY_BUFFERING.STALL_DEBOUNCE_MS)
+    }
+
+    // Recovery is NOT reported on the first canplay/loadeddata: while the room
+    // pause holds, the stalled member's video keeps loading and `canplay` can
+    // fire with only a thin buffer ahead — that premature "recovered" is what
+    // let the room resume before the buffer was actually complete. Require the
+    // video to be genuinely playing, or a sustained (grace window, no re-stall)
+    // state with enough buffered ahead.
+    const armRecoveryCheck = () => {
+      if (!bufferingReportedRef.current) return
+      if (recoveryCheckRef.current) return
+      const startedAt = Date.now()
+      recoveryCheckRef.current = { timer: null, startedAt }
+      const check = () => {
+        if (!recoveryCheckRef.current) return
+        const v = videoRef.current
+        if (!v) {
+          recoveryCheckRef.current = null
+          return
+        }
+        const bufferAhead = v.buffered.length
+          ? v.buffered.end(v.buffered.length - 1) - v.currentTime
+          : 0
+        const playable =
+          !v.paused ||
+          (Date.now() - startedAt >= PARTY_BUFFERING.RECOVERY_GRACE_MS &&
+            bufferAhead >= PARTY_BUFFERING.RECOVERY_BUFFER_AHEAD_SEC)
+        if (playable) {
+          finishRecovery()
+          return
+        }
+        recoveryCheckRef.current.timer = setTimeout(check, PARTY_BUFFERING.RECOVERY_POLL_MS)
+      }
+      recoveryCheckRef.current.timer = setTimeout(check, PARTY_BUFFERING.RECOVERY_POLL_MS)
+    }
+
+    // Recovery signals — arm the recovery gate on whichever fires first
     const reportRecovered = () => {
       if (bufferingTimerRef.current) {
         clearTimeout(bufferingTimerRef.current)
         bufferingTimerRef.current = null
       }
       if (bufferingReportedRef.current) {
-        bufferingReportedRef.current = false
-        sendStatus(false, video.currentTime)
+        armRecoveryCheck()
       }
     }
 
@@ -514,12 +606,17 @@ export function usePartySync({
     const handleCanPlay = reportRecovered
     const handleLoadedData = reportRecovered
 
+    // Time-bound scrub/seek window: `seeking` fires on every scrub AND on
+    // party-forced repositions, and `seeked` can be delayed for seconds when
+    // the target region isn't buffered. An event-only flag could stay set
+    // forever, silently decoupling the member from the room. The window
+    // expires on its own even if `seeked` never arrives.
     const handleSeeking = () => {
-      isSeekingOrScrubbingRef.current = true
+      scrubUntilRef.current = Date.now() + PARTY_BUFFERING.SCRUB_IGNORE_MS
     }
 
     const handleSeeked = () => {
-      isSeekingOrScrubbingRef.current = false
+      scrubUntilRef.current = 0
     }
 
     video.addEventListener("waiting", handleWaiting)
@@ -531,6 +628,7 @@ export function usePartySync({
 
     return () => {
       if (bufferingTimerRef.current) clearTimeout(bufferingTimerRef.current)
+      abortRecovery()
       video.removeEventListener("waiting", handleWaiting)
       video.removeEventListener("playing", handlePlaying)
       video.removeEventListener("canplay", handleCanPlay)
@@ -540,7 +638,7 @@ export function usePartySync({
     }
   }, [partyId, sendStatus, videoRef])
 
-  // 750ms Drift Corrector Loop (micro rate-slider + hard-seek fallback; discrete
+  // 500ms Drift Corrector Loop (micro rate-slider + hard-seek fallback; discrete
   // peer actions are already applied instantly via applyPartyState on SSE delivery)
   useEffect(() => {
     if (!partyId) return
@@ -548,9 +646,10 @@ export function usePartySync({
     const interval = setInterval(() => {
       const video = videoRef.current
       const state = partyStateRef.current
-      if (!video || !state || isSeekingOrScrubbingRef.current) return
+      if (!video || !state) return
 
-      // Play / Pause Parity (always enforced)
+      // Play / Pause Parity (always enforced — even mid-scrub, so a
+      // buffer-hold can never be skipped while the user drags the seek bar)
       if (state.playing && video.paused) {
         video.play().catch(() => {})
       } else if (!state.playing && !video.paused) {
@@ -565,6 +664,10 @@ export function usePartySync({
         return
       }
 
+      // Skip position corrections only while the user is actively scrubbing
+      // (time-bound, so a slow seek can't wedge the loop permanently)
+      if (Date.now() < scrubUntilRef.current) return
+
       const serverNowEst = Date.now() + serverOffsetRef.current
       let targetPos = predictedPosition(state, serverNowEst)
       if (Number.isFinite(video.duration) && video.duration > 0) {
@@ -576,23 +679,23 @@ export function usePartySync({
 
       // Drift Correction Logic
       if (absDrift < DRIFT_THRESHOLDS.MICRO_LOWER) {
-        // Under 0.15s -> Normal speed
+        // Under 0.12s -> Normal speed
         video.playbackRate = state.playbackRate || 1.0
       } else if (absDrift <= DRIFT_THRESHOLDS.MICRO_UPPER) {
-        // 0.15s to 0.35s -> Micro rate adjustment (±3%)
+        // 0.12s to 0.3s -> Micro rate adjustment (±5%)
         const roomRate = state.playbackRate || 1.0
         const adjust = drift < 0 ? 1 + DRIFT_THRESHOLDS.MICRO_ADJUST : 1 - DRIFT_THRESHOLDS.MICRO_ADJUST
         video.playbackRate = roomRate * adjust
       } else if (absDrift <= DRIFT_THRESHOLDS.MID_UPPER) {
-        // 0.35s to 1.5s -> Medium rate adjustment (±8%)
+        // 0.3s to 1.0s -> Medium rate adjustment (±12%)
         const roomRate = state.playbackRate || 1.0
         const adjust = drift < 0 ? 1 + DRIFT_THRESHOLDS.MID_ADJUST : 1 - DRIFT_THRESHOLDS.MID_ADJUST
         video.playbackRate = roomRate * adjust
       } else {
-        // Over 1.5s -> Hard Seek (throttled: seeks can stall, re-stall, and
-        // churn; never fire more than one per 2.5s per client)
+        // Over 1.0s -> Hard Seek (throttled: seeks can stall, re-stall, and
+        // churn; never fire more than one per 1.5s per client)
         const nowMs = Date.now()
-        if (nowMs - lastHardSeekAtRef.current < 2500) return
+        if (nowMs - lastHardSeekAtRef.current < 1500) return
         lastHardSeekAtRef.current = nowMs
         video.playbackRate = state.playbackRate || 1.0
         lastSeekRef.current = { target: targetPos, at: nowMs }
@@ -602,7 +705,7 @@ export function usePartySync({
           video.currentTime = targetPos
         }
       }
-    }, 750)
+    }, 500)
 
     return () => clearInterval(interval)
   }, [partyId, seekTo, videoRef])
