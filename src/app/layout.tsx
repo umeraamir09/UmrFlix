@@ -2,6 +2,7 @@ import type { Metadata } from "next"
 import "./globals.css"
 import { LayoutShell } from "@/components/LayoutShell"
 import { ToastProvider } from "@/components/Toast"
+import { SWRProvider } from "@/components/SWRProvider"
 
 export const metadata: Metadata = {
   title: "UmrFlix — Your Personal Media Client",
@@ -30,9 +31,11 @@ export default function RootLayout({
         />
       </head>
       <body className="flex min-h-screen flex-col bg-background text-foreground font-sans">
-        <ToastProvider>
-          <LayoutShell>{children}</LayoutShell>
-        </ToastProvider>
+        <SWRProvider>
+          <ToastProvider>
+            <LayoutShell>{children}</LayoutShell>
+          </ToastProvider>
+        </SWRProvider>
       </body>
     </html>
   )

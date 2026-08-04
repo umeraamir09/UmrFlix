@@ -68,7 +68,7 @@ export async function GET() {
     sonarr: sonarrBreaker.getState(),
     jellyfin: jellyfinBreaker.getState(),
     jellyfinSessions: {
-      state: jellyfinAggregate.anyOpen ? "OPEN" : jellyfinBreaker.getState().state,
+      state: jellyfinAggregate.anyOpen ? "OPEN" : "CLOSED",
       openCount: jellyfinAggregate.openCount,
       name: "Jellyfin (per-user)",
     },

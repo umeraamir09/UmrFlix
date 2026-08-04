@@ -18,8 +18,8 @@ export interface SpotlightItem {
 export function SpotlightBanner({ item }: { item: SpotlightItem }) {
   const [bookmarked, setBookmarked] = useState(false)
   const backdropUrl = item.backdrop_path
-    ? `https://image.tmdb.org/t/p/original${item.backdrop_path}`
-    : "https://image.tmdb.org/t/p/original/muth4OYamv31pG2LX2jU2u2vY1n.jpg"
+    ? `https://image.tmdb.org/t/p/w1280${item.backdrop_path}`
+    : "https://image.tmdb.org/t/p/w1280/muth4OYamv31pG2LX2jU2u2vY1n.jpg"
 
   return (
     <div className="relative w-full aspect-[21/9] min-h-[360px] max-h-[500px] overflow-hidden rounded-none border border-border/80 shadow-2xl bg-card">

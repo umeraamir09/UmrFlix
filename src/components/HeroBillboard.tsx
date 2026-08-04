@@ -56,8 +56,8 @@ export function HeroBillboard({ items }: { items: BillboardItem[] }) {
   if (!activeItem) return null
 
   const backdropUrl = activeItem.backdrop_path
-    ? `https://image.tmdb.org/t/p/original${activeItem.backdrop_path}`
-    : "https://image.tmdb.org/t/p/original/muth4OYamv31pG2LX2jU2u2vY1n.jpg"
+    ? `https://image.tmdb.org/t/p/w1280${activeItem.backdrop_path}`
+    : "https://image.tmdb.org/t/p/w1280/muth4OYamv31pG2LX2jU2u2vY1n.jpg"
 
   const title = activeItem.title || "Featured Title"
 
