@@ -912,6 +912,59 @@ export type JellyfinUserPublic = {
   PrimaryImageTag?: string
 }
 
+let adminUserIdsCache: { ids: string[]; timestamp: number } = { ids: [], timestamp: 0 }
+const ADMIN_LIST_TTL_MS = 60_000
+
+export async function getJellyfinAdmins(): Promise<string[]> {
+  if (Date.now() - adminUserIdsCache.timestamp < ADMIN_LIST_TTL_MS) {
+    console.log(`[Notif][getJellyfinAdmins] Returning cached admin IDs (${adminUserIdsCache.ids.length})`, { ids: adminUserIdsCache.ids })
+    return adminUserIdsCache.ids
+  }
+
+  console.log(`[Notif][getJellyfinAdmins] Cache stale — querying Jellyfin for admin users (base: ${BASE})`)
+
+  try {
+    const { token, userId: authUserId } = await authenticate()
+    console.log(`[Notif][getJellyfinAdmins] Authenticated as userId=${authUserId}`)
+
+    // /Users works on all Jellyfin versions and returns Policy.IsAdministrator.
+    // /Users/Query is 10.9+ only and requires the token to have admin scope — it
+    // returns 403 when called with a regular user token, producing an empty list.
+    const res = await jellyfinFetch(`${BASE}/Users`, {
+      headers: getAuthHeaders(token),
+    })
+
+    console.log(`[Notif][getJellyfinAdmins] GET /Users -> HTTP ${res.status}`)
+
+    if (!res.ok) {
+      const body = await res.text().catch(() => "(no body)")
+      console.error(`[Notif][getJellyfinAdmins] /Users returned ${res.status} — cannot resolve admins. Body: ${body}`)
+      adminUserIdsCache = { ids: [], timestamp: Date.now() }
+      return []
+    }
+
+    const rawUsers: { Id?: string; Name?: string; Policy?: { IsAdministrator?: boolean } }[] = await res.json()
+    console.log(`[Notif][getJellyfinAdmins] /Users returned ${rawUsers.length} user(s)`)
+
+    // Log each user so we can see who has IsAdministrator set
+    for (const u of rawUsers) {
+      console.log(`[Notif][getJellyfinAdmins]   user id=${u.Id} name=${u.Name} isAdmin=${u?.Policy?.IsAdministrator ?? "(no Policy field)"}`)
+    }
+
+    const ids = rawUsers
+      .filter((u) => u?.Id && u?.Policy?.IsAdministrator === true)
+      .map((u) => u.Id as string)
+
+    console.log(`[Notif][getJellyfinAdmins] Resolved ${ids.length} admin(s)`, { ids })
+    adminUserIdsCache = { ids, timestamp: Date.now() }
+    return ids
+  } catch (err) {
+    adminUserIdsCache = { ids: [], timestamp: Date.now() }
+    console.error("[Notif][getJellyfinAdmins] Exception — failed to resolve admin IDs:", err)
+    return []
+  }
+}
+
 export async function getJellyfinUsers(): Promise<JellyfinUserPublic[]> {
   try {
     const { token, breaker } = await authenticate()

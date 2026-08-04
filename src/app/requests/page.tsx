@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react"
 import Link from "next/link"
+import useSWR from "swr"
 import {
   Clock,
   CheckCircle2,
@@ -13,7 +14,46 @@ import {
   Search,
   ArrowLeft,
   BookmarkPlus,
+  Download,
 } from "lucide-react"
+
+type TrackedDownload = {
+  requestId: string
+  userId: string
+  title: string
+  mediaType: "movie" | "tv"
+  tmdbId?: number
+  progress: number
+  dlspeed?: number
+  eta?: number
+  state?: string
+  hash?: string
+  updatedAt: number
+}
+
+function formatSpeed(bytesPerSec?: number): string {
+  if (bytesPerSec == null || bytesPerSec <= 0) return ""
+  const units = ["B/s", "KB/s", "MB/s", "GB/s"]
+  let val = bytesPerSec
+  let i = 0
+  while (val >= 1024 && i < units.length - 1) {
+    val /= 1024
+    i++
+  }
+  return `${val >= 100 ? Math.round(val) : val.toFixed(1)} ${units[i]}`
+}
+
+function formatEta(seconds?: number): string {
+  if (seconds == null) return ""
+  if (seconds < 0 || seconds >= 86400 * 365) return "∞"
+  if (seconds < 60) return `${Math.max(1, Math.round(seconds))}s`
+  const mins = Math.round(seconds / 60)
+  if (mins < 60) return `${mins}m`
+  const hours = Math.floor(mins / 60)
+  const remMins = mins % 60
+  if (hours < 48) return `${hours}h ${remMins}m`
+  return `${Math.floor(hours / 24)}d ${hours % 24}h`
+}
 
 type RequestItem = {
   id: string
@@ -47,22 +87,34 @@ export default function MyRequestsPage() {
   const [loading, setLoading] = useState(true)
   const [activeTab, setActiveTab] = useState<TabType>("all")
 
-  const fetchMyRequests = async () => {
-    try {
-      const res = await fetch("/api/requests/my")
-      if (res.ok) {
-        const data = await res.json()
-        setRequests(data || [])
-      }
-    } catch {
-      console.error("[RequestsPage] Failed to fetch user requests")
-    } finally {
-      setLoading(false)
-    }
+  const { data: downloadsData } = useSWR<{ items: TrackedDownload[] }>("/api/downloads/progress", {
+    refreshInterval: 10_000,
+    revalidateOnFocus: true,
+  })
+
+  const progressByRequestId = new Map<string, TrackedDownload>()
+  for (const item of downloadsData?.items ?? []) {
+    progressByRequestId.set(item.requestId, item)
   }
 
   useEffect(() => {
-    fetchMyRequests()
+    let cancelled = false
+    void (async () => {
+      try {
+        const res = await fetch("/api/requests/my")
+        if (res.ok) {
+          const data = await res.json()
+          if (!cancelled) setRequests(data || [])
+        }
+      } catch {
+        console.error("[RequestsPage] Failed to fetch user requests")
+      } finally {
+        if (!cancelled) setLoading(false)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
   }, [])
 
   const filteredRequests = requests.filter((r) => {
@@ -270,6 +322,33 @@ export default function MyRequestsPage() {
                       <span className="text-foreground-muted">Denied By:</span>
                       <span className="font-semibold text-red-400">{req.deniedBy}</span>
                     </div>
+                  )}
+
+                  {req.status === "approved" && progressByRequestId.has(req.id) && (
+                    (() => {
+                      const live = progressByRequestId.get(req.id)!
+                      const pct = Math.min(100, Math.max(0, Math.round(live.progress)))
+                      return (
+                        <div className="pt-1.5 border-t border-border/40">
+                          <div className="flex items-center justify-between text-[10px] uppercase tracking-wider mb-1">
+                            <span className="text-foreground-muted flex items-center gap-1">
+                              <Download className="size-3 text-amber-400" /> Download Progress
+                            </span>
+                            <span className="text-amber-300 font-black">{pct}%</span>
+                          </div>
+                          <div className="h-1.5 w-full bg-surface border border-border/40 overflow-hidden">
+                            <div
+                              className="h-full bg-accent transition-all duration-500"
+                              style={{ width: `${pct}%` }}
+                            />
+                          </div>
+                          <div className="flex items-center justify-between text-[10px] text-gray-400 mt-1">
+                            <span>{formatSpeed(live.dlspeed)}</span>
+                            <span>{live.eta != null ? `ETA ${formatEta(live.eta)}` : ""}</span>
+                          </div>
+                        </div>
+                      )
+                    })()
                   )}
                 </div>
 

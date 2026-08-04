@@ -44,6 +44,7 @@ export type RadarrQueueItem = {
   sizeleft: number
   totalSize: number
   progressPercent: number
+  downloadId?: string
 }
 
 export type QualityProfile = {
@@ -93,8 +94,13 @@ export function addMovie(payload: {
   })
 }
 
-export function getQueue(): Promise<RadarrQueueItem[]> {
-  return radarrFetch("/queue")
+export async function getQueue(): Promise<RadarrQueueItem[]> {
+  const res = await radarrFetch<unknown>("/queue")
+  if (Array.isArray(res)) return res as RadarrQueueItem[]
+  if (res && typeof res === "object" && "records" in res && Array.isArray((res as { records: unknown }).records)) {
+    return (res as { records: RadarrQueueItem[] }).records
+  }
+  return []
 }
 
 export function getQualityProfiles(): Promise<QualityProfile[]> {

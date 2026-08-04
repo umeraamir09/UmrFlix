@@ -5,7 +5,21 @@ import type { FunctionReference } from "convex/server"
 import * as radarr from "./radarr"
 import * as sonarr from "./sonarr"
 import { ensureSonarrSeries } from "./cache"
+import { getJellyfinAdmins } from "./jellyfin"
 import { eventBus } from "./event-bus"
+import { getDownloadTracker } from "./download-tracker"
+
+// ── Notification debug logger ──
+// Logs are always active so you can tail the server console to trace the
+// full notification pipeline without toggling NODE_ENV.
+function notifLog(scope: string, msg: string, meta?: Record<string, unknown>) {
+  const ts = new Date().toISOString()
+  if (meta && Object.keys(meta).length > 0) {
+    console.log(`[Notif][${scope}] ${ts} — ${msg}`, meta)
+  } else {
+    console.log(`[Notif][${scope}] ${ts} — ${msg}`)
+  }
+}
 
 export type RequestStatus = "pending" | "approved" | "denied"
 
@@ -39,6 +53,14 @@ export type RequestItem = {
 }
 
 
+export type NotificationType =
+  | "approved"
+  | "denied"
+  | "party_invite"
+  | "admin_request"
+  | "download_update"
+  | "available"
+
 export type UserNotification = {
   id: string
   userId: string
@@ -46,9 +68,11 @@ export type UserNotification = {
   partyId?: string
   title: string
   message: string
-  type: "approved" | "denied" | "party_invite"
+  type: NotificationType
   read: boolean
   createdAt: string
+  jellyfinItemId?: string
+  mediaType?: "movie" | "tv"
 }
 
 type QueryRef<Args extends Record<string, unknown>, Ret> = FunctionReference<"query", "public", Args, Ret>
@@ -64,6 +88,7 @@ const getUserNotificationsRef = "requests:getUserNotifications" as unknown as Qu
 const addNotificationRef = "requests:addNotification" as unknown as MutationRef<Record<string, unknown>, string>
 const markNotificationReadRef = "requests:markNotificationRead" as unknown as MutationRef<{ notifId: string; userId: string }, void>
 const markAllNotificationsReadRef = "requests:markAllNotificationsRead" as unknown as MutationRef<{ userId: string }, void>
+const updateNotificationRef = "requests:updateNotification" as unknown as MutationRef<Record<string, unknown>, void>
 
 function getConvexClient(): ConvexHttpClient | null {
   const url =
@@ -183,9 +208,11 @@ function mapConvexNotification(doc: any): UserNotification {
     partyId: doc.partyId,
     title: doc.title,
     message: doc.message,
-    type: doc.type as "approved" | "denied" | "party_invite",
+    type: doc.type as NotificationType,
     read: doc.read,
     createdAt: doc.createdAt,
+    jellyfinItemId: doc.jellyfinItemId,
+    mediaType: doc.mediaType as "movie" | "tv" | undefined,
   }
 }
 
@@ -359,6 +386,14 @@ export async function createRequest(payload: {
   }
 
   const convex = getConvexClient()
+  notifLog("createRequest", `Persisting request via ${convex ? "Convex" : "local store"}`, {
+    requestId: id,
+    title: payload.title,
+    status,
+    userId: payload.requestedBy.userId,
+    username: payload.requestedBy.username,
+  })
+
   if (convex) {
     try {
       await convex.mutation(createRequestRef, {
@@ -377,7 +412,7 @@ export async function createRequest(payload: {
         rootFolderPath: payload.rootFolderPath,
         seasonsJson: payload.seasons ? JSON.stringify(payload.seasons) : undefined,
       })
-      return newRequest
+      notifLog("createRequest", `Convex mutation OK — requestId=${id}`)
     } catch (err) {
       console.error("[Convex] createRequest mutation failed:", err)
       throw new Error("Failed to save request to database")
@@ -386,9 +421,21 @@ export async function createRequest(payload: {
     const store = ensureFileExists()
     store.requests.push(newRequest)
     saveStore(store)
+    notifLog("createRequest", `Saved to local store — requestId=${id}`)
   }
 
+  notifLog("createRequest", `Emitting SSE event request:created`, { requestId: id, title: payload.title })
   eventBus.emitEvent({ type: "request:created", payload: newRequest })
+
+  if (status === "pending") {
+    notifLog("createRequest", `Scheduling admin notification fan-out`, { requestId: id })
+    notifyAdminsOfNewRequest(newRequest).catch((err) => {
+      notifLog("createRequest", `notifyAdminsOfNewRequest threw`, { requestId: id, error: String(err) })
+    })
+  } else if (status === "approved") {
+    getDownloadTracker().tick().catch(() => {})
+  }
+
   return newRequest
 }
 
@@ -476,6 +523,14 @@ export async function approveRequest(id: string, adminUsername: string): Promise
   }
 
   const convex = getConvexClient()
+  notifLog("approveRequest", `Persisting approval via ${convex ? "Convex" : "local store"}`, {
+    requestId: id,
+    title: req.title,
+    notifId,
+    targetUserId: req.requestedBy.userId,
+    adminUsername,
+  })
+
   if (convex) {
     try {
       await convex.mutation(updateRequestStatusRef, {
@@ -484,6 +539,7 @@ export async function approveRequest(id: string, adminUsername: string): Promise
         approvedBy: adminUsername,
         approvedAt,
       })
+      notifLog("approveRequest", `Convex updateRequestStatus OK`, { requestId: id })
 
       await convex.mutation(addNotificationRef, {
         notifId,
@@ -493,7 +549,7 @@ export async function approveRequest(id: string, adminUsername: string): Promise
         message: notifPayload.message,
         type: "approved",
       })
-      return req
+      notifLog("approveRequest", `Convex addNotification OK`, { notifId, targetUserId: req.requestedBy.userId })
     } catch (err) {
       console.error("[Convex] approveRequest mutation failed:", err)
       throw new Error("Failed to update request status in database")
@@ -506,10 +562,17 @@ export async function approveRequest(id: string, adminUsername: string): Promise
     }
     store.notifications.push(notifPayload)
     saveStore(store)
+    notifLog("approveRequest", `Saved approval + notification to local store`, { requestId: id, notifId })
   }
 
+  notifLog("approveRequest", `Emitting SSE events request:updated + notification:created`, {
+    requestId: id,
+    audience: [req.requestedBy.userId],
+  })
   eventBus.emitEvent({ type: "request:updated", payload: req })
-  eventBus.emitEvent({ type: "notification:created", payload: notifPayload })
+  eventBus.emitEvent({ type: "notification:created", payload: { ...notifPayload, audience: [req.requestedBy.userId] } })
+
+  getDownloadTracker().tick().catch(() => {})
 
   return req
 }
@@ -542,6 +605,15 @@ export async function denyRequest(id: string, adminUsername: string, reason?: st
   }
 
   const convex = getConvexClient()
+  notifLog("denyRequest", `Persisting denial via ${convex ? "Convex" : "local store"}`, {
+    requestId: id,
+    title: req.title,
+    notifId,
+    targetUserId: req.requestedBy.userId,
+    adminUsername,
+    denialReason,
+  })
+
   if (convex) {
     try {
       await convex.mutation(updateRequestStatusRef, {
@@ -551,6 +623,7 @@ export async function denyRequest(id: string, adminUsername: string, reason?: st
         deniedAt,
         denialReason,
       })
+      notifLog("denyRequest", `Convex updateRequestStatus OK`, { requestId: id })
 
       await convex.mutation(addNotificationRef, {
         notifId,
@@ -560,7 +633,7 @@ export async function denyRequest(id: string, adminUsername: string, reason?: st
         message,
         type: "denied",
       })
-      return req
+      notifLog("denyRequest", `Convex addNotification OK`, { notifId, targetUserId: req.requestedBy.userId })
     } catch (err) {
       console.error("[Convex] denyRequest mutation failed:", err)
       throw new Error("Failed to update request status in database")
@@ -573,10 +646,15 @@ export async function denyRequest(id: string, adminUsername: string, reason?: st
     }
     store.notifications.push(notifPayload)
     saveStore(store)
+    notifLog("denyRequest", `Saved denial + notification to local store`, { requestId: id, notifId })
   }
 
+  notifLog("denyRequest", `Emitting SSE events request:updated + notification:created`, {
+    requestId: id,
+    audience: [req.requestedBy.userId],
+  })
   eventBus.emitEvent({ type: "request:updated", payload: req })
-  eventBus.emitEvent({ type: "notification:created", payload: notifPayload })
+  eventBus.emitEvent({ type: "notification:created", payload: { ...notifPayload, audience: [req.requestedBy.userId] } })
 
   return req
 }
@@ -584,29 +662,42 @@ export async function denyRequest(id: string, adminUsername: string, reason?: st
 
 export async function getUserNotifications(userId: string): Promise<UserNotification[]> {
   const convex = getConvexClient()
+  notifLog("getUserNotifications", `Fetching notifications via ${convex ? "Convex" : "local store"}`, { userId })
+
   if (convex) {
     try {
       const docs = await convex.query(getUserNotificationsRef, { userId })
-      return docs.map(mapConvexNotification).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
-    } catch {
-      /* fallback */
+      const mapped = docs.map(mapConvexNotification).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+      notifLog("getUserNotifications", `Convex returned ${mapped.length} notification(s)`, {
+        userId,
+        unread: mapped.filter((n) => !n.read).length,
+        types: [...new Set(mapped.map((n) => n.type))],
+      })
+      return mapped
+    } catch (err) {
+      notifLog("getUserNotifications", `Convex query failed — falling back to local store`, { userId, error: String(err) })
     }
   }
 
   const store = ensureFileExists()
-  return store.notifications
+  const result = store.notifications
     .filter((n) => n.userId === userId)
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+  notifLog("getUserNotifications", `Local store returned ${result.length} notification(s)`, { userId })
+  return result
 }
 
 export async function markNotificationRead(notificationId: string, userId: string): Promise<void> {
   const convex = getConvexClient()
+  notifLog("markNotificationRead", `Marking notifId=${notificationId} as read via ${convex ? "Convex" : "local store"}`, { userId })
+
   if (convex) {
     try {
       await convex.mutation(markNotificationReadRef, { notifId: notificationId, userId })
+      notifLog("markNotificationRead", `Convex mutation OK`, { notifId: notificationId, userId })
       return
-    } catch {
-      /* fallback */
+    } catch (err) {
+      notifLog("markNotificationRead", `Convex mutation failed — falling back to local store`, { notifId: notificationId, error: String(err) })
     }
   }
 
@@ -615,31 +706,38 @@ export async function markNotificationRead(notificationId: string, userId: strin
   if (notif) {
     notif.read = true
     saveStore(store)
+    notifLog("markNotificationRead", `Local store updated`, { notifId: notificationId, userId })
+  } else {
+    notifLog("markNotificationRead", `WARNING: notification not found in local store`, { notifId: notificationId, userId })
   }
 }
 
 export async function markAllNotificationsRead(userId: string): Promise<void> {
   const convex = getConvexClient()
+  notifLog("markAllNotificationsRead", `Marking all as read via ${convex ? "Convex" : "local store"}`, { userId })
+
   if (convex) {
     try {
       await convex.mutation(markAllNotificationsReadRef, { userId })
+      notifLog("markAllNotificationsRead", `Convex mutation OK`, { userId })
       return
-    } catch {
-      /* fallback */
+    } catch (err) {
+      notifLog("markAllNotificationsRead", `Convex mutation failed — falling back to local store`, { userId, error: String(err) })
     }
   }
 
   const store = ensureFileExists()
-  let changed = false
+  let changed = 0
   for (const n of store.notifications) {
     if (n.userId === userId && !n.read) {
       n.read = true
-      changed = true
+      changed++
     }
   }
-  if (changed) {
+  if (changed > 0) {
     saveStore(store)
   }
+  notifLog("markAllNotificationsRead", `Local store updated — ${changed} notification(s) marked read`, { userId })
 }
 
 export async function addPartyInviteNotification(notifPayload: UserNotification): Promise<void> {
@@ -674,5 +772,262 @@ export async function addPartyInviteNotification(notifPayload: UserNotification)
     type: "notification:created",
     payload: { ...notifPayload, audience: [notifPayload.userId] },
   })
+}
+
+// ── Generic notification persistence ──
+
+function genNotifId(): string {
+  return `notif_${Date.now()}_${crypto.randomUUID?.()?.slice(0, 8) ?? Math.random().toString(36).substring(2, 9)}`
+}
+
+async function persistNotification(notif: UserNotification): Promise<void> {
+  const convex = getConvexClient()
+  notifLog("persistNotification", `Persisting via ${convex ? "Convex" : "local store"}`, {
+    notifId: notif.id,
+    type: notif.type,
+    userId: notif.userId,
+    requestId: notif.requestId,
+    title: notif.title,
+  })
+
+  if (convex) {
+    try {
+      await convex.mutation(addNotificationRef, {
+        notifId: notif.id,
+        userId: notif.userId,
+        requestId: notif.requestId,
+        partyId: notif.partyId,
+        title: notif.title,
+        message: notif.message,
+        type: notif.type,
+        jellyfinItemId: notif.jellyfinItemId,
+        mediaType: notif.mediaType,
+      })
+      notifLog("persistNotification", `Convex mutation OK`, { notifId: notif.id, type: notif.type })
+      return
+    } catch (err) {
+      notifLog("persistNotification", `Convex mutation failed — falling back to local store`, { notifId: notif.id, error: String(err) })
+    }
+  }
+
+  const store = ensureFileExists()
+  store.notifications.push(notif)
+  saveStore(store)
+  notifLog("persistNotification", `Saved to local store`, { notifId: notif.id, type: notif.type })
+}
+
+export async function updateNotificationMessage(
+  notificationId: string,
+  userId: string,
+  message: string
+): Promise<void> {
+  const convex = getConvexClient()
+  if (convex) {
+    try {
+      await convex.mutation(updateNotificationRef, { notifId: notificationId, userId, message })
+      return
+    } catch {
+      /* fallback */
+    }
+  }
+
+  const store = ensureFileExists()
+  const notif = store.notifications.find((n) => n.id === notificationId && n.userId === userId)
+  if (notif) {
+    notif.message = message
+    saveStore(store)
+  }
+}
+
+async function findNotifications(userId: string, type: NotificationType, requestId: string): Promise<UserNotification[]> {
+  const all = await getUserNotifications(userId)
+  return all.filter((n) => n.type === type && n.requestId === requestId)
+}
+
+function formatDownloadMessage(title: string, progress: number): string {
+  return `"${title}" is downloading — ${Math.min(100, Math.max(0, Math.round(progress)))}% complete.`
+}
+
+// ── Admin request notifications ──
+
+export async function notifyAdminsOfNewRequest(req: RequestItem): Promise<void> {
+  notifLog("notifyAdmins", `Resolving Jellyfin admin IDs for request`, { requestId: req.id, title: req.title })
+  const adminIds = await getJellyfinAdmins()
+  notifLog("notifyAdmins", `Resolved ${adminIds.length} admin(s)`, { adminIds })
+  if (adminIds.length === 0) {
+    notifLog("notifyAdmins", `WARNING: no admin IDs resolved — admin notification will NOT be sent`, { requestId: req.id })
+    return
+  }
+
+  const createdAt = new Date().toISOString()
+  const typeLabel = req.mediaType === "movie" ? "movie" : "TV show"
+  const details = [
+    `Requested by ${req.requestedBy.username}`,
+    req.year ? String(req.year) : null,
+    req.mediaType === "tv" && req.seasons
+      ? `${req.seasons.filter((s) => s.monitored).length} season(s)`
+      : null,
+  ]
+    .filter(Boolean)
+    .join(" · ")
+
+  for (const adminId of adminIds) {
+    const notif: UserNotification = {
+      id: genNotifId(),
+      userId: adminId,
+      requestId: req.id,
+      title: `New Request: ${req.title}`,
+      message: `${typeLabel} "${req.title}" — ${details}. Review and approve or deny the request.`,
+      type: "admin_request",
+      read: false,
+      createdAt,
+      mediaType: req.mediaType,
+    }
+    notifLog("notifyAdmins", `Persisting admin_request notification for adminId=${adminId}`, {
+      notifId: notif.id,
+      requestId: req.id,
+      title: notif.title,
+    })
+    await persistNotification(notif)
+    notifLog("notifyAdmins", `Emitting SSE notification:created for adminId=${adminId}`, { notifId: notif.id })
+    eventBus.emitEvent({
+      type: "notification:created",
+      payload: { ...notif, audience: [adminId] },
+    })
+  }
+  notifLog("notifyAdmins", `Fan-out complete — notified ${adminIds.length} admin(s)`, { requestId: req.id })
+}
+
+// ── Download progress notifications ──
+
+export async function notifyDownloadStarted(req: RequestItem, progress?: number): Promise<string | null> {
+  const pct = progress ?? 0
+  notifLog("notifyDownloadStarted", `Checking for existing download_update notification`, {
+    requestId: req.id,
+    title: req.title,
+    userId: req.requestedBy.userId,
+    pct,
+  })
+
+  const existing = await findNotifications(req.requestedBy.userId, "download_update", req.id)
+  if (existing.length > 0) {
+    const n = existing[0]
+    notifLog("notifyDownloadStarted", `Existing download notification found — updating message`, {
+      notifId: n.id,
+      read: n.read,
+      pct,
+    })
+    if (!n.read) {
+      await updateNotificationMessage(n.id, n.userId, formatDownloadMessage(req.title, pct))
+    }
+    return n.id
+  }
+
+  notifLog("notifyDownloadStarted", `No existing notification — creating new download_update notification`, {
+    requestId: req.id,
+    title: req.title,
+    userId: req.requestedBy.userId,
+    pct,
+  })
+
+  const notif: UserNotification = {
+    id: genNotifId(),
+    userId: req.requestedBy.userId,
+    requestId: req.id,
+    title: `Downloading: ${req.title}`,
+    message: formatDownloadMessage(req.title, pct),
+    type: "download_update",
+    read: false,
+    createdAt: new Date().toISOString(),
+    mediaType: req.mediaType,
+  }
+  await persistNotification(notif)
+  notifLog("notifyDownloadStarted", `Emitting SSE notification:created`, {
+    notifId: notif.id,
+    audience: [notif.userId],
+  })
+  eventBus.emitEvent({
+    type: "notification:created",
+    payload: { ...notif, audience: [notif.userId] },
+  })
+  return notif.id
+}
+
+export async function updateDownloadProgressNotif(req: RequestItem, progress: number): Promise<void> {
+  notifLog("updateDownloadProgressNotif", `Updating download progress`, {
+    requestId: req.id,
+    title: req.title,
+    userId: req.requestedBy.userId,
+    progress: Math.round(progress),
+  })
+  const existing = await findNotifications(req.requestedBy.userId, "download_update", req.id)
+  if (existing.length > 0) {
+    const n = existing[0]
+    if (!n.read) {
+      const updatedMessage = formatDownloadMessage(req.title, progress)
+      await updateNotificationMessage(n.id, n.userId, updatedMessage)
+      eventBus.emitEvent({
+        type: "notification:created",
+        payload: { ...n, message: updatedMessage, audience: [n.userId] },
+      })
+    } else {
+      notifLog("updateDownloadProgressNotif", `Skipping update — notification already marked read`, { notifId: n.id })
+    }
+    return
+  }
+  notifLog("updateDownloadProgressNotif", `No existing notification found — creating one`, { requestId: req.id })
+  await notifyDownloadStarted(req, progress)
+}
+
+// ── "Available to play" notifications ──
+
+export async function notifyItemAvailable(req: RequestItem, jellyfinItemId?: string | null): Promise<boolean> {
+  notifLog("notifyItemAvailable", `Checking if already notified for availability`, {
+    requestId: req.id,
+    title: req.title,
+    userId: req.requestedBy.userId,
+    jellyfinItemId: jellyfinItemId ?? null,
+  })
+
+  const userNotifs = await getUserNotifications(req.requestedBy.userId)
+  const alreadyNotified = userNotifs.some((n) => n.type === "available" && n.requestId === req.id)
+  if (alreadyNotified) {
+    notifLog("notifyItemAvailable", `Already notified — skipping`, { requestId: req.id })
+    return false
+  }
+
+  const existingDl = userNotifs.find((n) => n.type === "download_update" && n.requestId === req.id)
+  if (existingDl && !existingDl.read) {
+    notifLog("notifyItemAvailable", `Marking stale download_update notification as read`, { notifId: existingDl.id })
+    await markNotificationRead(existingDl.id, existingDl.userId)
+  }
+
+  const notif: UserNotification = {
+    id: genNotifId(),
+    userId: req.requestedBy.userId,
+    requestId: req.id,
+    title: `Available Now: ${req.title}`,
+    message: `"${req.title}" has finished downloading and is now ready to watch.`,
+    type: "available",
+    read: false,
+    createdAt: new Date().toISOString(),
+    jellyfinItemId: jellyfinItemId ?? undefined,
+    mediaType: req.mediaType,
+  }
+  notifLog("notifyItemAvailable", `Persisting 'available' notification`, {
+    notifId: notif.id,
+    title: notif.title,
+    jellyfinItemId: jellyfinItemId ?? null,
+  })
+  await persistNotification(notif)
+  notifLog("notifyItemAvailable", `Emitting SSE download:available + notification:created`, {
+    notifId: notif.id,
+    audience: [notif.userId],
+  })
+  eventBus.emitEvent({
+    type: "notification:created",
+    payload: { ...notif, audience: [notif.userId] },
+  })
+  return true
 }
 

@@ -100,9 +100,34 @@ export function useEventStream() {
         notifyReFetch()
         if (data.type === "party_invite") {
           toast("You've been invited to a Watch Party! Check your notifications.", "info")
+        } else if (data.type === "available") {
+          toast(`${data.title} is now available to watch!`, "success")
+        } else if (data.type === "download_update") {
+          toast(data.message, "info")
         }
       } catch {
         // ignore parse errors - already revalidating
+      }
+    }
+
+    const downloadProgress = () => {
+      try {
+        mutate("/api/downloads/progress")
+      } catch {
+        console.error("[EventStream] Failed to handle download:progress event")
+      }
+    }
+
+    const downloadAvailable = (e: MessageEvent) => {
+      try {
+        const data = JSON.parse(e.data)
+        toast(`"${data.title}" is ready to watch!`, "success")
+        notifyReFetch()
+        mutate("/api/notifications")
+        mutate("/api/downloads/progress")
+        mutate((key) => typeof key === "string" && key.startsWith("/api/availability"))
+      } catch {
+        console.error("[EventStream] Failed to parse download:available event")
       }
     }
 
@@ -136,6 +161,8 @@ export function useEventStream() {
     es.addEventListener("notification:created", notificationCreated)
     es.addEventListener("media:grabbed", mediaGrabbed)
     es.addEventListener("media:downloaded", mediaDownloaded)
+    es.addEventListener("download:progress", downloadProgress)
+    es.addEventListener("download:available", downloadAvailable)
 
     es.onerror = () => {
       console.error("[EventStream] Connection error, will auto-reconnect")
@@ -147,6 +174,8 @@ export function useEventStream() {
       es.removeEventListener("notification:created", notificationCreated)
       es.removeEventListener("media:grabbed", mediaGrabbed)
       es.removeEventListener("media:downloaded", mediaDownloaded)
+      es.removeEventListener("download:progress", downloadProgress)
+      es.removeEventListener("download:available", downloadAvailable)
       closeSharedEventSource()
     }
 

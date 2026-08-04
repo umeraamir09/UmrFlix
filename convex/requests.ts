@@ -123,6 +123,8 @@ export const addNotification = mutation({
     title: v.string(),
     message: v.string(),
     type: v.string(),
+    jellyfinItemId: v.optional(v.string()),
+    mediaType: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     return await ctx.db.insert("notifications", {
@@ -135,7 +137,33 @@ export const addNotification = mutation({
       type: args.type,
       read: false,
       createdAt: new Date().toISOString(),
+      jellyfinItemId: args.jellyfinItemId,
+      mediaType: args.mediaType,
     })
+  },
+})
+
+export const updateNotification = mutation({
+  args: {
+    notifId: v.string(),
+    userId: v.string(),
+    message: v.optional(v.string()),
+    read: v.optional(v.boolean()),
+  },
+  handler: async (ctx, args) => {
+    const notifs = await ctx.db
+      .query("notifications")
+      .withIndex("by_user", (q) => q.eq("userId", args.userId))
+      .collect()
+
+    for (const n of notifs) {
+      if (n.notifId !== args.notifId) continue
+      const patch: Record<string, unknown> = {}
+      if (args.message !== undefined) patch.message = args.message
+      if (args.read !== undefined) patch.read = args.read
+      await ctx.db.patch(n._id, patch)
+      return
+    }
   },
 })
 

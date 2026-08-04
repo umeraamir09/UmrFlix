@@ -11,7 +11,9 @@
 import type * as cache from "../cache.js";
 import type * as crons from "../crons.js";
 import type * as myList from "../myList.js";
+import type * as party from "../party.js";
 import type * as requests from "../requests.js";
+import type * as userProfiles from "../userProfiles.js";
 
 import type {
   ApiFromModules,
@@ -23,7 +25,9 @@ declare const fullApi: ApiFromModules<{
   cache: typeof cache;
   crons: typeof crons;
   myList: typeof myList;
+  party: typeof party;
   requests: typeof requests;
+  userProfiles: typeof userProfiles;
 }>;
 
 /**
