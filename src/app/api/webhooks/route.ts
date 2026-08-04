@@ -1,16 +1,77 @@
 import { NextRequest, NextResponse } from "next/server"
 import { eventBus } from "@/lib/event-bus"
-import { invalidateAll } from "@/lib/cache"
+import { invalidateAll, getTmdbToTvdbMapping } from "@/lib/cache"
+import {
+  getAllRequests,
+  notifyDownloadStarted,
+  notifyItemAvailable,
+} from "@/lib/requests-store"
+import { getDownloadTracker } from "@/lib/download-tracker"
+
+type WebhookMedia = {
+  title?: string
+  tmdbId?: number
+  tvdbId?: number
+  id?: number
+}
+
+function pickMedia(payload: Record<string, unknown>): { movie?: WebhookMedia; series?: WebhookMedia } {
+  const movie = payload.movie as WebhookMedia | undefined
+  const series = payload.series as WebhookMedia | undefined
+  return {
+    movie: movie
+      ? { title: movie.title, tmdbId: movie.tmdbId, id: movie.id }
+      : undefined,
+    series: series
+      ? { title: series.title, tvdbId: series.tvdbId, id: series.id }
+      : undefined,
+  }
+}
+
+function normalizeTitle(title: string): string {
+  return title.toLowerCase().replace(/[^a-z0-9\s]/g, " ").replace(/\s+/g, " ").trim()
+}
+
+async function findMatchingRequests(media: { movie?: WebhookMedia; series?: WebhookMedia }): Promise<
+  Awaited<ReturnType<typeof getAllRequests>>
+> {
+  const all = await getAllRequests().catch(() => [])
+  const approved = all.filter((r) => r.status === "approved")
+
+  const movie = media.movie
+  const series = media.series
+  const title = movie?.title ?? series?.title
+
+  return approved.filter((r) => {
+    if (movie && r.mediaType === "movie") {
+      if (movie.tmdbId && r.tmdbId === movie.tmdbId) return true
+    }
+    if (series && r.mediaType === "tv") {
+      const targetTvdb = series.tvdbId
+      if (targetTvdb) {
+        const requestTvdb = r.tvdbId ?? getTmdbToTvdbMapping(r.tmdbId) ?? r.tmdbId
+        if (requestTvdb === targetTvdb) return true
+      }
+    }
+    if (title && normalizeTitle(r.title) === normalizeTitle(title)) return true
+    return false
+  })
+}
 
 export async function POST(req: NextRequest) {
   try {
-    // Optional secret check if WEBHOOK_SECRET env var is defined
+    // When WEBHOOK_SECRET is configured, every request must present it
+    // (x-webhook-secret header or ?secret=). Without it configured, events
+    // still broadcast over SSE and invalidate caches — but the notification
+    // write path is skipped so unauthenticated callers can't spam users.
+    let authenticated = false
     const webhookSecret = process.env.WEBHOOK_SECRET
     if (webhookSecret) {
       const authHeader = req.headers.get("x-webhook-secret") || req.nextUrl.searchParams.get("secret")
       if (authHeader !== webhookSecret) {
         return NextResponse.json({ error: "Unauthorized webhook request" }, { status: 401 })
       }
+      authenticated = true
     }
 
     const payload = await req.json()
@@ -28,13 +89,28 @@ export async function POST(req: NextRequest) {
     }
 
     if (mappedType) {
+      const media = pickMedia(payload)
       eventBus.emitEvent({
         type: mappedType,
         payload: {
-          ...(payload.movie ? { movie: { title: payload.movie.title } } : {}),
-          ...(payload.series ? { series: { title: payload.series.title } } : {}),
+          ...(media.movie ? { movie: media.movie } : {}),
+          ...(media.series ? { series: media.series } : {}),
         },
       })
+
+      getDownloadTracker()
+
+      const matches = await findMatchingRequests(media)
+      if (authenticated) {
+        for (const req of matches) {
+          if (mappedType === "media:grabbed") {
+            await notifyDownloadStarted(req).catch(() => null)
+          } else {
+            await notifyItemAvailable(req).catch(() => null)
+          }
+        }
+      }
+
       // A grab or download changes availability state, so drop the cached
       // "Available Now / In Your Library" rows, genre profiles, etc.
       await invalidateAll()

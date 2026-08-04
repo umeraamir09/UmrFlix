@@ -46,6 +46,7 @@ export type SonarrQueueItem = {
   sizeleft: number
   totalSize: number
   progressPercent: number
+  downloadId?: string
 }
 
 export type SonarrEpisode = {
@@ -105,8 +106,13 @@ export function addSeries(payload: {
   })
 }
 
-export function getQueue(): Promise<SonarrQueueItem[]> {
-  return sonarrFetch("/queue")
+export async function getQueue(): Promise<SonarrQueueItem[]> {
+  const res = await sonarrFetch<unknown>("/queue")
+  if (Array.isArray(res)) return res as SonarrQueueItem[]
+  if (res && typeof res === "object" && "records" in res && Array.isArray((res as { records: unknown }).records)) {
+    return (res as { records: SonarrQueueItem[] }).records
+  }
+  return []
 }
 
 export function getEpisodes(seriesId: number): Promise<SonarrEpisode[]> {

@@ -76,6 +76,11 @@ cp .env.example .env.local
 | `SONARR_URL` / `SONARR_API_KEY` | Sonarr instance URL and API key |
 | `JELLYFIN_URL` / `JELLYFIN_USERNAME` / `JELLYFIN_PASSWORD` | Jellyfin connection details |
 
+#### Webhooks & notification settings
+
+- `WEBHOOK_SECRET` — optional shared secret for `/api/webhooks`. When set, webhook POSTs must send it via the `x-webhook-secret` header or `?secret=` query param; without it, webhook events still broadcast over SSE but notification persistence is skipped.
+- `NOTIF_DEBUG` — set to `1` to enable verbose notification pipeline logging (includes user/admin IDs — keep off in production).
+
 ### 3. Run the dev server
 
 ```bash

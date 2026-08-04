@@ -54,6 +54,8 @@ export default defineSchema({
     type: v.string(),
     read: v.boolean(),
     createdAt: v.string(),
+    jellyfinItemId: v.optional(v.string()),
+    mediaType: v.optional(v.string()),
   })
     .index("by_user", ["userId"])
     .index("by_user_read", ["userId", "read"]),

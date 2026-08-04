@@ -2,19 +2,37 @@ import { EventEmitter } from "events"
 import type { RequestItem, UserNotification } from "./requests-store"
 
 type MediaGrabbedPayload = {
-  movie?: { title: string }
-  series?: { title: string }
+  movie?: { title?: string; tmdbId?: number; id?: number }
+  series?: { title?: string; tvdbId?: number; id?: number }
   torrentHash?: string
 }
 
 type MediaDownloadedPayload = {
-  movie?: { title: string }
-  series?: { title: string }
+  movie?: { title?: string; tmdbId?: number; id?: number }
+  series?: { title?: string; tvdbId?: number; id?: number }
 }
 
 type MediaRenamedPayload = {
-  movie?: { title: string }
-  series?: { title: string }
+  movie?: { title?: string; tmdbId?: number; id?: number }
+  series?: { title?: string; tvdbId?: number; id?: number }
+}
+
+export type DownloadProgressPayload = {
+  requestId: string
+  title: string
+  mediaType: "movie" | "tv"
+  tmdbId?: number
+  progress: number
+  dlspeed?: number
+  eta?: number
+  state?: string
+}
+
+export type DownloadAvailablePayload = {
+  requestId: string
+  title: string
+  mediaType: "movie" | "tv"
+  jellyfinItemId?: string
 }
 
 import type { PartyMember, PartyState } from "./party/protocol"
@@ -26,6 +44,8 @@ export type AppServerEvent =
   | { type: "media:grabbed"; payload: MediaGrabbedPayload }
   | { type: "media:downloaded"; payload: MediaDownloadedPayload }
   | { type: "media:renamed"; payload: MediaRenamedPayload }
+  | { type: "download:progress"; payload: DownloadProgressPayload & { audience?: string[] } }
+  | { type: "download:available"; payload: DownloadAvailablePayload & { audience?: string[] } }
   | { type: "party:state"; payload: { partyId: string; state: PartyState; audience: string[] } }
   | { type: "party:membership"; payload: { partyId: string; action: "join" | "leave" | "owner-changed" | "ended"; ownerId: string; members: PartyMember[]; audience: string[] } }
   | { type: "party:invited"; payload: { partyId: string; inviterId: string; inviterName: string; audience: string[] } }

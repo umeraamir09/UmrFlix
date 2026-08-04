@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react"
 import Link from "next/link"
+import useSWR from "swr"
 import {
   Clock,
   CheckCircle2,
@@ -13,7 +14,23 @@ import {
   Search,
   ArrowLeft,
   BookmarkPlus,
+  Download,
 } from "lucide-react"
+import { formatSpeed, formatEta } from "@/lib/format"
+
+type TrackedDownload = {
+  requestId: string
+  userId: string
+  title: string
+  mediaType: "movie" | "tv"
+  tmdbId?: number
+  progress: number
+  dlspeed?: number
+  eta?: number
+  state?: string
+  hash?: string
+  updatedAt: number
+}
 
 type RequestItem = {
   id: string
@@ -47,22 +64,34 @@ export default function MyRequestsPage() {
   const [loading, setLoading] = useState(true)
   const [activeTab, setActiveTab] = useState<TabType>("all")
 
-  const fetchMyRequests = async () => {
-    try {
-      const res = await fetch("/api/requests/my")
-      if (res.ok) {
-        const data = await res.json()
-        setRequests(data || [])
-      }
-    } catch {
-      console.error("[RequestsPage] Failed to fetch user requests")
-    } finally {
-      setLoading(false)
-    }
+  const { data: downloadsData } = useSWR<{ items: TrackedDownload[] }>("/api/downloads/progress", {
+    refreshInterval: 10_000,
+    revalidateOnFocus: true,
+  })
+
+  const progressByRequestId = new Map<string, TrackedDownload>()
+  for (const item of downloadsData?.items ?? []) {
+    progressByRequestId.set(item.requestId, item)
   }
 
   useEffect(() => {
-    fetchMyRequests()
+    let cancelled = false
+    void (async () => {
+      try {
+        const res = await fetch("/api/requests/my")
+        if (res.ok) {
+          const data = await res.json()
+          if (!cancelled) setRequests(data || [])
+        }
+      } catch {
+        console.error("[RequestsPage] Failed to fetch user requests")
+      } finally {
+        if (!cancelled) setLoading(false)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
   }, [])
 
   const filteredRequests = requests.filter((r) => {
@@ -270,6 +299,33 @@ export default function MyRequestsPage() {
                       <span className="text-foreground-muted">Denied By:</span>
                       <span className="font-semibold text-red-400">{req.deniedBy}</span>
                     </div>
+                  )}
+
+                  {req.status === "approved" && progressByRequestId.has(req.id) && (
+                    (() => {
+                      const live = progressByRequestId.get(req.id)!
+                      const pct = Math.min(100, Math.max(0, Math.round(live.progress)))
+                      return (
+                        <div className="pt-1.5 border-t border-border/40">
+                          <div className="flex items-center justify-between text-[10px] uppercase tracking-wider mb-1">
+                            <span className="text-foreground-muted flex items-center gap-1">
+                              <Download className="size-3 text-amber-400" /> Download Progress
+                            </span>
+                            <span className="text-amber-300 font-black">{pct}%</span>
+                          </div>
+                          <div className="h-1.5 w-full bg-surface border border-border/40 overflow-hidden">
+                            <div
+                              className="h-full bg-accent transition-all duration-500"
+                              style={{ width: `${pct}%` }}
+                            />
+                          </div>
+                          <div className="flex items-center justify-between text-[10px] text-gray-400 mt-1">
+                            <span>{formatSpeed(live.dlspeed)}</span>
+                            <span>{live.eta != null ? `ETA ${formatEta(live.eta)}` : ""}</span>
+                          </div>
+                        </div>
+                      )
+                    })()
                   )}
                 </div>
 
