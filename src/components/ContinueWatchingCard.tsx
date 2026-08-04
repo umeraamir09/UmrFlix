@@ -61,7 +61,7 @@ export function ContinueWatchingCard({
   dimmed?: boolean
 }) {
   const cardRef = useRef<HTMLDivElement>(null)
-  const { playHref, backdropUrl, displayEpisodeInfo } = getContinueWatchingMedia(item)
+  const { playHref, backdropUrl } = getContinueWatchingMedia(item)
 
   // Hover flyout only makes sense on devices with a real pointer
   const hoverCapable = () =>
@@ -82,9 +82,15 @@ export function ContinueWatchingCard({
       }}
     >
       {/* ── Base Compact Card (Normal View) ── */}
-      <Link href={playHref} className="flex flex-col w-full cursor-pointer">
-        {/* 16:9 Thumbnail Image */}
-        <div className="relative aspect-video w-full overflow-hidden rounded-[4px] bg-grey-850 border border-grey-750 shadow-md transition-all duration-10">
+      {/* 16:9 Thumbnail — play link + always-visible mark-as-watched overlay.
+          The button is always shown (no hover) so touch/keyboard users can use it
+          without the pointer-only hover flyout. */}
+      <div className="relative aspect-video w-full overflow-hidden rounded-[4px] bg-grey-850 border border-grey-750 shadow-md transition-all duration-10">
+        <Link
+          href={playHref}
+          aria-label={`Play ${item.title}`}
+          className="absolute inset-0 z-0 cursor-pointer"
+        >
           <Image
             src={backdropUrl}
             alt={item.title}
@@ -93,65 +99,55 @@ export function ContinueWatchingCard({
             className="object-cover transition-transform duration-10"
             unoptimized
           />
+        </Link>
 
-          {/* NEXT UP Badge (Top-Left) */}
-          {item.isNextUp && (
-            <div className="absolute top-2 left-2 z-10 rounded-[3px] bg-accent px-2 py-0.5 text-[10px] font-bold text-white shadow uppercase tracking-wide">
-              Next Up
-            </div>
-          )}
-
-          {/* Time Remaining Badge (Top-Right) */}
-          {item.timeLeft && !item.isNextUp && (
-            <div className="absolute top-2 right-2 z-10 rounded-[3px] bg-black/80 px-2 py-0.5 text-[10px] font-medium text-white backdrop-blur-sm">
-              {item.timeLeft}
-            </div>
-          )}
-        </div>
-
-        {/* Standalone Progress Bar Below Thumbnail */}
-        {!item.isNextUp && (
-          <div className="mt-2 w-[85%] mx-auto h-[3px] bg-grey-400 rounded-full overflow-hidden flex">
-            <div
-              className="h-full bg-accent rounded-full transition-all duration-300"
-              style={{ width: `${Math.min(100, Math.max(0, item.progressPercent))}%` }}
-            />
+        {/* NEXT UP Badge (Top-Left) */}
+        {item.isNextUp && (
+          <div className="absolute top-2 left-2 z-10 rounded-[3px] bg-accent px-2 py-0.5 text-[10px] font-bold text-white shadow uppercase tracking-wide">
+            Next Up
           </div>
         )}
-      </Link>
 
-      {/* Base Info Line Below Progress Bar — always visible so the title and
-          mark-as-watched stay reachable on touch/keyboard (the flyout is hover-only). */}
-      <div className="mt-1.5 flex items-start justify-between gap-2 px-0.5">
-        <div className="min-w-0 space-y-0.5">
-          <h3 className="text-xs sm:text-sm font-bold text-white line-clamp-1 group-hover:text-accent transition-colors">
-            {item.title}
-          </h3>
-          {displayEpisodeInfo ? (
-            <p className="text-[11px] font-medium text-grey-100 line-clamp-1">
-              {displayEpisodeInfo}
-            </p>
-          ) : (
-            <p className="text-[10px] font-medium text-grey-200">Sub | Dub</p>
-          )}
-        </div>
+        {/* Time Remaining Badge (Top-Right) */}
+        {item.timeLeft && !item.isNextUp && (
+          <div className="absolute top-2 right-2 z-10 rounded-[3px] bg-black/80 px-2 py-0.5 text-[10px] font-medium text-white backdrop-blur-sm">
+            {item.timeLeft}
+          </div>
+        )}
 
+        {/* Mark Watched (Bottom-Right) */}
         {item.jellyfinItemId && (
           <button
             onClick={onMarkWatched}
             disabled={marking}
             title="Mark as watched"
             aria-label={`Mark ${item.title} as watched`}
-            className="flex size-7 shrink-0 items-center justify-center rounded-full border border-grey-400 bg-grey-750 text-white transition-all hover:border-white active:scale-95 disabled:opacity-50 cursor-pointer"
+            className="absolute bottom-2 right-2 z-10 flex size-6 items-center justify-center rounded-full border border-white/25 bg-black/60 text-white backdrop-blur-sm transition-all hover:border-white active:scale-95 disabled:opacity-50 cursor-pointer"
           >
             {marking ? (
-              <Loader2 className="size-3.5 animate-spin text-grey-100" />
+              <Loader2 className="size-3.5 animate-spin" />
             ) : (
               <Check className="size-3.5 stroke-[2.5]" />
             )}
           </button>
         )}
       </div>
+
+      {/* Standalone Progress Bar Below Thumbnail — still a play target */}
+      {!item.isNextUp && (
+        <Link
+          href={playHref}
+          aria-label={`Play ${item.title}`}
+          className="mt-2 block w-[85%] mx-auto cursor-pointer"
+        >
+          <div className="h-[3px] bg-grey-400 rounded-full overflow-hidden flex">
+            <div
+              className="h-full bg-accent rounded-full transition-all duration-300"
+              style={{ width: `${Math.min(100, Math.max(0, item.progressPercent))}%` }}
+            />
+          </div>
+        </Link>
+      )}
     </div>
   )
 }
