@@ -48,6 +48,7 @@ function mapItem(item: JellyfinResumeItem, isNextUp: boolean) {
     title,
     episodeTitle,
     episodeNumber,
+    overview: item.Overview,
     imageUrl,
     mediaType: item.Type === "Episode" ? "tv" : "movie",
     progressPercent,

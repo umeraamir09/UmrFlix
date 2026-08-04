@@ -94,10 +94,10 @@ export function Navbar() {
                 <Link
                   key={link.href}
                   href={link.href}
-                  className={`h-full flex items-center px-3.5 text-sm font-semibold transition-colors ${
+                  className={`h-full flex items-center px-3.5 text-sm font-medium transition-colors ${
                     isActive
                       ? "text-white font-bold"
-                      : "text-white/80 hover:text-gray-300"
+                      : "text-[#B3B3B3] hover:text-[#E5E5E5]"
                   }`}
                 >
                   {link.label}

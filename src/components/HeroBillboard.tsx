@@ -121,16 +121,21 @@ export function HeroBillboard({ items }: { items: BillboardItem[] }) {
           <div className="flex flex-wrap items-center gap-3 pt-2">
             <Link
               href={
-                // In library → straight to the fullscreen player; otherwise
-                // the detail page (where the title can be requested).
                 activeItem.inLibrary && activeItem.jellyfinItemId
                   ? `/watch?id=${activeItem.jellyfinItemId}${activeItem.media_type === "tv" ? "&type=tv" : ""}`
                   : `/${activeItem.media_type}/${activeItem.id}`
               }
-              className="inline-flex items-center justify-center gap-2 rounded-none border border-transparent bg-accent px-5 sm:px-6 py-3 text-xs sm:text-sm font-bold uppercase tracking-wider text-white shadow-xl hover:bg-accent-hover transition-all active:scale-95 shrink-0"
+              className="inline-flex items-center justify-center gap-2.5 rounded-[4px] border border-transparent bg-white px-6 py-3 text-sm font-semibold text-black shadow-lg hover:bg-[#E5E5E5] active:bg-[#DCDCDC] transition-all active:scale-[0.98] shrink-0 cursor-pointer"
             >
-              <IconPlay className="size-4 fill-white" />
-              {activeItem.inLibrary ? "WATCH NOW" : "EXPLORE & REQUEST"}
+              <IconPlay className="size-4 fill-black text-black" />
+              {activeItem.inLibrary ? "Play" : "More Info"}
+            </Link>
+
+            <Link
+              href={`/${activeItem.media_type}/${activeItem.id}`}
+              className="inline-flex items-center justify-center gap-2 rounded-[4px] border border-transparent bg-[rgba(109,109,110,0.7)] px-5 py-3 text-sm font-semibold text-white shadow-lg hover:bg-[rgba(109,109,110,0.4)] backdrop-blur-sm transition-all active:scale-[0.98] shrink-0 cursor-pointer"
+            >
+              Details
             </Link>
 
             <BookmarkButton
@@ -146,29 +151,29 @@ export function HeroBillboard({ items }: { items: BillboardItem[] }) {
         <>
           <button
             onClick={prevSlide}
-            className="absolute left-4 top-1/2 -translate-y-1/2 rounded-none bg-black/50 p-2.5 text-white opacity-0 transition-opacity hover:bg-accent group-hover:opacity-100 z-30"
+            className="absolute left-4 top-1/2 -translate-y-1/2 rounded-[4px] bg-black/60 p-2.5 text-white opacity-0 transition-all hover:bg-[#E50914] group-hover:opacity-100 z-30 cursor-pointer"
             aria-label="Previous Slide"
           >
             <ChevronLeft className="size-6" />
           </button>
           <button
             onClick={nextSlide}
-            className="absolute right-4 top-1/2 -translate-y-1/2 rounded-none bg-black/50 p-2.5 text-white opacity-0 transition-opacity hover:bg-accent group-hover:opacity-100 z-30"
+            className="absolute right-4 top-1/2 -translate-y-1/2 rounded-[4px] bg-black/60 p-2.5 text-white opacity-0 transition-all hover:bg-[#E50914] group-hover:opacity-100 z-30 cursor-pointer"
             aria-label="Next Slide"
           >
             <ChevronRight className="size-6" />
           </button>
 
-          {/* Bottom Slide Indicators (positioned above the overlapping row) */}
+          {/* Bottom Slide Indicators */}
           <div className="absolute bottom-32 sm:bottom-40 md:bottom-48 left-1/2 -translate-x-1/2 z-30 flex items-center gap-2">
             {items.map((_, idx) => (
               <button
                 key={idx}
                 onClick={() => handleIndicatorClick(idx)}
-                className={`h-1.5 rounded-none transition-all ${
+                className={`h-1.5 rounded-full transition-all ${
                   idx === currentIndex
-                    ? "w-8 bg-accent"
-                    : "w-2 bg-gray-600 hover:bg-gray-400"
+                    ? "w-8 bg-[#E50914]"
+                    : "w-2 bg-[#808080] hover:bg-[#B3B3B3]"
                 }`}
                 aria-label={`Go to slide ${idx + 1}`}
               />

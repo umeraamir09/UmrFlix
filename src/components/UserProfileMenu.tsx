@@ -99,8 +99,8 @@ export function UserProfileMenu() {
       {/* Navbar Avatar Trigger Button */}
       <button
         onClick={() => setOpen(!open)}
-        className={`h-full flex items-center gap-2 px-2.5 rounded-none transition-colors hover:cursor-pointer ${
-          open ? "bg-white/10 text-white" : "text-white/80 hover:text-gray-300"
+        className={`h-full flex items-center gap-2 px-2.5 rounded-[4px] transition-colors hover:cursor-pointer ${
+          open ? "bg-[#262626] text-white" : "text-[#B3B3B3] hover:text-white"
         }`}
         title={`Account: ${user.username}`}
         aria-label="User Account Menu"
@@ -111,34 +111,34 @@ export function UserProfileMenu() {
           <img
             src={user.avatarUrl}
             alt={user.username}
-            className="size-7 object-cover rounded-sm shrink-0"
+            className="size-7 object-cover rounded-[4px] shrink-0"
           />
         ) : (
-          <div className="size-7 bg-accent text-white flex items-center justify-center text-xs font-black uppercase shadow-md shrink-0">
+          <div className="size-7 bg-[#E50914] text-white flex items-center justify-center text-xs font-bold rounded-[4px] shadow-md shrink-0">
             {initial}
           </div>
         )}
-        <span className="text-xs font-bold uppercase tracking-wider hidden md:inline-block max-w-[100px] truncate">
+        <span className="text-xs font-semibold hidden md:inline-block max-w-[100px] truncate">
           {user.username}
         </span>
       </button>
 
-      {/* Crunchyroll-Inspired Avatar Dropdown Menu */}
+      {/* Netflix-Inspired Avatar Dropdown Menu */}
       {open && (
-        <div className="absolute right-0 top-full w-72 sm:w-80 border border-border border-t-0 bg-[#141519] shadow-2xl backdrop-blur-xl rounded-none animate-in fade-in slide-in-from-top-1 duration-150 z-50 text-xs text-gray-200">
+        <div className="absolute right-0 top-full w-72 sm:w-80 border border-[#333333] bg-[#141414] shadow-2xl backdrop-blur-xl rounded-[4px] animate-in fade-in slide-in-from-top-1 duration-150 z-50 text-xs text-[#E5E5E5]">
           
           {/* Header Section: Avatar, Username, Pencil Icon */}
-          <div className="p-4 flex items-center justify-between border-b border-border/80 bg-surface/50">
+          <div className="p-4 flex items-center justify-between border-b border-[#262626] bg-[#181818]">
             <div className="flex items-center gap-3">
               {user.avatarUrl ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
                   src={user.avatarUrl}
                   alt={user.username}
-                  className="size-11 rounded-sm object-cover shadow-md"
+                  className="size-11 rounded-[4px] object-cover shadow-md"
                 />
               ) : (
-                <div className="size-11 rounded-full bg-accent text-white flex items-center justify-center text-base font-black uppercase shadow-md">
+                <div className="size-11 rounded-full bg-[#E50914] text-white flex items-center justify-center text-base font-bold uppercase shadow-md">
                   {initial}
                 </div>
               )}
@@ -151,7 +151,7 @@ export function UserProfileMenu() {
                     </span>
                   )}
                 </div>
-                <p className="text-[11px] text-foreground-muted font-medium">
+                <p className="text-[11px] text-[#B3B3B3] font-medium">
                   {user.isAdmin ? "Administrator" : "Member"}
                 </p>
               </div>
@@ -161,70 +161,51 @@ export function UserProfileMenu() {
                 setOpen(false)
                 router.push("/account/avatar")
               }}
-              className="p-1.5 text-gray-400 hover:text-white transition-colors rounded-none hover:bg-surface-hover"
+              className="p-1.5 text-[#808080] hover:text-white transition-colors rounded-[4px] hover:bg-[#262626]"
               title="Edit Profile Avatar"
             >
               <Pencil className="size-4" />
             </button>
           </div>
 
-          {/* Promotional / Premium Banner Button */}
-          {/* <div className="p-3 border-b border-border/80 bg-surface/30">
-            <button
-              onClick={() => router.push("/my-list")}
-              className="w-full flex items-center justify-center gap-2 bg-[#fab818] hover:bg-[#e0a412] text-black font-black text-xs uppercase tracking-wider py-2.5 rounded-none shadow-md transition-all active:scale-[0.99] cursor-pointer"
-            >
-              <Crown className="size-4 fill-black" />
-              <span>GO PREMIUM</span>
-            </button>
-          </div> */}
-
           {/* Group 1: Switch Profile & Settings */}
-          <div className="py-1 border-b border-border/80">
-            {/* <button
-              onClick={handleLogout}
-              className="w-full flex items-center gap-3.5 px-4 py-3 text-gray-200 hover:bg-surface-hover hover:text-white transition-colors text-left font-medium cursor-pointer"
-            >
-              <ArrowLeftRight className="size-4 text-gray-400" />
-              <span className="text-sm">Switch Profile</span>
-            </button> */}
-
+          <div className="py-1 border-b border-[#262626]">
             <Link
               href="/account/preferences"
               onClick={() => setOpen(false)}
-              className="flex items-center gap-3.5 px-4 py-3 text-gray-200 hover:bg-surface-hover hover:text-white transition-colors text-left font-medium"
+              className="flex items-center gap-3.5 px-4 py-3 text-[#E5E5E5] hover:bg-[#262626] hover:text-white transition-colors text-left font-medium"
             >
-              <Settings className="size-4 text-gray-400" />
+              <Settings className="size-4 text-[#808080]" />
               <span className="text-sm">Settings</span>
             </Link>
           </div>
 
           {/* Group 2: Requests, Watchlist & Library / History */}
-          <div className="py-1 border-b border-border/80">
+          <div className="py-1 border-b border-[#262626]">
             <Link
               href="/requests"
               onClick={() => setOpen(false)}
-              className="flex items-center gap-3.5 px-4 py-3 text-gray-200 hover:bg-surface-hover hover:text-white transition-colors font-medium"
+              className="flex items-center gap-3.5 px-4 py-3 text-[#E5E5E5] hover:bg-[#262626] hover:text-white transition-colors font-medium"
             >
-              <History className="size-4 text-accent" />
+              <History className="size-4 text-[#E50914]" />
               <span className="text-sm">My Requests</span>
             </Link>
 
             <Link
               href="/my-list"
               onClick={() => setOpen(false)}
-              className="flex items-center gap-3.5 px-4 py-3 text-gray-200 hover:bg-surface-hover hover:text-white transition-colors font-medium"
+              className="flex items-center gap-3.5 px-4 py-3 text-[#E5E5E5] hover:bg-[#262626] hover:text-white transition-colors font-medium"
             >
-              <Bookmark className="size-4 text-gray-400" />
+              <Bookmark className="size-4 text-[#808080]" />
               <span className="text-sm">Watchlist</span>
             </Link>
 
             <Link
               href="/library"
               onClick={() => setOpen(false)}
-              className="flex items-center gap-3.5 px-4 py-3 text-gray-200 hover:bg-surface-hover hover:text-white transition-colors font-medium"
+              className="flex items-center gap-3.5 px-4 py-3 text-[#E5E5E5] hover:bg-[#262626] hover:text-white transition-colors font-medium"
             >
-              <History className="size-4 text-gray-400" />
+              <History className="size-4 text-[#808080]" />
               <span className="text-sm">My Library & History</span>
             </Link>
 
@@ -232,32 +213,21 @@ export function UserProfileMenu() {
               <Link
                 href="/admin"
                 onClick={() => setOpen(false)}
-                className="flex items-center gap-3.5 px-4 py-3 hover:bg-surface-hover transition-colors font-bold border-t border-border/40"
+                className="flex items-center gap-3.5 px-4 py-3 text-[#E5E5E5] hover:bg-[#262626] hover:text-white transition-colors font-semibold border-t border-[#262626]"
               >
-                <ShieldCheck className="size-4" />
+                <ShieldCheck className="size-4 text-[#E50914]" />
                 <span className="text-sm">Admin Dashboard</span>
               </Link>
             )}
           </div>
 
-          {/* Group 3: Notifications
-          <div className="py-1 border-b border-border/80">
-            <div className="flex items-center justify-between px-4 py-3 text-gray-200 hover:bg-surface-hover hover:text-white transition-colors font-medium cursor-pointer">
-              <div className="flex items-center gap-3.5">
-                <Bell className="size-4 text-gray-400" />
-                <span className="text-sm">Notifications</span>
-              </div>
-              <span className="size-2 rounded-full bg-accent" title="System Status Active" />
-            </div>
-          </div> */}
-
-          {/* Group 4: Log Out */}
+          {/* Group 3: Log Out */}
           <div className="py-1">
             <button
               onClick={handleLogout}
-              className="w-full flex items-center gap-3.5 px-4 py-3 text-gray-200 hover:bg-accent/15 hover:text-accent transition-colors text-left font-medium cursor-pointer"
+              className="w-full flex items-center gap-3.5 px-4 py-3 text-[#E5E5E5] hover:bg-[#E50914]/15 hover:text-[#E50914] transition-colors text-left font-medium cursor-pointer"
             >
-              <LogOut className="size-4 text-gray-400 group-hover:text-accent" />
+              <LogOut className="size-4 text-[#808080] group-hover:text-[#E50914]" />
               <span className="text-sm font-semibold">Log Out</span>
             </button>
           </div>

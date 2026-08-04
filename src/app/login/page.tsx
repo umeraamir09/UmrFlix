@@ -79,23 +79,23 @@ export default function LoginPage() {
 
       {/* Login Form Panel */}
       <main className="relative z-10 w-full max-w-md mx-auto px-4 py-12">
-        <div className="rounded-none border border-border bg-surface p-8 shadow-2xl space-y-6">
-          <div className="space-y-1.5 text-left border-b border-border pb-4">
-            <h1 className="text-2xl font-black uppercase tracking-tight text-white">Sign In</h1>
-            <p className="text-xs text-foreground-muted">
-              Authenticate with your Jellyfin server account for personalized watchlists and requests.
+        <div className="rounded-[4px] border border-[#333333] bg-[#141414]/90 p-8 sm:p-10 shadow-2xl space-y-6 backdrop-blur-md">
+          <div className="space-y-1.5 text-left border-b border-[#262626] pb-4">
+            <h1 className="text-3xl font-bold tracking-tight text-white">Sign In</h1>
+            <p className="text-xs text-[#B3B3B3]">
+              Sign in with your server account to access watchlists and media requests.
             </p>
           </div>
 
           {error && (
-            <div className="flex items-start gap-3 p-3.5 rounded-none bg-accent/10 border border-accent text-accent text-xs font-semibold animate-fadeIn">
+            <div className="flex items-start gap-3 p-3.5 rounded-[4px] bg-[#E50914]/10 border border-[#E50914] text-[#E50914] text-xs font-semibold animate-fadeIn">
               <AlertCircle className="size-4 shrink-0 mt-0.5" />
               <span>{error}</span>
             </div>
           )}
 
           {success && (
-            <div className="flex items-start gap-3 p-3.5 rounded-none bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-xs font-semibold animate-fadeIn">
+            <div className="flex items-start gap-3 p-3.5 rounded-[4px] bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-xs font-semibold animate-fadeIn">
               <CheckCircle2 className="size-4 shrink-0 mt-0.5" />
               <span>Authenticated successfully! Redirecting...</span>
             </div>
@@ -104,35 +104,35 @@ export default function LoginPage() {
           <form onSubmit={handleSubmit} className="space-y-4">
             {/* Username Input */}
             <div className="space-y-1.5">
-              <label className="text-[11px] font-black uppercase tracking-wider text-foreground-muted">
+              <label className="text-xs font-medium text-[#B3B3B3]">
                 Jellyfin Username
               </label>
               <div className="relative">
-                <User className="absolute left-3.5 top-1/2 -translate-y-1/2 size-4 text-muted" />
+                <User className="absolute left-3.5 top-1/2 -translate-y-1/2 size-4 text-[#808080]" />
                 <input
                   type="text"
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
-                  placeholder="Username"
+                  placeholder="Email or username"
                   required
-                  className="w-full rounded-none bg-background border border-border focus:border-accent text-sm text-white placeholder-muted py-3 pl-10 pr-4 focus:outline-none transition-colors"
+                  className="w-full rounded-[4px] bg-[#333333] border border-[#414141] focus:border-[#E50914] text-sm text-white placeholder-[#808080] py-3 pl-10 pr-4 focus:outline-none transition-colors"
                 />
               </div>
             </div>
 
             {/* Password Input */}
             <div className="space-y-1.5">
-              <label className="text-[11px] font-black uppercase tracking-wider text-foreground-muted">
+              <label className="text-xs font-medium text-[#B3B3B3]">
                 Password
               </label>
               <div className="relative">
-                <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 size-4 text-muted" />
+                <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 size-4 text-[#808080]" />
                 <input
                   type="password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="••••••••"
-                  className="w-full rounded-none bg-background border border-border focus:border-accent text-sm text-white placeholder-muted py-3 pl-10 pr-4 focus:outline-none transition-colors"
+                  className="w-full rounded-[4px] bg-[#333333] border border-[#414141] focus:border-[#E50914] text-sm text-white placeholder-[#808080] py-3 pl-10 pr-4 focus:outline-none transition-colors"
                 />
               </div>
             </div>
@@ -142,10 +142,10 @@ export default function LoginPage() {
               <button
                 type="button"
                 onClick={() => setShowAdvanced(!showAdvanced)}
-                className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-foreground-muted hover:text-white transition-colors"
+                className="flex items-center gap-1.5 text-xs font-semibold text-[#B3B3B3] hover:text-white transition-colors"
               >
                 <Server className="size-3.5" />
-                <span>CUSTOM SERVER URL</span>
+                <span>Custom Server URL</span>
                 {showAdvanced ? <ChevronUp className="size-3.5" /> : <ChevronDown className="size-3.5" />}
               </button>
 
@@ -156,9 +156,9 @@ export default function LoginPage() {
                     value={serverUrl}
                     onChange={(e) => setServerUrl(e.target.value)}
                     placeholder="http://localhost:8096"
-                    className="w-full rounded-none bg-background border border-border focus:border-accent text-xs text-white placeholder-muted py-2.5 px-3 focus:outline-none transition-colors"
+                    className="w-full rounded-[4px] bg-[#333333] border border-[#414141] focus:border-[#E50914] text-xs text-white placeholder-[#808080] py-2.5 px-3 focus:outline-none transition-colors"
                   />
-                  <p className="text-[10px] text-muted">
+                  <p className="text-[10px] text-[#808080]">
                     Leave blank to use default configured Jellyfin server URL.
                   </p>
                 </div>
@@ -169,15 +169,15 @@ export default function LoginPage() {
             <button
               type="submit"
               disabled={loading || success}
-              className="w-full mt-4 rounded-none bg-accent hover:bg-accent-hover disabled:opacity-50 text-white font-black text-xs uppercase tracking-wider py-3.5 transition-all shadow-xl flex items-center justify-center gap-2 cursor-pointer"
+              className="w-full mt-4 rounded-[4px] bg-[#E50914] hover:bg-[#C11119] disabled:opacity-50 text-white font-semibold text-sm py-3 transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer active:scale-[0.98]"
             >
               {loading ? (
                 <>
                   <Loader2 className="size-4 animate-spin" />
-                  <span>AUTHENTICATING...</span>
+                  <span>Signing In...</span>
                 </>
               ) : (
-                <span>SIGN IN</span>
+                <span>Sign In</span>
               )}
             </button>
           </form>

@@ -318,12 +318,12 @@ export function AdminRequestCard({
 
       {/* Action Controls for Pending Queue */}
       {req.status === "pending" && (onApprove || onDeny) && (
-        <div className="flex items-center justify-end gap-3 pt-2 border-t border-border/40">
+        <div className="flex items-center justify-end gap-3 pt-2 border-t border-[#262626]">
           {onDeny && (
             <button
               onClick={() => onDeny(req.id)}
               disabled={actionLoading}
-              className="px-5 py-2 bg-red-600 hover:bg-red-500 text-white font-bold text-xs uppercase tracking-wider transition-all shadow cursor-pointer disabled:opacity-50"
+              className="px-5 py-2.5 bg-[#E50914] hover:bg-[#C11119] text-white font-semibold text-xs rounded-[4px] transition-all shadow cursor-pointer disabled:opacity-50"
             >
               Deny
             </button>
@@ -333,7 +333,7 @@ export function AdminRequestCard({
             <button
               onClick={() => onApprove(req.id)}
               disabled={actionLoading}
-              className="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs uppercase tracking-wider transition-all shadow cursor-pointer disabled:opacity-50 flex items-center gap-2"
+              className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs rounded-[4px] transition-all shadow cursor-pointer disabled:opacity-50 flex items-center gap-2"
             >
               {actionLoading ? (
                 <>

@@ -240,6 +240,7 @@ export type JellyfinResumeItem = {
   SeriesName?: string
   SeriesId?: string
   SeasonName?: string
+  Overview?: string
   IndexNumber?: number // Episode number within its season
   ParentIndexNumber?: number // Season number
   RunTimeTicks?: number
