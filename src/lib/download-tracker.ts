@@ -2,6 +2,7 @@ import {
   getAllRequests,
   notifyDownloadStarted,
   notifyItemAvailable,
+  enrichAvailableNotification,
   updateDownloadProgressNotif,
   type RequestItem,
 } from "./requests-store"
@@ -50,6 +51,7 @@ class DownloadTracker {
   private lastFetchOk = false
   private tracked = new Map<string, TrackState>()
   private snapshot = new Map<string, TrackedDownload>()
+  private completed = new Set<string>()
 
   start(): void {
     if (this.interval) return
@@ -82,7 +84,14 @@ class DownloadTracker {
     if (this.running) return
     this.running = true
     try {
-      const requests = await getAllRequests().catch(() => [])
+      let requests: RequestItem[]
+      try {
+        requests = await getAllRequests()
+      } catch {
+        // Transient store failure — keep current tracking state and retry next
+        // tick instead of wiping progress data.
+        return
+      }
       const approved = requests.filter((r) => r.status === "approved")
       if (approved.length === 0) {
         this.tracked.clear()
@@ -90,12 +99,25 @@ class DownloadTracker {
         return
       }
 
+      let fetchOk = true
       const [torrents, radarrQueue, sonarrQueue] = await Promise.all([
-        getTorrents().catch(() => []),
-        radarr.getQueue().catch(() => []),
-        sonarr.getQueue().catch(() => []),
+        getTorrents().catch(() => {
+          fetchOk = false
+          return []
+        }),
+        radarr.getQueue().catch(() => {
+          fetchOk = false
+          return []
+        }),
+        sonarr.getQueue().catch(() => {
+          fetchOk = false
+          return []
+        }),
       ])
-      this.lastFetchOk = torrents.length > 0 || radarrQueue.length > 0 || sonarrQueue.length > 0
+      // lastFetchOk tracks whether the fetch itself succeeded, not whether any
+      // downloads are present — availability checks must keep running even
+      // after every queue/torrent has cleared.
+      this.lastFetchOk = fetchOk
 
       const [movies, series] = await Promise.all([
         ensureRadarrMovies(() => radarr.getMovies()).catch(() => new Map<number, radarr.RadarrMovie>()),
@@ -131,6 +153,11 @@ class DownloadTracker {
       const availabilityCandidates: RequestItem[] = []
 
       for (const req of approved) {
+        if (this.completed.has(req.id)) {
+          await this.maybeEnrich(req).catch(() => null)
+          continue
+        }
+
         const download = this.resolveDownload(req, {
           movieIdToTmdb,
           seriesIdToTvdb,
@@ -185,7 +212,16 @@ class DownloadTracker {
         })
 
         if (download.progress >= COMPLETE_THRESHOLD_PCT) {
-          await this.completeRequest(req)
+          // Don't notify "ready to watch" until the item is genuinely
+          // available (imported + scanned); otherwise the notification fires
+          // minutes early and can never be enriched with a Jellyfin item id.
+          const available = await this.isAvailable(req)
+          if (available) {
+            await this.completeRequest(req)
+            this.completed.add(req.id)
+            nextTracked.delete(req.id)
+            nextSnapshot.delete(req.id)
+          }
           continue
         }
 
@@ -209,6 +245,11 @@ class DownloadTracker {
         await this.checkAvailability(availabilityCandidates)
       }
 
+      const approvedIds = new Set(approved.map((r) => r.id))
+      for (const id of this.completed) {
+        if (!approvedIds.has(id)) this.completed.delete(id)
+      }
+
       this.tracked = nextTracked
       this.snapshot = nextSnapshot
     } finally {
@@ -219,6 +260,11 @@ class DownloadTracker {
   private async completeRequest(req: RequestItem): Promise<void> {
     const jellyfinItemId = await this.resolveJellyfinItemId(req)
     const notified = await notifyItemAvailable(req, jellyfinItemId).catch(() => false)
+    if (!notified && jellyfinItemId) {
+      // Notification already exists (e.g. created by a webhook before the
+      // Jellyfin index caught up) — backfill the item id so "Watch Now" works.
+      await enrichAvailableNotification(req, jellyfinItemId).catch(() => null)
+    }
     if (notified) {
       eventBus.emitEvent({
         type: "download:available",
@@ -233,6 +279,13 @@ class DownloadTracker {
     }
   }
 
+  private async maybeEnrich(req: RequestItem): Promise<void> {
+    const jellyfinItemId = await this.resolveJellyfinItemId(req)
+    if (jellyfinItemId) {
+      await enrichAvailableNotification(req, jellyfinItemId).catch(() => null)
+    }
+  }
+
   private async checkAvailability(candidates: RequestItem[]): Promise<void> {
     if (!this.lastFetchOk) return
 
@@ -241,6 +294,7 @@ class DownloadTracker {
       const available = await this.isAvailable(req)
       if (available) {
         await this.completeRequest(req)
+        this.completed.add(req.id)
         this.tracked.delete(req.id)
         this.snapshot.delete(req.id)
       }
@@ -256,11 +310,10 @@ class DownloadTracker {
         const movie = movies.get(req.tmdbId)
         if (movie?.hasFile) return true
       }
-      const key =
-        req.mediaType === "movie"
-          ? `tmdb-${req.tmdbId}`
-          : `tvdb-${await this.resolveTvdbId(req)}`
-      if (getJellyfinItemId(key)) return true
+      const keys = this.resolveProviderKeys(req)
+      for (const key of keys) {
+        if (getJellyfinItemId(key)) return true
+      }
       const idx = await ensureJellyfinIndex(async () => {
         try {
           const { token, userId } = await authenticate()
@@ -269,7 +322,7 @@ class DownloadTracker {
           return []
         }
       }).catch(() => new Map<string, string>())
-      return idx.has(key)
+      return keys.some((key) => idx.has(key))
     } catch {
       return false
     }
@@ -277,11 +330,11 @@ class DownloadTracker {
 
   private async resolveJellyfinItemId(req: RequestItem): Promise<string | undefined> {
     try {
-      const key =
-        req.mediaType === "movie"
-          ? `tmdb-${req.tmdbId}`
-          : `tvdb-${await this.resolveTvdbId(req)}`
-      if (getJellyfinItemId(key)) return getJellyfinItemId(key)
+      const keys = this.resolveProviderKeys(req)
+      for (const key of keys) {
+        const cached = getJellyfinItemId(key)
+        if (cached) return cached
+      }
       const idx = await ensureJellyfinIndex(async () => {
         try {
           const { token, userId } = await authenticate()
@@ -290,16 +343,23 @@ class DownloadTracker {
           return []
         }
       }).catch(() => new Map<string, string>())
-      return idx.get(key)
+      for (const key of keys) {
+        const id = idx.get(key)
+        if (id) return id
+      }
+      return undefined
     } catch {
       return undefined
     }
   }
 
-  private async resolveTvdbId(req: RequestItem): Promise<string> {
-    if (req.tvdbId) return String(req.tvdbId)
-    const mapped = getTmdbToTvdbMapping(req.tmdbId)
-    return mapped ? String(mapped) : String(req.tmdbId)
+  private resolveProviderKeys(req: RequestItem): string[] {
+    if (req.mediaType === "movie") return [`tmdb-${req.tmdbId}`]
+    const tvdb = req.tvdbId ?? getTmdbToTvdbMapping(req.tmdbId)
+    const keys: string[] = []
+    if (tvdb) keys.push(`tvdb-${tvdb}`)
+    keys.push(`tmdb-${req.tmdbId}`)
+    return keys
   }
 
   private resolveDownload(
@@ -332,7 +392,7 @@ class DownloadTracker {
         }
       }
     } else {
-      const targetTvdb = req.tvdbId ?? getTmdbToTvdbMapping(req.tmdbId) ?? req.tmdbId
+      const targetTvdb = req.tvdbId ?? getTmdbToTvdbMapping(req.tmdbId)
       for (const [seriesId, items] of sonarrQueueBySeries) {
         if (seriesIdToTvdb.get(seriesId) === targetTvdb) {
           queueItems = items
@@ -363,7 +423,14 @@ class DownloadTracker {
     }
 
     const normTitle = normalizeTitle(req.title)
-    const match = torrents.find((t) => normalizeTitle(t.name).includes(normTitle))
+    // Short titles ("It", "Up") are too ambiguous for substring matching — a
+    // torrent named "It Chapter Two" would otherwise match a request for "It".
+    if (normTitle.length < 4) return null
+    const match = torrents.find((t) => {
+      const name = normalizeTitle(t.name)
+      if (normTitle.length >= 6) return name.includes(normTitle)
+      return name.split(" ").includes(normTitle)
+    })
     if (match) {
       return {
         progress: match.progress * 100,

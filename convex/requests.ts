@@ -149,6 +149,7 @@ export const updateNotification = mutation({
     userId: v.string(),
     message: v.optional(v.string()),
     read: v.optional(v.boolean()),
+    jellyfinItemId: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const notifs = await ctx.db
@@ -161,6 +162,7 @@ export const updateNotification = mutation({
       const patch: Record<string, unknown> = {}
       if (args.message !== undefined) patch.message = args.message
       if (args.read !== undefined) patch.read = args.read
+      if (args.jellyfinItemId !== undefined) patch.jellyfinItemId = args.jellyfinItemId
       await ctx.db.patch(n._id, patch)
       return
     }
@@ -193,6 +195,18 @@ export const markAllNotificationsRead = mutation({
 
     for (const n of notifs) {
       if (!n.read) {
+        await ctx.db.patch(n._id, { read: true })
+      }
+    }
+  },
+})
+
+export const markRequestNotificationsRead = mutation({
+  args: { requestId: v.string() },
+  handler: async (ctx, args) => {
+    const notifs = await ctx.db.query("notifications").collect()
+    for (const n of notifs) {
+      if (n.requestId === args.requestId && n.type === "admin_request" && !n.read) {
         await ctx.db.patch(n._id, { read: true })
       }
     }

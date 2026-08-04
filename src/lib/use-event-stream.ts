@@ -102,8 +102,6 @@ export function useEventStream() {
           toast("You've been invited to a Watch Party! Check your notifications.", "info")
         } else if (data.type === "available") {
           toast(`${data.title} is now available to watch!`, "success")
-        } else if (data.type === "download_update") {
-          toast(data.message, "info")
         }
       } catch {
         // ignore parse errors - already revalidating
@@ -118,10 +116,8 @@ export function useEventStream() {
       }
     }
 
-    const downloadAvailable = (e: MessageEvent) => {
+    const downloadAvailable = () => {
       try {
-        const data = JSON.parse(e.data)
-        toast(`"${data.title}" is ready to watch!`, "success")
         notifyReFetch()
         mutate("/api/notifications")
         mutate("/api/downloads/progress")

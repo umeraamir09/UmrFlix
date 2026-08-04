@@ -15,6 +15,7 @@ import {
   Play,
 } from "lucide-react"
 import { useEventStream, onReFetch } from "@/lib/use-event-stream"
+import { formatSpeed, formatEta } from "@/lib/format"
 import { useToast } from "@/components/Toast"
 import type { UserNotification } from "@/lib/requests-store"
 
@@ -45,30 +46,6 @@ type DownloadsResponse = {
 const fetcher = (url: string) =>
   fetch(url).then((r) => r.json()) as Promise<NotificationsResponse>
 
-function formatSpeed(bytesPerSec?: number): string {
-  if (bytesPerSec == null || bytesPerSec <= 0) return ""
-  const units = ["B/s", "KB/s", "MB/s", "GB/s"]
-  let val = bytesPerSec
-  let i = 0
-  while (val >= 1024 && i < units.length - 1) {
-    val /= 1024
-    i++
-  }
-  return `${val >= 100 ? Math.round(val) : val.toFixed(1)} ${units[i]}`
-}
-
-function formatEta(seconds?: number): string {
-  if (seconds == null) return ""
-  if (seconds < 0 || seconds >= 86400 * 365) return "∞"
-  if (seconds < 60) return `${Math.max(1, Math.round(seconds))}s`
-  const mins = Math.round(seconds / 60)
-  if (mins < 60) return `${mins}m`
-  const hours = Math.floor(mins / 60)
-  const remMins = mins % 60
-  if (hours < 48) return `${hours}h ${remMins}m`
-  return `${Math.floor(hours / 24)}d ${hours % 24}h`
-}
-
 export function NotificationBell() {
   const [open, setOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
@@ -86,12 +63,14 @@ export function NotificationBell() {
     fetch(url).then((r) => r.json()) as Promise<DownloadsResponse>
 
   const { data: downloadsData } = useSWR<DownloadsResponse>("/api/downloads/progress", downloadsFetcher, {
-    refreshInterval: 10_000,
+    refreshInterval: 30_000,
     revalidateOnFocus: true,
   })
 
   const notifications = data?.notifications ?? []
   const unreadNotifications = notifications.filter((n) => !n.read)
+  const readNotifications = notifications.filter((n) => n.read)
+  const visibleNotifications = [...unreadNotifications, ...readNotifications]
   const unreadCount = data?.unreadCount ?? 0
 
   const progressByRequestId = new Map<string, TrackedDownload>()
@@ -156,7 +135,7 @@ export function NotificationBell() {
       const fresh = await res.json()
       mutate(fresh, false)
     } catch {
-      mutate(data, false)
+      mutate()
       toast("Couldn't update notification. Please try again.", "error")
     }
   }
@@ -183,7 +162,7 @@ export function NotificationBell() {
       const fresh = await res.json()
       mutate(fresh, false)
     } catch {
-      mutate(data, false)
+      mutate()
       toast("Couldn't mark notifications as read. Please try again.", "error")
     }
   }
@@ -369,14 +348,14 @@ export function NotificationBell() {
           </div>
 
           <div className="max-h-80 overflow-y-auto divide-y divide-border/40">
-            {unreadNotifications.length === 0 ? (
+            {notifications.length === 0 ? (
               <div className="p-8 text-center text-foreground-muted">
                 <Clock className="size-8 mx-auto mb-2 opacity-40 text-gray-400" />
-                <p className="font-medium text-xs">No unread notifications</p>
+                <p className="font-medium text-xs">No notifications</p>
                 <p className="text-[11px] text-gray-500 mt-1">Updates about your requests will appear here.</p>
               </div>
             ) : (
-              unreadNotifications.map((notif) => {
+              visibleNotifications.map((notif) => {
                 const live = notif.type === "download_update" ? progressByRequestId.get(notif.requestId ?? "") : undefined
                 const message = live
                   ? `"${live.title}" is downloading — ${Math.min(100, Math.max(0, Math.round(live.progress)))}% complete.`
@@ -384,7 +363,7 @@ export function NotificationBell() {
                 return (
                   <div
                     key={notif.id}
-                    className="p-3.5 transition-colors flex items-start gap-3 bg-accent/5"
+                    className={`p-3.5 transition-colors flex items-start gap-3 ${notif.read ? "bg-transparent" : "bg-accent/5"}`}
                   >
                     <div className="pt-0.5 shrink-0">{renderIcon(notif)}</div>
                     <div className="flex-1 space-y-1">

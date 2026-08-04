@@ -7,18 +7,25 @@ import * as sonarr from "./sonarr"
 import { ensureSonarrSeries } from "./cache"
 import { getJellyfinAdmins } from "./jellyfin"
 import { eventBus } from "./event-bus"
-import { getDownloadTracker } from "./download-tracker"
 
 // ── Notification debug logger ──
-// Logs are always active so you can tail the server console to trace the
-// full notification pipeline without toggling NODE_ENV.
+// Opt-in via NOTIF_DEBUG=1 (see .env.example). Logs user IDs, usernames and
+// admin IDs, so keep it off in production.
 function notifLog(scope: string, msg: string, meta?: Record<string, unknown>) {
+  if (process.env.NOTIF_DEBUG !== "1") return
   const ts = new Date().toISOString()
   if (meta && Object.keys(meta).length > 0) {
     console.log(`[Notif][${scope}] ${ts} — ${msg}`, meta)
   } else {
     console.log(`[Notif][${scope}] ${ts} — ${msg}`)
   }
+}
+
+// Lazy import breaks the requests-store ↔ download-tracker circular dependency
+// (each module only calls the other at runtime).
+async function triggerTrackerTick(): Promise<void> {
+  const { getDownloadTracker } = await import("./download-tracker")
+  getDownloadTracker().tick().catch(() => {})
 }
 
 export type RequestStatus = "pending" | "approved" | "denied"
@@ -88,6 +95,7 @@ const getUserNotificationsRef = "requests:getUserNotifications" as unknown as Qu
 const addNotificationRef = "requests:addNotification" as unknown as MutationRef<Record<string, unknown>, string>
 const markNotificationReadRef = "requests:markNotificationRead" as unknown as MutationRef<{ notifId: string; userId: string }, void>
 const markAllNotificationsReadRef = "requests:markAllNotificationsRead" as unknown as MutationRef<{ userId: string }, void>
+const markRequestNotifsReadRef = "requests:markRequestNotificationsRead" as unknown as MutationRef<{ requestId: string }, void>
 const updateNotificationRef = "requests:updateNotification" as unknown as MutationRef<Record<string, unknown>, void>
 
 function getConvexClient(): ConvexHttpClient | null {
@@ -433,7 +441,7 @@ export async function createRequest(payload: {
       notifLog("createRequest", `notifyAdminsOfNewRequest threw`, { requestId: id, error: String(err) })
     })
   } else if (status === "approved") {
-    getDownloadTracker().tick().catch(() => {})
+    void triggerTrackerTick()
   }
 
   return newRequest
@@ -572,7 +580,8 @@ export async function approveRequest(id: string, adminUsername: string): Promise
   eventBus.emitEvent({ type: "request:updated", payload: req })
   eventBus.emitEvent({ type: "notification:created", payload: { ...notifPayload, audience: [req.requestedBy.userId] } })
 
-  getDownloadTracker().tick().catch(() => {})
+  markAdminRequestNotifsRead(req.id).catch(() => {})
+  void triggerTrackerTick()
 
   return req
 }
@@ -655,6 +664,8 @@ export async function denyRequest(id: string, adminUsername: string, reason?: st
   })
   eventBus.emitEvent({ type: "request:updated", payload: req })
   eventBus.emitEvent({ type: "notification:created", payload: { ...notifPayload, audience: [req.requestedBy.userId] } })
+
+  markAdminRequestNotifsRead(req.id).catch(() => {})
 
   return req
 }
@@ -901,12 +912,11 @@ export async function notifyAdminsOfNewRequest(req: RequestItem): Promise<void> 
 // ── Download progress notifications ──
 
 export async function notifyDownloadStarted(req: RequestItem, progress?: number): Promise<string | null> {
-  const pct = progress ?? 0
   notifLog("notifyDownloadStarted", `Checking for existing download_update notification`, {
     requestId: req.id,
     title: req.title,
     userId: req.requestedBy.userId,
-    pct,
+    pct: progress ?? 0,
   })
 
   const existing = await findNotifications(req.requestedBy.userId, "download_update", req.id)
@@ -915,10 +925,12 @@ export async function notifyDownloadStarted(req: RequestItem, progress?: number)
     notifLog("notifyDownloadStarted", `Existing download notification found — updating message`, {
       notifId: n.id,
       read: n.read,
-      pct,
+      pct: progress ?? null,
     })
-    if (!n.read) {
-      await updateNotificationMessage(n.id, n.userId, formatDownloadMessage(req.title, pct))
+    // Only rewrite the message when a real progress value is supplied; callers
+    // without one (e.g. media:grabbed webhooks) must not reset the message.
+    if (progress != null && !n.read) {
+      await updateNotificationMessage(n.id, n.userId, formatDownloadMessage(req.title, progress))
     }
     return n.id
   }
@@ -927,7 +939,7 @@ export async function notifyDownloadStarted(req: RequestItem, progress?: number)
     requestId: req.id,
     title: req.title,
     userId: req.requestedBy.userId,
-    pct,
+    pct: progress ?? 0,
   })
 
   const notif: UserNotification = {
@@ -935,7 +947,7 @@ export async function notifyDownloadStarted(req: RequestItem, progress?: number)
     userId: req.requestedBy.userId,
     requestId: req.id,
     title: `Downloading: ${req.title}`,
-    message: formatDownloadMessage(req.title, pct),
+    message: formatDownloadMessage(req.title, progress ?? 0),
     type: "download_update",
     read: false,
     createdAt: new Date().toISOString(),
@@ -1026,8 +1038,62 @@ export async function notifyItemAvailable(req: RequestItem, jellyfinItemId?: str
   })
   eventBus.emitEvent({
     type: "notification:created",
-    payload: { ...notif, audience: [notif.userId] },
+    payload: { ...notif, title: req.title, audience: [notif.userId] },
   })
   return true
+}
+
+// Backfills `jellyfinItemId` onto an already-created "available" notification
+// (e.g. one created by a webhook before the Jellyfin index caught up), so the
+// "Watch Now" action can render later.
+export async function enrichAvailableNotification(req: RequestItem, jellyfinItemId: string): Promise<void> {
+  const userNotifs = await getUserNotifications(req.requestedBy.userId)
+  const notif = userNotifs.find((n) => n.type === "available" && n.requestId === req.id)
+  if (!notif || notif.jellyfinItemId || !jellyfinItemId) return
+
+  const convex = getConvexClient()
+  if (convex) {
+    try {
+      await convex.mutation(updateNotificationRef, {
+        notifId: notif.id,
+        userId: notif.userId,
+        jellyfinItemId,
+      })
+      return
+    } catch {
+      /* fall back to local store */
+    }
+  }
+
+  const store = ensureFileExists()
+  const target = store.notifications.find((n) => n.id === notif.id && n.userId === notif.userId)
+  if (target) {
+    target.jellyfinItemId = jellyfinItemId
+    saveStore(store)
+  }
+}
+
+// Marks the admin_request notifications for a request as read once an admin
+// has acted on it (approve/deny), so stale unread items don't accumulate.
+export async function markAdminRequestNotifsRead(requestId: string): Promise<void> {
+  const convex = getConvexClient()
+  if (convex) {
+    try {
+      await convex.mutation(markRequestNotifsReadRef, { requestId })
+      return
+    } catch {
+      /* fall back to local store */
+    }
+  }
+
+  const store = ensureFileExists()
+  let changed = false
+  for (const n of store.notifications) {
+    if (n.requestId === requestId && n.type === "admin_request" && !n.read) {
+      n.read = true
+      changed = true
+    }
+  }
+  if (changed) saveStore(store)
 }
 

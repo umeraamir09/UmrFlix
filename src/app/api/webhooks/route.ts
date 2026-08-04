@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { eventBus } from "@/lib/event-bus"
-import { invalidateAll } from "@/lib/cache"
+import { invalidateAll, getTmdbToTvdbMapping } from "@/lib/cache"
 import {
   getAllRequests,
   notifyDownloadStarted,
@@ -48,7 +48,10 @@ async function findMatchingRequests(media: { movie?: WebhookMedia; series?: Webh
     }
     if (series && r.mediaType === "tv") {
       const targetTvdb = series.tvdbId
-      if (targetTvdb && (r.tvdbId === targetTvdb || r.tmdbId === targetTvdb)) return true
+      if (targetTvdb) {
+        const requestTvdb = r.tvdbId ?? getTmdbToTvdbMapping(r.tmdbId) ?? r.tmdbId
+        if (requestTvdb === targetTvdb) return true
+      }
     }
     if (title && normalizeTitle(r.title) === normalizeTitle(title)) return true
     return false
@@ -57,13 +60,18 @@ async function findMatchingRequests(media: { movie?: WebhookMedia; series?: Webh
 
 export async function POST(req: NextRequest) {
   try {
-    // Optional secret check if WEBHOOK_SECRET env var is defined
+    // When WEBHOOK_SECRET is configured, every request must present it
+    // (x-webhook-secret header or ?secret=). Without it configured, events
+    // still broadcast over SSE and invalidate caches — but the notification
+    // write path is skipped so unauthenticated callers can't spam users.
+    let authenticated = false
     const webhookSecret = process.env.WEBHOOK_SECRET
     if (webhookSecret) {
       const authHeader = req.headers.get("x-webhook-secret") || req.nextUrl.searchParams.get("secret")
       if (authHeader !== webhookSecret) {
         return NextResponse.json({ error: "Unauthorized webhook request" }, { status: 401 })
       }
+      authenticated = true
     }
 
     const payload = await req.json()
@@ -93,11 +101,13 @@ export async function POST(req: NextRequest) {
       getDownloadTracker()
 
       const matches = await findMatchingRequests(media)
-      for (const req of matches) {
-        if (mappedType === "media:grabbed") {
-          await notifyDownloadStarted(req, 0).catch(() => null)
-        } else {
-          await notifyItemAvailable(req).catch(() => null)
+      if (authenticated) {
+        for (const req of matches) {
+          if (mappedType === "media:grabbed") {
+            await notifyDownloadStarted(req).catch(() => null)
+          } else {
+            await notifyItemAvailable(req).catch(() => null)
+          }
         }
       }
 
