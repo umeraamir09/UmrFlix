@@ -184,11 +184,11 @@ export function RequestModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in duration-200">
-      <div className="w-full max-w-lg rounded-[4px] bg-[#141414] border border-[#333333] p-6 shadow-2xl space-y-5 max-h-[90vh] overflow-y-auto">
+      <div className="w-full max-w-lg rounded-[4px] bg-grey-900 border border-grey-600 p-6 shadow-2xl space-y-5 max-h-[90vh] overflow-y-auto">
         {/* Header */}
-        <div className="flex items-start justify-between border-b border-[#262626] pb-4">
+        <div className="flex items-start justify-between border-b border-grey-750 pb-4">
           <div>
-            <div className="flex items-center gap-2 text-xs font-semibold text-[#E50914] mb-1">
+            <div className="flex items-center gap-2 text-xs font-semibold text-accent mb-1">
               {type === "movie" ? <Film className="size-3.5" /> : <Tv className="size-3.5" />}
               <span>{type === "movie" ? "Movie Request" : "Series Request"}</span>
             </div>
@@ -198,7 +198,7 @@ export function RequestModal({
           </div>
           <button
             onClick={onClose}
-            className="text-[#808080] hover:text-white p-1 transition-colors rounded-[4px]"
+            className="text-grey-200 hover:text-white p-1 transition-colors rounded-[4px]"
           >
             <X className="size-5" />
           </button>
@@ -206,15 +206,15 @@ export function RequestModal({
 
         {isLoading && (
           <div className="flex flex-col items-center justify-center py-12 space-y-3">
-            <Loader2 className="size-8 animate-spin text-[#E50914]" />
-            <p className="text-xs text-[#B3B3B3] font-medium">
+            <Loader2 className="size-8 animate-spin text-accent" />
+            <p className="text-xs text-grey-100 font-medium">
               Fetching profiles & tags...
             </p>
           </div>
         )}
 
         {error && (
-          <div className="p-4 bg-[#E50914]/10 border border-[#E50914]/40 text-xs text-[#EB3942] rounded-[4px]">
+          <div className="p-4 bg-accent/10 border border-accent/40 text-xs text-secondary-red-100 rounded-[4px]">
             Failed to connect to media management profiles. Please verify Radarr/Sonarr settings.
           </div>
         )}
@@ -224,13 +224,13 @@ export function RequestModal({
             {/* Quality Profile & Root Folder Selectors */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
-                <label className="mb-1.5 block text-xs font-semibold text-[#B3B3B3]">
+                <label className="mb-1.5 block text-xs font-semibold text-grey-100">
                   Quality Profile
                 </label>
                 <select
                   value={qualityProfileId ?? ""}
                   onChange={(e) => setQualityProfileId(Number(e.target.value))}
-                  className="w-full rounded-[4px] border border-[#414141] bg-[#333333] px-3 py-2 text-sm text-white focus:border-[#E50914] focus:outline-none"
+                  className="w-full rounded-[4px] border border-grey-400 bg-grey-600 px-3 py-2 text-sm text-white focus:border-accent focus:outline-none"
                 >
                   {filteredQualityProfiles.map((p) => (
                     <option key={p.id} value={p.id}>
@@ -241,13 +241,13 @@ export function RequestModal({
               </div>
 
               <div>
-                <label className="mb-1.5 block text-xs font-semibold text-[#B3B3B3] flex items-center gap-1.5">
-                  <HardDrive className="size-3.5 text-[#E50914]" /> Root Folder
+                <label className="mb-1.5 block text-xs font-semibold text-grey-100 flex items-center gap-1.5">
+                  <HardDrive className="size-3.5 text-accent" /> Root Folder
                 </label>
                 <select
                   value={rootFolderPath ?? ""}
                   onChange={(e) => setRootFolderPath(e.target.value)}
-                  className="w-full rounded-[4px] border border-[#414141] bg-[#333333] px-3 py-2 text-sm text-white focus:border-[#E50914] focus:outline-none"
+                  className="w-full rounded-[4px] border border-grey-400 bg-grey-600 px-3 py-2 text-sm text-white focus:border-accent focus:outline-none"
                 >
                   {data.rootFolders.map((f) => {
                     const freeStr = formatBytes(f.freeSpace)

@@ -81,7 +81,7 @@ export function MovieCard({
       className={`group relative block w-full flex-shrink-0${disabled ? " cursor-default" : ""}`}
     >
       {/* Poster Image Container */}
-      <div className="relative aspect-[2/3] w-full overflow-hidden rounded-[4px] bg-[#181818] shadow-md border border-[#262626]">
+      <div className="relative aspect-[2/3] w-full overflow-hidden rounded-[4px] bg-grey-850 shadow-md border border-grey-750">
         <Image
           src={posterUrl}
           alt={title}
@@ -115,17 +115,17 @@ export function MovieCard({
 
       {/* Sub-Card Title & Metadata Line (Visible when NOT hovering) */}
       <div className="mt-2 space-y-0.5 px-0.5 group-hover:opacity-0 transition-opacity duration-200">
-        <h3 className="text-xs sm:text-sm font-bold text-white line-clamp-1 group-hover:text-[#E50914] transition-colors">
+        <h3 className="text-xs sm:text-sm font-bold text-white line-clamp-1 group-hover:text-accent transition-colors">
           {title}
         </h3>
-        <p className="text-[11px] font-medium text-[#808080] flex items-center gap-1.5">
+        <p className="text-[11px] font-medium text-grey-200 flex items-center gap-1.5">
           <span>Sub | Dub</span>
           {year && <span>• {year}</span>}
         </p>
       </div>
 
       {/* Netflix-Style Full Hover Overlay (Expands over full card height) */}
-      <div className="absolute inset-0 z-20 bg-[#181818]/95 p-3 sm:p-3.5 flex flex-col justify-between opacity-0 group-hover:opacity-100 transition-opacity duration-200 border border-[#333333] rounded-[4px] shadow-2xl pointer-events-none group-hover:pointer-events-auto">
+      <div className="absolute inset-0 z-20 bg-grey-850/95 p-3 sm:p-3.5 flex flex-col justify-between opacity-0 group-hover:opacity-100 transition-opacity duration-200 border border-grey-600 rounded-[4px] shadow-2xl pointer-events-none group-hover:pointer-events-auto">
         <div className="space-y-1.5 overflow-hidden">
           {/* Title */}
           <h3 className="text-sm sm:text-lg font-bold text-white leading-tight line-clamp-2">

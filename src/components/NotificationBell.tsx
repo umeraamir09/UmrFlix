@@ -312,26 +312,26 @@ export function NotificationBell() {
     <div className="relative h-full flex items-center" ref={menuRef}>
       <button
         onClick={() => setOpen(!open)}
-        className="relative p-2.5 text-[#B3B3B3] hover:text-white transition-colors rounded-[4px]"
+        className="relative p-2.5 text-grey-100 hover:text-white transition-colors rounded-[4px]"
         title="Notifications"
         aria-label="View Notifications"
       >
         <Bell className="size-5" />
         {unreadCount > 0 && (
-          <span className="absolute top-1 right-1 flex size-4 items-center justify-center rounded-full bg-[#E50914] text-[10px] font-bold text-white shadow-md animate-pulse">
+          <span className="absolute top-1 right-1 flex size-4 items-center justify-center rounded-full bg-accent text-[10px] font-bold text-white shadow-md animate-pulse">
             {unreadCount > 9 ? "9+" : unreadCount}
           </span>
         )}
       </button>
 
       {open && (
-        <div className="absolute right-0 top-full w-80 sm:w-96 border border-[#333333] bg-[#141414] shadow-2xl backdrop-blur-xl rounded-[4px] z-50 text-xs text-[#E5E5E5] animate-in fade-in slide-in-from-top-1 duration-150">
-          <div className="p-3.5 border-b border-[#262626] bg-[#181818] flex items-center justify-between">
+        <div className="absolute right-0 top-full w-80 sm:w-96 border border-grey-600 bg-grey-900 shadow-2xl backdrop-blur-xl rounded-[4px] z-50 text-xs text-grey-10 animate-in fade-in slide-in-from-top-1 duration-150">
+          <div className="p-3.5 border-b border-grey-750 bg-grey-850 flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <Bell className="size-4 text-[#E50914]" />
+              <Bell className="size-4 text-accent" />
               <span className="text-sm font-bold text-white uppercase tracking-wider">Notifications</span>
               {unreadCount > 0 && (
-                <span className="px-1.5 py-0.5 rounded-[4px] bg-[#E50914]/20 text-[#E50914] font-bold text-[10px]">
+                <span className="px-1.5 py-0.5 rounded-[4px] bg-accent/20 text-accent font-bold text-[10px]">
                   {unreadCount} NEW
                 </span>
               )}
@@ -339,7 +339,7 @@ export function NotificationBell() {
             {unreadCount > 0 && (
               <button
                 onClick={markAllAsRead}
-                className="flex items-center gap-1 text-[11px] font-semibold text-[#E50914] hover:underline"
+                className="flex items-center gap-1 text-[11px] font-semibold text-accent hover:underline"
               >
                 <CheckCheck className="size-3.5" />
                 Mark all read
@@ -347,12 +347,12 @@ export function NotificationBell() {
             )}
           </div>
 
-          <div className="max-h-80 overflow-y-auto divide-y divide-[#262626]">
+          <div className="max-h-80 overflow-y-auto divide-y divide-grey-750">
             {notifications.length === 0 ? (
-              <div className="p-8 text-center text-[#B3B3B3]">
-                <Clock className="size-8 mx-auto mb-2 opacity-40 text-[#808080]" />
+              <div className="p-8 text-center text-grey-100">
+                <Clock className="size-8 mx-auto mb-2 opacity-40 text-grey-200" />
                 <p className="font-medium text-xs text-white">No notifications</p>
-                <p className="text-[11px] text-[#808080] mt-1">Updates about your requests will appear here.</p>
+                <p className="text-[11px] text-grey-200 mt-1">Updates about your requests will appear here.</p>
               </div>
             ) : (
               visibleNotifications.map((notif) => {
@@ -363,32 +363,32 @@ export function NotificationBell() {
                 return (
                   <div
                     key={notif.id}
-                    className={`p-3.5 transition-colors flex items-start gap-3 ${notif.read ? "bg-transparent hover:bg-[#181818]" : "bg-[#181818]"}`}
+                    className={`p-3.5 transition-colors flex items-start gap-3 ${notif.read ? "bg-transparent hover:bg-grey-850" : "bg-grey-850"}`}
                   >
                     <div className="pt-0.5 shrink-0">{renderIcon(notif)}</div>
                     <div className="flex-1 space-y-1">
                       <div className="flex items-center justify-between">
                         <h4 className="font-bold text-white text-xs tracking-tight">{notif.title}</h4>
-                        <span className="text-[10px] text-[#808080]">
+                        <span className="text-[10px] text-grey-200">
                           {new Date(notif.createdAt).toLocaleDateString(undefined, {
                             month: "short",
                             day: "numeric",
                           })}
                         </span>
                       </div>
-                      <p className="text-[#B3B3B3] text-[11px] leading-relaxed">{message}</p>
+                      <p className="text-grey-100 text-[11px] leading-relaxed">{message}</p>
 
                       {notif.type === "download_update" && live && (
                         <div className="mt-1.5">
-                          <div className="h-1.5 w-full bg-[#262626] border border-[#333333] overflow-hidden rounded-[2px]">
+                          <div className="h-1.5 w-full bg-grey-750 border border-grey-600 overflow-hidden rounded-[2px]">
                             <div
-                              className="h-full bg-[#E50914] transition-all duration-500"
+                              className="h-full bg-accent transition-all duration-500"
                               style={{
                                 width: `${Math.min(100, Math.max(0, live.progress))}%`,
                               }}
                             />
                           </div>
-                          <div className="flex items-center justify-between text-[10px] text-[#808080] mt-1">
+                          <div className="flex items-center justify-between text-[10px] text-grey-200 mt-1">
                             <span>{Math.min(100, Math.max(0, Math.round(live.progress)))}%</span>
                             <span>
                               {formatSpeed(live.dlspeed)}
@@ -409,11 +409,11 @@ export function NotificationBell() {
             )}
           </div>
 
-          <div className="p-2.5 border-t border-[#262626] bg-[#181818] text-center">
+          <div className="p-2.5 border-t border-grey-750 bg-grey-850 text-center">
             <Link
               href="/requests"
               onClick={() => setOpen(false)}
-              className="text-xs font-semibold text-[#B3B3B3] hover:text-white uppercase tracking-wider inline-block py-1"
+              className="text-xs font-semibold text-grey-100 hover:text-white uppercase tracking-wider inline-block py-1"
             >
               Go to My Requests Page
             </Link>

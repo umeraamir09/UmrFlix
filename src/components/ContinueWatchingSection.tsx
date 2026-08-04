@@ -31,12 +31,14 @@ const fetcher = (url: string) => fetch(url).then((r) => r.json())
 
 const HOVER_OPEN_DELAY_MS = 0
 const HOVER_CLOSE_DELAY_MS = 0
-/** Must match the exit transform duration + delay on the flyout. */
-const FLYOUT_EXIT_MS = 100
+/** Must match the exit transform duration + delay on the flyout (exit uses duration-200). */
+const FLYOUT_EXIT_MS = 200
 
 export function ContinueWatchingSection() {
   const [items, setItems] = useState<ContinueWatchingItem[]>([])
   const [loading, setLoading] = useState(true)
+  /** jellyfinItemId currently being marked as watched (shared by base card + flyout). */
+  const [markingId, setMarkingId] = useState<string | null>(null)
   const [viewportWidth, setViewportWidth] = useState(() =>
     typeof window !== "undefined" ? window.innerWidth : 1024
   )
@@ -174,9 +176,22 @@ export function ContinueWatchingSection() {
     load()
   }, [])
 
-  const handleMarkWatched = (jellyfinItemId: string) => {
-    setItems((prev) => prev.filter((item) => item.jellyfinItemId !== jellyfinItemId))
-    if (flyout?.item.jellyfinItemId === jellyfinItemId) setOpen(false)
+  const markWatched = async (item: ContinueWatchingItem) => {
+    if (!item.jellyfinItemId || markingId) return
+    setMarkingId(item.jellyfinItemId)
+    try {
+      const res = await fetch(`/api/jellyfin/played/${item.jellyfinItemId}`, { method: "POST" })
+      if (!res.ok) throw new Error(`Mark watched failed: HTTP ${res.status}`)
+      setItems((prev) => prev.filter((i) => i.jellyfinItemId !== item.jellyfinItemId))
+      setFlyout((prev) =>
+        prev && prev.item.jellyfinItemId === item.jellyfinItemId ? null : prev
+      )
+      setOpen(false)
+    } catch {
+      // Keep the item so the user can retry.
+    } finally {
+      setMarkingId(null)
+    }
   }
 
   const checkScroll = useCallback(() => {
@@ -258,10 +273,10 @@ export function ContinueWatchingSection() {
             {[...Array(4)].map((_, i) => (
               <div key={i} className="flex flex-col shrink-0">
                 {/* 16:9 Skeleton Card */}
-                <div className="aspect-video w-full rounded-[4px] bg-[#2A2A2A] animate-pulse border border-[#333333]/40" />
+                <div className="aspect-video w-full rounded-[4px] bg-grey-700 animate-pulse border border-grey-600/40" />
                 {/* Standalone Progress Bar Skeleton Below Card (Matching Image 3 & 4) */}
-                <div className="mt-2 w-[85%] mx-auto h-[3px] bg-[#414141] rounded-full overflow-hidden flex">
-                  <div className="h-full bg-[#E50914] w-[60%] rounded-full animate-pulse" />
+                <div className="mt-2 w-[85%] mx-auto h-[3px] bg-grey-400 rounded-full overflow-hidden flex">
+                  <div className="h-full bg-accent w-[60%] rounded-full animate-pulse" />
                 </div>
               </div>
             ))}
@@ -296,7 +311,7 @@ export function ContinueWatchingSection() {
           >
             <button
               onClick={() => scroll("left")}
-              className="pointer-events-auto rounded-[4px] bg-[#181818]/90 hover:bg-[#E50914] border border-[#333333] hover:border-[#E50914] p-2.5 sm:p-3 text-white shadow-2xl transition-all duration-200 hover:scale-110 active:scale-95 group-hover/row:opacity-100 hidden sm:block focus:outline-none cursor-pointer"
+              className="pointer-events-auto rounded-[4px] bg-grey-900/90 hover:bg-accent border border-grey-600 hover:border-accent p-2.5 sm:p-3 text-white shadow-2xl transition-all duration-200 hover:scale-110 active:scale-95 group-hover/row:opacity-100 hidden sm:block focus:outline-none cursor-pointer"
               aria-label="Scroll left"
             >
               <ChevronLeft className="size-5 sm:size-6 stroke-[2.5]" />
@@ -311,7 +326,7 @@ export function ContinueWatchingSection() {
           >
             <button
               onClick={() => scroll("right")}
-              className="pointer-events-auto rounded-[4px] bg-[#181818]/90 hover:bg-[#E50914] border border-[#333333] hover:border-[#E50914] p-2.5 sm:p-3 text-white shadow-2xl transition-all duration-200 hover:scale-110 active:scale-95 group-hover/row:opacity-100 hidden sm:block focus:outline-none cursor-pointer"
+              className="pointer-events-auto rounded-[4px] bg-grey-900/90 hover:bg-accent border border-grey-600 hover:border-accent p-2.5 sm:p-3 text-white shadow-2xl transition-all duration-200 hover:scale-110 active:scale-95 group-hover/row:opacity-100 hidden sm:block focus:outline-none cursor-pointer"
               aria-label="Scroll right"
             >
               <ChevronRight className="size-5 sm:size-6 stroke-[2.5]" />
@@ -329,6 +344,8 @@ export function ContinueWatchingSection() {
                 item={item}
                 onHoverEnter={(el) => handleHoverEnter(item, el)}
                 onHoverLeave={handleHoverLeave}
+                onMarkWatched={() => markWatched(item)}
+                marking={markingId === item.jellyfinItemId}
                 dimmed={open && flyout?.item === item}
               />
             ))}
@@ -342,6 +359,8 @@ export function ContinueWatchingSection() {
               item={item}
               onHoverEnter={(el) => handleHoverEnter(item, el)}
               onHoverLeave={handleHoverLeave}
+              onMarkWatched={() => markWatched(item)}
+              marking={markingId === item.jellyfinItemId}
               dimmed={open && flyout?.item === item}
             />
           ))}
@@ -359,7 +378,8 @@ export function ContinueWatchingSection() {
             rect={flyout.rect}
             open={open}
             onExited={handleFlyoutExited}
-            onMarkWatched={handleMarkWatched}
+            onMarkWatched={() => markWatched(flyout.item)}
+            marking={markingId === flyout.item.jellyfinItemId}
             onMouseEnter={() => {
               clearLeaveTimer()
               clearEnterTimer()
@@ -391,6 +411,7 @@ function ContinueWatchingFlyout({
   open,
   onExited,
   onMarkWatched,
+  marking,
   onMouseEnter,
   onMouseLeave,
 }: {
@@ -398,11 +419,12 @@ function ContinueWatchingFlyout({
   rect: { top: number; left: number; width: number }
   open: boolean
   onExited?: () => void
-  onMarkWatched?: (jellyfinItemId: string) => void
+  onMarkWatched?: () => void
+  /** True while the mark-as-watched request for this item is pending. */
+  marking?: boolean
   onMouseEnter?: () => void
   onMouseLeave?: () => void
 }) {
-  const [marking, setMarking] = useState(false)
   const [entered, setEntered] = useState(false)
 
   // Enter: paint one frame in the "covering" transform, then flip to identity.
@@ -425,20 +447,6 @@ function ContinueWatchingFlyout({
       window.clearTimeout(timer)
     }
   }, [open, onExited])
-
-  const handleMarkWatched = async (e: React.MouseEvent) => {
-    e.preventDefault()
-    e.stopPropagation()
-    if (!item.jellyfinItemId || marking) return
-    setMarking(true)
-    try {
-      const res = await fetch(`/api/jellyfin/played/${item.jellyfinItemId}`, { method: "POST" })
-      if (!res.ok) throw new Error(`Mark watched failed: HTTP ${res.status}`)
-      onMarkWatched?.(item.jellyfinItemId)
-    } catch {
-      setMarking(false)
-    }
-  }
 
   const { playHref, detailHref, backdropUrl, displayEpisodeInfo } = getContinueWatchingMedia(item)
 
@@ -464,7 +472,7 @@ function ContinueWatchingFlyout({
       onMouseLeave={onMouseLeave}
     >
       <div
-        className={`flex flex-col overflow-hidden rounded-[6px] border border-[#333333] bg-[#141414] shadow-[0_20px_50px_rgba(0,0,0,0.9)] transition-transform ${
+        className={`flex flex-col overflow-hidden rounded-[6px] border border-grey-600 bg-grey-900 shadow-[0_20px_50px_rgba(0,0,0,0.9)] transition-transform ${
           entered ? "duration-[250ms]" : "duration-200"
         }`}
         style={{
@@ -476,7 +484,7 @@ function ContinueWatchingFlyout({
         }}
       >
         {/* 16:9 Thumbnail Header */}
-        <div className="relative aspect-video w-full overflow-hidden bg-[#181818]">
+        <div className="relative aspect-video w-full overflow-hidden bg-grey-850">
           <Image
             src={backdropUrl}
             alt={item.title}
@@ -489,7 +497,7 @@ function ContinueWatchingFlyout({
 
           {/* NEXT UP Badge */}
           {item.isNextUp && (
-            <div className="absolute top-2 left-2 z-10 rounded-[3px] bg-[#E50914] px-2 py-0.5 text-[10px] font-bold text-white shadow uppercase tracking-wide">
+            <div className="absolute top-2 left-2 z-10 rounded-[3px] bg-accent px-2 py-0.5 text-[10px] font-bold text-white shadow uppercase tracking-wide">
               Next Up
             </div>
           )}
@@ -503,9 +511,9 @@ function ContinueWatchingFlyout({
 
           {/* Bottom Embedded Red Progress Bar */}
           {!item.isNextUp && (
-            <div className="absolute bottom-0 inset-x-0 h-1 bg-[#414141]">
+            <div className="absolute bottom-0 inset-x-0 h-1 bg-grey-400">
               <div
-                className="h-full bg-[#E50914]"
+                className="h-full bg-accent"
                 style={{ width: `${Math.min(100, Math.max(0, item.progressPercent))}%` }}
               />
             </div>
@@ -514,7 +522,7 @@ function ContinueWatchingFlyout({
 
         {/* Expanded Card Body — fades in after the growth starts, out before the shrink ends */}
         <div
-          className={`p-3.5 space-y-3 bg-[#141414] transition-opacity ${
+          className={`p-3.5 space-y-3 bg-grey-900 transition-opacity ${
             entered ? "opacity-100 duration-150 delay-75 ease-out" : "opacity-0 duration-100 ease-in"
           }`}
         >
@@ -523,8 +531,8 @@ function ContinueWatchingFlyout({
             {/* Play Button */}
             <Link
               href={playHref}
-              className="flex size-9 items-center justify-center rounded-full bg-white text-black hover:bg-[#E5E5E5] active:bg-[#DCDCDC] transition-all shadow-md active:scale-95 cursor-pointer"
-              title="Play Episode"
+              className="flex size-9 items-center justify-center rounded-full bg-white text-black hover:bg-grey-10 active:bg-grey-20 transition-all shadow-md active:scale-95 cursor-pointer"
+              title={item.media_type === "tv" ? "Play Episode" : "Play"}
             >
               <IconPlay className="size-4 fill-black text-black ml-0.5" />
             </Link>
@@ -532,13 +540,13 @@ function ContinueWatchingFlyout({
             {/* Mark Watched Button */}
             {item.jellyfinItemId && (
               <button
-                onClick={handleMarkWatched}
+                onClick={onMarkWatched}
                 disabled={marking}
                 title="Mark as watched"
-                className="flex size-9 items-center justify-center rounded-full bg-[#262626] border border-[#414141] hover:border-white text-white transition-all cursor-pointer active:scale-95 disabled:opacity-50"
+                className="flex size-9 items-center justify-center rounded-full bg-grey-750 border border-grey-400 hover:border-white text-white transition-all cursor-pointer active:scale-95 disabled:opacity-50"
               >
                 {marking ? (
-                  <Loader2 className="size-4 animate-spin text-[#B3B3B3]" />
+                  <Loader2 className="size-4 animate-spin text-grey-100" />
                 ) : (
                   <Check className="size-4 stroke-[2.5]" />
                 )}
@@ -548,7 +556,7 @@ function ContinueWatchingFlyout({
             {/* Details Chevron Button */}
             <Link
               href={detailHref}
-              className="ml-auto flex size-9 items-center justify-center rounded-full bg-[#262626] border border-[#414141] hover:border-white text-white transition-all active:scale-95 cursor-pointer"
+              className="ml-auto flex size-9 items-center justify-center rounded-full bg-grey-750 border border-grey-400 hover:border-white text-white transition-all active:scale-95 cursor-pointer"
               title="More Details"
             >
               <ChevronDown className="size-4" />
@@ -561,14 +569,14 @@ function ContinueWatchingFlyout({
               {item.title}
             </h4>
             {displayEpisodeInfo && (
-              <p className="text-xs font-semibold text-[#E50914] line-clamp-1">
+              <p className="text-xs font-semibold text-accent line-clamp-1">
                 {displayEpisodeInfo}
               </p>
             )}
           </div>
 
           {/* Overview & Synopsis Paragraph */}
-          <p className="text-xs text-[#B3B3B3] line-clamp-3 leading-relaxed font-normal">
+          <p className="text-xs text-grey-100 line-clamp-3 leading-relaxed font-normal">
             {item.overview || "This is the overview and synopsis of that particular episode"}
           </p>
         </div>

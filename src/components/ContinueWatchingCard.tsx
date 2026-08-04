@@ -3,6 +3,7 @@
 import Link from "next/link"
 import Image from "next/image"
 import { useRef } from "react"
+import { Check, Loader2 } from "lucide-react"
 
 export interface ContinueWatchingItem {
   id: number
@@ -46,11 +47,16 @@ export function ContinueWatchingCard({
   item,
   onHoverEnter,
   onHoverLeave,
+  onMarkWatched,
+  marking,
   dimmed,
 }: {
   item: ContinueWatchingItem
   onHoverEnter?: (el: HTMLElement) => void
   onHoverLeave?: () => void
+  onMarkWatched?: () => void
+  /** Shows the in-flight spinner while the mark-as-watched request is pending. */
+  marking?: boolean
   /** Fades the base card out while the (portaled) flyout takes over its exact position. */
   dimmed?: boolean
 }) {
@@ -78,7 +84,7 @@ export function ContinueWatchingCard({
       {/* ── Base Compact Card (Normal View) ── */}
       <Link href={playHref} className="flex flex-col w-full cursor-pointer">
         {/* 16:9 Thumbnail Image */}
-        <div className="relative aspect-video w-full overflow-hidden rounded-[4px] bg-[#181818] border border-[#262626] shadow-md transition-all duration-10">
+        <div className="relative aspect-video w-full overflow-hidden rounded-[4px] bg-grey-850 border border-grey-750 shadow-md transition-all duration-10">
           <Image
             src={backdropUrl}
             alt={item.title}
@@ -90,7 +96,7 @@ export function ContinueWatchingCard({
 
           {/* NEXT UP Badge (Top-Left) */}
           {item.isNextUp && (
-            <div className="absolute top-2 left-2 z-10 rounded-[3px] bg-[#E50914] px-2 py-0.5 text-[10px] font-bold text-white shadow uppercase tracking-wide">
+            <div className="absolute top-2 left-2 z-10 rounded-[3px] bg-accent px-2 py-0.5 text-[10px] font-bold text-white shadow uppercase tracking-wide">
               Next Up
             </div>
           )}
@@ -105,28 +111,47 @@ export function ContinueWatchingCard({
 
         {/* Standalone Progress Bar Below Thumbnail */}
         {!item.isNextUp && (
-          <div className="mt-2 w-[85%] mx-auto h-[3px] bg-[#414141] rounded-full overflow-hidden flex">
+          <div className="mt-2 w-[85%] mx-auto h-[3px] bg-grey-400 rounded-full overflow-hidden flex">
             <div
-              className="h-full bg-[#E50914] rounded-full transition-all duration-300"
+              className="h-full bg-accent rounded-full transition-all duration-300"
               style={{ width: `${Math.min(100, Math.max(0, item.progressPercent))}%` }}
             />
           </div>
         )}
+      </Link>
 
-        {/* Base Info Line Below Progress Bar */}
-        {/* <div className="mt-1.5 space-y-0.5 px-0.5">
-          <h3 className="text-xs sm:text-sm font-bold text-white line-clamp-1 group-hover:text-[#E50914] transition-colors">
+      {/* Base Info Line Below Progress Bar — always visible so the title and
+          mark-as-watched stay reachable on touch/keyboard (the flyout is hover-only). */}
+      <div className="mt-1.5 flex items-start justify-between gap-2 px-0.5">
+        <div className="min-w-0 space-y-0.5">
+          <h3 className="text-xs sm:text-sm font-bold text-white line-clamp-1 group-hover:text-accent transition-colors">
             {item.title}
           </h3>
           {displayEpisodeInfo ? (
-            <p className="text-[11px] font-medium text-[#B3B3B3] line-clamp-1">
+            <p className="text-[11px] font-medium text-grey-100 line-clamp-1">
               {displayEpisodeInfo}
             </p>
           ) : (
-            <p className="text-[10px] font-medium text-[#808080]">Sub | Dub</p>
+            <p className="text-[10px] font-medium text-grey-200">Sub | Dub</p>
           )}
-        </div> */}
-      </Link>
+        </div>
+
+        {item.jellyfinItemId && (
+          <button
+            onClick={onMarkWatched}
+            disabled={marking}
+            title="Mark as watched"
+            aria-label={`Mark ${item.title} as watched`}
+            className="flex size-7 shrink-0 items-center justify-center rounded-full border border-grey-400 bg-grey-750 text-white transition-all hover:border-white active:scale-95 disabled:opacity-50 cursor-pointer"
+          >
+            {marking ? (
+              <Loader2 className="size-3.5 animate-spin text-grey-100" />
+            ) : (
+              <Check className="size-3.5 stroke-[2.5]" />
+            )}
+          </button>
+        )}
+      </div>
     </div>
   )
 }

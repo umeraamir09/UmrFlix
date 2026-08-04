@@ -90,26 +90,26 @@
   --color-trans-black-60: rgba(0, 0, 0, 0.60);
   --color-trans-black-90: rgba(0, 0, 0, 0.90);
 
-  /* App Semantic Mappings (Mapped to Figma Tokens) */
-  --color-background: #000000;
-  --color-surface: #141414;
-  --color-surface-hover: #181818;
-  --color-surface-hover-alt: #262626;
-  --color-card: #181818;
-  --color-card-hover: #262626;
-  --color-foreground: #FFFFFF;
-  --color-foreground-muted: #B3B3B3;
-  --color-muted: #808080;
-  --color-accent: #E50914;
-  --color-accent-hover: #C11119;
-  --color-accent-light: #EB3942;
-  --color-border: #333333;
-  --color-border-subtle: #262626;
-  --color-separator: #414141;
-  --color-nav-bg: #141414;
+  /* App Semantic Mappings */
+  --color-background: #000;
+  --color-surface: #141519;
+  --color-surface-hover: #151515;
+  --color-surface-hover-alt: #191919;
+  --color-card: #1a1c23;
+  --color-card-hover: #232630;
+  --color-foreground: #ffffff;
+  --color-foreground-muted: #b5b5b5;
+  --color-muted: #6c7284;
+  --color-accent: #e50914;
+  --color-accent-hover: #b80710;
+  --color-accent-light: #ff2a34;
+  --color-border: #282c37;
+  --color-border-subtle: #23252b;
+  --color-separator: #3e424e;
+  --color-nav-bg: #272727;
   --color-cyan: #54B9C5;
-  --color-success: #22C55E;
-  --color-warning: #F59E0B;
+  --color-success: #22c55e;
+  --color-warning: #f59e0b;
 }
 
 * {

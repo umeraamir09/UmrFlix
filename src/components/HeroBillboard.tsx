@@ -125,17 +125,10 @@ export function HeroBillboard({ items }: { items: BillboardItem[] }) {
                   ? `/watch?id=${activeItem.jellyfinItemId}${activeItem.media_type === "tv" ? "&type=tv" : ""}`
                   : `/${activeItem.media_type}/${activeItem.id}`
               }
-              className="inline-flex items-center justify-center gap-2.5 rounded-[4px] border border-transparent bg-white px-6 py-3 text-sm font-semibold text-black shadow-lg hover:bg-[#E5E5E5] active:bg-[#DCDCDC] transition-all active:scale-[0.98] shrink-0 cursor-pointer"
+              className="inline-flex items-center justify-center gap-2.5 rounded-[4px] border border-transparent bg-white px-6 py-3 text-sm font-semibold text-black shadow-lg hover:bg-grey-10 active:bg-grey-20 transition-all active:scale-[0.98] shrink-0 cursor-pointer"
             >
               <IconPlay className="size-4 fill-black text-black" />
               {activeItem.inLibrary ? "Play" : "More Info"}
-            </Link>
-
-            <Link
-              href={`/${activeItem.media_type}/${activeItem.id}`}
-              className="inline-flex items-center justify-center gap-2 rounded-[4px] border border-transparent bg-[rgba(109,109,110,0.7)] px-5 py-3 text-sm font-semibold text-white shadow-lg hover:bg-[rgba(109,109,110,0.4)] backdrop-blur-sm transition-all active:scale-[0.98] shrink-0 cursor-pointer"
-            >
-              Details
             </Link>
 
             <BookmarkButton
@@ -151,14 +144,14 @@ export function HeroBillboard({ items }: { items: BillboardItem[] }) {
         <>
           <button
             onClick={prevSlide}
-            className="absolute left-4 top-1/2 -translate-y-1/2 rounded-[4px] bg-black/60 p-2.5 text-white opacity-0 transition-all hover:bg-[#E50914] group-hover:opacity-100 z-30 cursor-pointer"
+            className="absolute left-4 top-1/2 -translate-y-1/2 rounded-[4px] bg-black/60 p-2.5 text-white opacity-0 transition-all hover:bg-accent group-hover:opacity-100 z-30 cursor-pointer"
             aria-label="Previous Slide"
           >
             <ChevronLeft className="size-6" />
           </button>
           <button
             onClick={nextSlide}
-            className="absolute right-4 top-1/2 -translate-y-1/2 rounded-[4px] bg-black/60 p-2.5 text-white opacity-0 transition-all hover:bg-[#E50914] group-hover:opacity-100 z-30 cursor-pointer"
+            className="absolute right-4 top-1/2 -translate-y-1/2 rounded-[4px] bg-black/60 p-2.5 text-white opacity-0 transition-all hover:bg-accent group-hover:opacity-100 z-30 cursor-pointer"
             aria-label="Next Slide"
           >
             <ChevronRight className="size-6" />
@@ -172,8 +165,8 @@ export function HeroBillboard({ items }: { items: BillboardItem[] }) {
                 onClick={() => handleIndicatorClick(idx)}
                 className={`h-1.5 rounded-full transition-all ${
                   idx === currentIndex
-                    ? "w-8 bg-[#E50914]"
-                    : "w-2 bg-[#808080] hover:bg-[#B3B3B3]"
+                    ? "w-8 bg-accent"
+                    : "w-2 bg-grey-200 hover:bg-grey-100"
                 }`}
                 aria-label={`Go to slide ${idx + 1}`}
               />

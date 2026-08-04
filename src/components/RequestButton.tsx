@@ -132,7 +132,7 @@ export function RequestButton({
     return (
       <div className="flex flex-wrap items-center gap-3">
         <Button size="lg" variant="secondary" disabled>
-          <Loader2 className="mr-1 size-4 animate-spin text-[#B3B3B3]" />
+          <Loader2 className="mr-1 size-4 animate-spin text-grey-100" />
           Downloading {availability.progress ? `${Math.round(availability.progress)}%` : ""}
         </Button>
 
@@ -179,7 +179,7 @@ export function RequestButton({
     return (
       <div className="flex flex-wrap items-center gap-3">
         <Button size="lg" variant="secondary" disabled>
-          <Loader2 className="mr-1 size-4 animate-spin text-[#B3B3B3]" />
+          <Loader2 className="mr-1 size-4 animate-spin text-grey-100" />
           Requested
         </Button>
 

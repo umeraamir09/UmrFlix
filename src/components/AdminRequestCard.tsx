@@ -318,12 +318,12 @@ export function AdminRequestCard({
 
       {/* Action Controls for Pending Queue */}
       {req.status === "pending" && (onApprove || onDeny) && (
-        <div className="flex items-center justify-end gap-3 pt-2 border-t border-[#262626]">
+        <div className="flex items-center justify-end gap-3 pt-2 border-t border-grey-750">
           {onDeny && (
             <button
               onClick={() => onDeny(req.id)}
               disabled={actionLoading}
-              className="px-5 py-2.5 bg-[#E50914] hover:bg-[#C11119] text-white font-semibold text-xs rounded-[4px] transition-all shadow cursor-pointer disabled:opacity-50"
+              className="px-5 py-2.5 bg-accent hover:bg-secondary-red-200 text-white font-semibold text-xs rounded-[4px] transition-all shadow cursor-pointer disabled:opacity-50"
             >
               Deny
             </button>

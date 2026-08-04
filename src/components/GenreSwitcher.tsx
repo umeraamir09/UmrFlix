@@ -27,7 +27,7 @@ export function GenreSwitcher({ activeSlug }: { activeSlug?: string }) {
       <div className="flex items-center gap-2 relative">
         <button
           onClick={() => scroll("left")}
-          className="shrink-0 p-2 rounded-[4px] bg-[#181818] border border-[#333333] text-[#B3B3B3] hover:text-white hover:bg-[#262626] transition-colors hidden sm:flex items-center justify-center z-10 cursor-pointer"
+          className="shrink-0 p-2 rounded-[4px] bg-grey-850 border border-grey-600 text-grey-100 hover:text-white hover:bg-grey-750 transition-colors hidden sm:flex items-center justify-center z-10 cursor-pointer"
           aria-label="Scroll genres left"
         >
           <ChevronLeft className="size-4" />
@@ -45,8 +45,8 @@ export function GenreSwitcher({ activeSlug }: { activeSlug?: string }) {
                 href={`/genre/${genre.slug}`}
                 className={`shrink-0 px-4 py-2 text-xs font-semibold transition-all duration-150 rounded-[4px] border ${
                   isActive
-                    ? "bg-[#E50914] text-white border-[#E50914] shadow-md"
-                    : "bg-[#181818] border-[#333333] text-[#B3B3B3] hover:text-white hover:bg-[#262626]"
+                    ? "bg-accent text-white border-accent shadow-md"
+                    : "bg-grey-850 border-grey-600 text-grey-100 hover:text-white hover:bg-grey-750"
                 }`}
               >
                 {genre.name}
@@ -57,7 +57,7 @@ export function GenreSwitcher({ activeSlug }: { activeSlug?: string }) {
 
         <button
           onClick={() => scroll("right")}
-          className="shrink-0 p-2 rounded-[4px] bg-[#181818] border border-[#333333] text-[#B3B3B3] hover:text-white hover:bg-[#262626] transition-colors hidden sm:flex items-center justify-center z-10 cursor-pointer"
+          className="shrink-0 p-2 rounded-[4px] bg-grey-850 border border-grey-600 text-grey-100 hover:text-white hover:bg-grey-750 transition-colors hidden sm:flex items-center justify-center z-10 cursor-pointer"
           aria-label="Scroll genres right"
         >
           <ChevronRight className="size-4" />

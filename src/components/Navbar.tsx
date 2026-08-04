@@ -97,7 +97,7 @@ export function Navbar() {
                   className={`h-full flex items-center px-3.5 text-sm font-medium transition-colors ${
                     isActive
                       ? "text-white font-bold"
-                      : "text-[#B3B3B3] hover:text-[#E5E5E5]"
+                      : "text-grey-100 hover:text-grey-10"
                   }`}
                 >
                   {link.label}
