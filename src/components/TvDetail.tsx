@@ -92,7 +92,7 @@ export function TvDetail({ params }: { params: Promise<{ id: string }> }) {
       <div className="relative h-[65vh] min-h-[500px] max-h-[750px] w-full overflow-hidden bg-background">
         {show.backdrop_path ? (
           <img
-            src={getImageUrl(show.backdrop_path, "original")}
+            src={getImageUrl(show.backdrop_path, "w1280")}
             alt={show.name}
             className="size-full object-cover object-center"
           />

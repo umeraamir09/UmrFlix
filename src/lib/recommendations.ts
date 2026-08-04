@@ -254,30 +254,40 @@ export async function generateRecommendations(
 
     const recommendations: RecommendationItem[] = []
 
-    // Source 1: Get recommendations based on recently watched items matching mediaType
+    // Source 1: Get recommendations based on recently watched items matching mediaType (parallelized)
     const filteredHistory = watchHistory.filter(item => {
       if (!mediaType) return true
       if (mediaType === "movie") return item.Type === "Movie"
       return item.Type === "Series" || item.Type === "Episode"
     })
 
-    for (const item of filteredHistory.slice(0, 5)) {
+    const similarPromises = filteredHistory.slice(0, 5).map((item) => {
       const tmdbId = item.ProviderIds?.Tmdb ? parseInt(item.ProviderIds.Tmdb) : null
-      if (!tmdbId) continue
-      
+      if (!tmdbId) return Promise.resolve([])
       const itemType = item.Type === "Movie" ? "movie" : "tv"
-      const similar = await getSimilarRecommendations(tmdbId, itemType)
+      return getSimilarRecommendations(tmdbId, itemType)
+    })
+
+    const trendingPromises = [
+      (!mediaType || mediaType === "movie") ? getTrendingItems("movie") : Promise.resolve([]),
+      (!mediaType || mediaType === "tv") ? getTrendingItems("tv") : Promise.resolve([]),
+    ] as const
+
+    const [similarResults, [trendingMovies, trendingTv]] = await Promise.all([
+      Promise.all(similarPromises),
+      Promise.all(trendingPromises),
+    ])
+
+    for (const similar of similarResults) {
       const filtered = similar.filter(rec => !watchedItemIds.has(rec.tmdbId))
       recommendations.push(...filtered)
     }
 
     // Source 2: Trending content matching requested mediaType
-    if (!mediaType || mediaType === "movie") {
-      const trendingMovies = await getTrendingItems("movie")
+    if (trendingMovies.length > 0) {
       recommendations.push(...trendingMovies.filter(m => !watchedItemIds.has(m.tmdbId)).slice(0, 10))
     }
-    if (!mediaType || mediaType === "tv") {
-      const trendingTv = await getTrendingItems("tv")
+    if (trendingTv.length > 0) {
       recommendations.push(...trendingTv.filter(m => !watchedItemIds.has(m.tmdbId)).slice(0, 10))
     }
 

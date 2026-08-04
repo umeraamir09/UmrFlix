@@ -13,9 +13,25 @@ export class ServiceUnavailableError extends Error {
   }
 }
 
-async function getWithBackoff(attempt: number): Promise<void> {
-  const backoffMs = Math.pow(3, attempt - 1) * 100 + Math.floor(Math.random() * 50)
+async function getWithBackoff(attempt: number, retryAfterMs?: number): Promise<void> {
+  const backoffMs = retryAfterMs ?? (Math.pow(2, attempt - 1) * 200 + Math.floor(Math.random() * 100))
   await new Promise((r) => setTimeout(r, backoffMs))
+}
+
+function parseRetryAfterMs(res: Response, defaultMs: number): number {
+  const retryHeader = res.headers.get("retry-after")
+  if (retryHeader) {
+    const seconds = parseInt(retryHeader, 10)
+    if (!isNaN(seconds)) {
+      return seconds * 1000 + Math.floor(Math.random() * 150)
+    }
+    const dateMs = Date.parse(retryHeader)
+    if (!isNaN(dateMs)) {
+      const diff = dateMs - Date.now()
+      if (diff > 0) return diff + Math.floor(Math.random() * 150)
+    }
+  }
+  return defaultMs
 }
 
 export async function resilientFetch<T>(
@@ -49,9 +65,6 @@ export async function resilientFetch<T>(
     } catch (err) {
       clearTimeout(timeoutId)
       lastError = err
-      // If aborted or network failure, this is a real service failure — but
-      // count it only once per logical request (when retries are exhausted),
-      // so a single slow request can't trip a low-threshold breaker.
       if (err instanceof Error && (err.name === "AbortError" || err.message.includes("fetch failed"))) {
         failedOnNetwork = true
       }
@@ -87,6 +100,19 @@ export async function resilientFetch<T>(
       }
     }
 
+    // Handle 429 Rate Limit (and 503 temporary overload) with auto-retry
+    if (res.status === 429 || res.status === 503) {
+      lastError = new Error(`HTTP Error ${res.status}: ${res.statusText}`)
+      failedOnServer = true
+      attempt++
+      if (attempt <= (isIdempotent ? retries : 0)) {
+        const waitMs = parseRetryAfterMs(res, Math.pow(2, attempt - 1) * 300 + Math.floor(Math.random() * 150))
+        await getWithBackoff(attempt, waitMs)
+        continue
+      }
+      break
+    }
+
     // If the server responds 5xx, treat as service failure — but retry and
     // count it once only at the end so one request can't abruptly trip the breaker.
     if (res.status >= 500) {
@@ -100,7 +126,7 @@ export async function resilientFetch<T>(
       break
     }
 
-    // Client errors (4xx) do not trip the circuit breaker
+    // Client errors (4xx other than 429) do not trip the circuit breaker
     throw new Error(`HTTP Error ${res.status}: ${res.statusText}`)
   }
 

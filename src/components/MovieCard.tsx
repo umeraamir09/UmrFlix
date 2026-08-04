@@ -72,7 +72,7 @@ export function MovieCard({
   const title = item.title ?? item.name ?? "Unknown Title"
   const dateStr = item.release_date ?? item.first_air_date ?? ""
   const year = formatYear(dateStr)
-  const posterUrl = getImageUrl(item.poster_path, "w500")
+  const posterUrl = getImageUrl(item.poster_path, "w342")
   const Wrapper = (disabled ? "div" : Link) as ElementType
 
   return (
@@ -86,7 +86,7 @@ export function MovieCard({
           src={posterUrl}
           alt={title}
           fill
-          sizes="(max-width: 640px) 50vw, (max-width: 1024px) 25vw, 16vw"
+          sizes="(max-width: 640px) 175px, (max-width: 1024px) 220px, 275px"
           unoptimized={posterUrl.startsWith("/api/")}
           className="object-cover"
         />

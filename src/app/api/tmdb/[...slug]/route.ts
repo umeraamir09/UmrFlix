@@ -57,7 +57,11 @@ export async function GET(
       )
     }
 
-    return NextResponse.json(data)
+    return NextResponse.json(data, {
+      headers: {
+        "Cache-Control": "public, max-age=300, stale-while-revalidate=3600",
+      },
+    })
   } catch (err) {
     console.error("TMDB API proxy error:", err)
     return NextResponse.json({ error: "Failed to fetch from TMDB API" }, { status: 500 })
