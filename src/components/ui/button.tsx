@@ -3,7 +3,7 @@
 import { cn } from "@/lib/utils"
 import { forwardRef } from "react"
 
-export type ButtonVariant = "primary" | "secondary" | "play" | "moreInfo" | "outlined" | "ghost" | "danger" | "accent"
+export type ButtonVariant = "primary" | "secondary" | "play" | "moreInfo" | "outlined" | "ghost" | "danger" | "accent" | "muted"
 
 interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: ButtonVariant
@@ -11,7 +11,7 @@ interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
 }
 
 const variants: Record<ButtonVariant, string> = {
-  primary: "bg-accent text-white hover:bg-accent-hover border border-transparent rounded-none font-bold uppercase tracking-wider",
+  primary: "bg-accent text-white hover:bg-secondary-red-200 border border-transparent rounded-[4px] font-semibold",
   secondary: "bg-card border border-border text-foreground hover:bg-card-hover rounded-none font-bold uppercase tracking-wider",
   ghost: "text-foreground hover:bg-card-hover border border-transparent rounded-none font-bold uppercase tracking-wider",
   danger: "bg-red-600 text-white hover:bg-red-700 border border-transparent rounded-none font-bold uppercase tracking-wider",
@@ -19,6 +19,7 @@ const variants: Record<ButtonVariant, string> = {
   play: "bg-white text-black hover:bg-grey-10 active:bg-grey-20 border border-transparent shadow-md rounded-[4px] font-semibold",
   moreInfo: "bg-grey-300-t70 text-white hover:bg-grey-300-t40 border border-transparent backdrop-blur-sm rounded-[4px] font-semibold",
   outlined: "bg-transparent border border-grey-200 text-grey-200 hover:border-white hover:text-white rounded-[4px] font-semibold",
+  muted: "bg-grey-750 border border-grey-600 text-grey-100 rounded-[4px] font-semibold",
 }
 
 const sizes = {

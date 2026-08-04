@@ -131,7 +131,7 @@ export function RequestButton({
   if (availability?.status === "downloading") {
     return (
       <div className="flex flex-wrap items-center gap-3">
-        <Button size="lg" variant="secondary" disabled>
+        <Button size="lg" variant="muted" disabled>
           <Loader2 className="mr-1 size-4 animate-spin text-grey-100" />
           Downloading {availability.progress ? `${Math.round(availability.progress)}%` : ""}
         </Button>
@@ -178,7 +178,7 @@ export function RequestButton({
   if (availability?.status === "in_radarr" || availability?.status === "in_sonarr") {
     return (
       <div className="flex flex-wrap items-center gap-3">
-        <Button size="lg" variant="secondary" disabled>
+        <Button size="lg" variant="muted" disabled>
           <Loader2 className="mr-1 size-4 animate-spin text-grey-100" />
           Requested
         </Button>
