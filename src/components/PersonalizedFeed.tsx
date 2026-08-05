@@ -26,6 +26,13 @@ export function PersonalizedFeed({
 } = {}) {
   const [hour, setHour] = useState<number | null>(null)
 
+  const { data: authData } = useSWR<{ authenticated?: boolean; user?: { username?: string } }>(
+    "/api/auth/me",
+    fetcher,
+    { revalidateOnFocus: false }
+  )
+  const username = authData?.user?.username
+
   useEffect(() => {
     setHour(new Date().getHours())
   }, [])
@@ -33,6 +40,7 @@ export function PersonalizedFeed({
   const queryParams = new URLSearchParams()
   if (mediaType) queryParams.set("mediaType", mediaType)
   if (hour !== null) queryParams.set("hour", String(hour))
+  if (username) queryParams.set("u", username)
 
   const url = `/api/discovery/home?${queryParams.toString()}`
   const { data, error, isLoading } = useSWR<{ rows: FeedRow[] }>(url, fetcher, {

@@ -174,7 +174,7 @@ export function ContinueWatchingSection() {
       }
     }
     load()
-  }, [])
+  }, [username])
 
   const markWatched = async (item: ContinueWatchingItem) => {
     if (!item.jellyfinItemId || markingId) return
