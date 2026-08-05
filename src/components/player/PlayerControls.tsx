@@ -45,6 +45,7 @@ function SeekBar({
   itemId,
   trickplay,
   onSeek,
+  onScrubStateChange,
 }: {
   currentTime: number
   duration: number
@@ -53,6 +54,7 @@ function SeekBar({
   itemId: string
   trickplay: TrickplayInfo | null
   onSeek: (t: number) => void
+  onScrubStateChange?: (isScrubbing: boolean) => void
 }) {
   const barRef = useRef<HTMLDivElement>(null)
   const [hover, setHover] = useState<{ time: number; x: number; barW: number } | null>(null)
@@ -92,6 +94,7 @@ function SeekBar({
         const t = fraction(e.clientX) * duration
         setScrubTime(t)
         onSeek(t)
+        onScrubStateChange?.(true)
       }}
       onPointerMove={(e) => {
         const rect = barRef.current?.getBoundingClientRect()
@@ -108,10 +111,17 @@ function SeekBar({
           const t = f * duration
           setScrubTime(t)
           onSeek(t)
+          onScrubStateChange?.(true)
         }
       }}
-      onPointerUp={() => setScrubTime(null)}
-      onPointerCancel={() => setScrubTime(null)}
+      onPointerUp={() => {
+        setScrubTime(null)
+        onScrubStateChange?.(false)
+      }}
+      onPointerCancel={() => {
+        setScrubTime(null)
+        onScrubStateChange?.(false)
+      }}
       onPointerLeave={() => setHover(null)}
     >
       {/* track */}
@@ -252,7 +262,7 @@ function AudioSubtitlesMenu({
   return (
     <div
       onClick={(e) => e.stopPropagation()}
-      className="absolute bottom-16 right-0 z-50 max-h-[75vh] w-[calc(100vw-2rem)] max-w-sm sm:w-96 overflow-y-auto rounded-[4px] border border-grey-400 bg-grey-900/95 p-2 shadow-2xl backdrop-blur-xl"
+      className="fixed sm:absolute left-1/2 sm:left-auto -translate-x-1/2 sm:translate-x-0 bottom-20 sm:bottom-16 sm:right-0 z-[100] pointer-events-auto max-h-[75vh] w-[calc(100vw-2rem)] max-w-sm sm:w-96 overflow-y-auto rounded-lg sm:rounded-[4px] border border-white/20 bg-[#16181f]/98 p-3 shadow-2xl backdrop-blur-2xl animate-in fade-in zoom-in-95 duration-150"
     >
       {section === "root" && (
         <>
@@ -451,7 +461,7 @@ function SpeedQualityMenu({
   return (
     <div
       onClick={(e) => e.stopPropagation()}
-      className="absolute bottom-16 right-0 z-50 max-h-[75vh] w-[calc(100vw-2rem)] max-w-xs sm:w-80 overflow-y-auto rounded-[4px] border border-grey-400 bg-grey-900/95 p-2 shadow-2xl backdrop-blur-xl"
+      className="fixed sm:absolute left-1/2 sm:left-auto -translate-x-1/2 sm:translate-x-0 bottom-20 sm:bottom-16 sm:right-0 z-[100] pointer-events-auto max-h-[75vh] w-[calc(100vw-2rem)] max-w-xs sm:w-80 overflow-y-auto rounded-lg sm:rounded-[4px] border border-white/20 bg-[#16181f]/98 p-3 shadow-2xl backdrop-blur-2xl animate-in fade-in zoom-in-95 duration-150"
     >
       {section === "root" && (
         <>
@@ -596,44 +606,67 @@ export function PlayerControls({
 }) {
   const [audioSubsOpen, setAudioSubsOpen] = useState(false)
   const [speedOpen, setSpeedOpen] = useState(false)
+  const [isScrubbing, setIsScrubbing] = useState(false)
   const audioSubsRef = useRef<HTMLDivElement>(null)
   const speedRef = useRef<HTMLDivElement>(null)
-
-  // Close menus on click outside
-  useEffect(() => {
-    if (!audioSubsOpen && !speedOpen) return
-    const close = (e: MouseEvent) => {
-      if (
-        audioSubsRef.current &&
-        !audioSubsRef.current.contains(e.target as Node)
-      ) {
-        setAudioSubsOpen(false)
-      }
-      if (speedRef.current && !speedRef.current.contains(e.target as Node)) {
-        setSpeedOpen(false)
-      }
-    }
-    window.addEventListener("mousedown", close)
-    return () => window.removeEventListener("mousedown", close)
-  }, [audioSubsOpen, speedOpen])
 
   // Close menus when controls fade out (render-time state adjustment — see
   // react.dev "you might not need an effect")
   const [prevVisible, setPrevVisible] = useState(visible)
   if (prevVisible !== visible) {
     setPrevVisible(visible)
-    if (!visible) {
+    if (!visible && !audioSubsOpen && !speedOpen && !isScrubbing) {
       setAudioSubsOpen(false)
       setSpeedOpen(false)
     }
   }
 
+  const isAnyMenuOpen = audioSubsOpen || speedOpen || episodeBrowserOpen || isScrubbing
+
   return (
-    <div
-      className={`absolute inset-0 z-20 flex flex-col justify-between pointer-events-none transition-opacity duration-300 ${
-        visible ? "opacity-100" : "opacity-0"
-      }`}
-    >
+    <>
+      {/* Menu Backdrop Shield */}
+      {(audioSubsOpen || speedOpen) && (
+        <div
+          onClick={(e) => {
+            e.stopPropagation()
+            setAudioSubsOpen(false)
+            setSpeedOpen(false)
+          }}
+          className="fixed inset-0 z-[95] bg-black/60 backdrop-blur-xs pointer-events-auto animate-in fade-in duration-150"
+        />
+      )}
+
+      {/* Audio & Subtitles Popover Menu */}
+      {audioSubsOpen && (
+        <AudioSubtitlesMenu
+          audioTracks={audioTracks}
+          audioIndex={audioIndex}
+          onAudioChange={onAudioChange}
+          subtitleTracks={subtitleTracks}
+          subtitleIndex={subtitleIndex}
+          onSubtitleChange={onSubtitleChange}
+          subStyle={subStyle}
+          onSubStyleChange={onSubStyleChange}
+        />
+      )}
+
+      {/* Speed & Quality Popover Menu */}
+      {speedOpen && (
+        <SpeedQualityMenu
+          qualityId={qualityId}
+          autoResolvedLabel={autoResolvedLabel}
+          onQualityChange={onQualityChange}
+          playbackRate={playbackRate}
+          onPlaybackRateChange={onPlaybackRateChange}
+        />
+      )}
+
+      <div
+        className={`absolute inset-0 z-40 flex flex-col justify-between pointer-events-none transition-opacity duration-300 ${
+          visible || isAnyMenuOpen ? "opacity-100" : "opacity-0"
+        }`}
+      >
       {/* Background gradients */}
       <div className="pointer-events-none absolute inset-x-0 top-0 h-32 bg-gradient-to-b from-black/80 via-black/40 to-transparent" />
       <div className="pointer-events-none absolute inset-x-0 bottom-0 h-36 bg-gradient-to-t from-black/95 via-black/60 to-transparent" />
@@ -672,6 +705,7 @@ export function PlayerControls({
           itemId={itemId}
           trickplay={trickplay}
           onSeek={onSeek}
+          onScrubStateChange={setIsScrubbing}
         />
 
         {/* Control Buttons Row */}
@@ -807,18 +841,6 @@ export function PlayerControls({
               >
                 <IconSubtitles className="size-5 sm:size-7" />
               </button>
-              {audioSubsOpen && (
-                <AudioSubtitlesMenu
-                  audioTracks={audioTracks}
-                  audioIndex={audioIndex}
-                  onAudioChange={onAudioChange}
-                  subtitleTracks={subtitleTracks}
-                  subtitleIndex={subtitleIndex}
-                  onSubtitleChange={onSubtitleChange}
-                  subStyle={subStyle}
-                  onSubStyleChange={onSubStyleChange}
-                />
-              )}
             </div>
 
             {/* Speedometer & Quality Menu */}
@@ -835,15 +857,6 @@ export function PlayerControls({
               >
                 <IconSpeed className="size-5 sm:size-7" />
               </button>
-              {speedOpen && (
-                <SpeedQualityMenu
-                  qualityId={qualityId}
-                  autoResolvedLabel={autoResolvedLabel}
-                  onQualityChange={onQualityChange}
-                  playbackRate={playbackRate}
-                  onPlaybackRateChange={onPlaybackRateChange}
-                />
-              )}
             </div>
 
             {/* Picture-in-Picture */}
@@ -895,5 +908,6 @@ export function PlayerControls({
         />
       )}
     </div>
+    </>
   )
 }
