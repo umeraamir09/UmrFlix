@@ -37,6 +37,7 @@ export type SeedCandidate = {
   title: string
   weight: number
   timestamp: number
+  eventType?: DiscoveryEvent["eventType"]
 }
 
 export type UserDiscoveryProfile = {
@@ -275,7 +276,7 @@ async function buildUserProfile(userId: string, profileId: string): Promise<User
       }
     }
 
-    // "Because You Watched" seeds: strong positive completions/favorites.
+    // Seed candidates: strong positive completions, favorites, or requests.
     if ((event.weight ?? 0) >= 0.7 && event.tmdbId && event.mediaType && event.title) {
       seedCandidates.push({
         tmdbId: event.tmdbId,
@@ -283,6 +284,7 @@ async function buildUserProfile(userId: string, profileId: string): Promise<User
         title: event.title,
         weight: event.weight ?? 0,
         timestamp: event.timestamp,
+        eventType: event.eventType,
       })
     }
   }

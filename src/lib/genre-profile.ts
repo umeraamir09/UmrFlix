@@ -58,6 +58,7 @@ export type BecauseYouWatchedResult = {
   seedTitle: string | null
   seedId: number | null
   seedMediaType: "movie" | "tv" | null
+  seedSource?: "resume" | "my_list" | "favorite" | null
   items: RowItem[]
 }
 
@@ -457,6 +458,7 @@ export async function getBecauseYouWatched(
     seedTitle: seed.title ?? null,
     seedId: seed.tmdbId,
     seedMediaType: seed.mediaType,
+    seedSource: seed.source,
     items: dedupeByTmdbId(displayable)
       .slice(0, limit)
       .map((rec) => toRowItem(rec, rec.media_type)),

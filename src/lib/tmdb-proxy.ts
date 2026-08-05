@@ -47,6 +47,17 @@ function parseRetryAfterMs(res: Response, defaultMs: number): number {
   return defaultMs
 }
 
+function createResponseFromEntry(entry: CachedResponseEntry, cacheHeader: "HIT" | "MISS"): Response {
+  return new Response(entry.body.slice(0), {
+    status: entry.status,
+    statusText: entry.statusText,
+    headers: {
+      "Content-Type": entry.contentType,
+      "X-Cache": cacheHeader,
+    },
+  })
+}
+
 export async function tmdbProxyFetch(path: string, options?: TmdbProxyFetchOptions): Promise<Response> {
   const isGet = !options?.method || options.method.toUpperCase() === "GET"
   const skipCache = options?.skipCache ?? false
@@ -83,31 +94,17 @@ export async function tmdbProxyFetch(path: string, options?: TmdbProxyFetchOptio
   if (isGet && !skipCache) {
     const cached = tmdbResponseCache.get(cacheKey)
     if (cached && Date.now() - cached.timestamp < TMDB_CACHE_TTL) {
-      return new Response(cached.body.slice(0), {
-        status: cached.status,
-        statusText: cached.statusText,
-        headers: {
-          "Content-Type": cached.contentType,
-          "X-Cache": "HIT",
-        },
-      })
+      return createResponseFromEntry(cached, "HIT")
     }
   }
 
   // 2. Coalesce concurrent identical calls with SingleFlight
-  return SingleFlight.execute(`tmdb:${cacheKey}`, async () => {
+  const result = await SingleFlight.execute(`tmdb:${cacheKey}`, async (): Promise<{ entry: CachedResponseEntry; hit: boolean }> => {
     // Re-check cache inside singleflight
     if (isGet && !skipCache) {
       const cached = tmdbResponseCache.get(cacheKey)
       if (cached && Date.now() - cached.timestamp < TMDB_CACHE_TTL) {
-        return new Response(cached.body.slice(0), {
-          status: cached.status,
-          statusText: cached.statusText,
-          headers: {
-            "Content-Type": cached.contentType,
-            "X-Cache": "HIT",
-          },
-        })
+        return { entry: cached, hit: true }
       }
     }
 
@@ -136,27 +133,20 @@ export async function tmdbProxyFetch(path: string, options?: TmdbProxyFetchOptio
 
         if (res.ok) {
           breaker.recordSuccess()
-          if (isGet && !skipCache) {
-            const body = await res.arrayBuffer()
-            const contentType = res.headers.get("content-type") || "application/json"
-            pruneTmdbCache()
-            tmdbResponseCache.set(cacheKey, {
-              body,
-              status: res.status,
-              statusText: res.statusText,
-              contentType,
-              timestamp: Date.now(),
-            })
-            return new Response(body.slice(0), {
-              status: res.status,
-              statusText: res.statusText,
-              headers: {
-                "Content-Type": contentType,
-                "X-Cache": "MISS",
-              },
-            })
+          const body = await res.arrayBuffer()
+          const contentType = res.headers.get("content-type") || "application/json"
+          const entry: CachedResponseEntry = {
+            body,
+            status: res.status,
+            statusText: res.statusText,
+            contentType,
+            timestamp: Date.now(),
           }
-          return res
+          if (isGet && !skipCache) {
+            pruneTmdbCache()
+            tmdbResponseCache.set(cacheKey, entry)
+          }
+          return { entry, hit: false }
         }
 
         // Auto-retry on 429 (Rate Limit) and 503 (Overload)
@@ -170,10 +160,32 @@ export async function tmdbProxyFetch(path: string, options?: TmdbProxyFetchOptio
             await new Promise((r) => setTimeout(r, waitMs))
             continue
           }
-          return res
+          const body = await res.arrayBuffer()
+          const contentType = res.headers.get("content-type") || "application/json"
+          return {
+            entry: {
+              body,
+              status: res.status,
+              statusText: res.statusText,
+              contentType,
+              timestamp: Date.now(),
+            },
+            hit: false,
+          }
         }
 
-        return res
+        const body = await res.arrayBuffer()
+        const contentType = res.headers.get("content-type") || "application/json"
+        return {
+          entry: {
+            body,
+            status: res.status,
+            statusText: res.statusText,
+            contentType,
+            timestamp: Date.now(),
+          },
+          hit: false,
+        }
       } catch (err) {
         clearTimeout(timeoutId)
         lastError = err
@@ -191,4 +203,6 @@ export async function tmdbProxyFetch(path: string, options?: TmdbProxyFetchOptio
 
     throw lastError
   })
+
+  return createResponseFromEntry(result.entry, result.hit ? "HIT" : "MISS")
 }
