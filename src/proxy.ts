@@ -23,7 +23,6 @@ export function proxy(request: NextRequest) {
   if (
     pathname.startsWith("/_next") ||
     pathname.startsWith("/api/auth/login") ||
-    pathname.startsWith("/icon-") ||
     PUBLIC_PATHS.some((path) => pathname === path || pathname.startsWith("/public"))
   ) {
     return NextResponse.next()

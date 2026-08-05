@@ -186,9 +186,18 @@ export function CinemaPlayer({
   const [muted, setMuted] = useState(false)
   const [playbackRate, setPlaybackRate] = useState(1)
   const [reportToast, setReportToast] = useState(false)
-  const [isTouchDevice] = useState(
-    () => typeof window !== "undefined" && ("ontouchstart" in window || navigator.maxTouchPoints > 0)
-  )
+  const [isTouchDevice, setIsTouchDevice] = useState(() => {
+    if (typeof window === "undefined") return false
+    return window.matchMedia("(pointer: coarse)").matches
+  })
+
+  useEffect(() => {
+    if (typeof window === "undefined") return
+    const mq = window.matchMedia("(pointer: coarse)")
+    const onChange = (e: MediaQueryListEvent) => setIsTouchDevice(e.matches)
+    mq.addEventListener("change", onChange)
+    return () => mq.removeEventListener("change", onChange)
+  }, [])
 
   // In party mode, show the party's authoritative playback rate
   const displayPlaybackRate = party?.partyId
@@ -888,7 +897,10 @@ export function CinemaPlayer({
     side: "left" | "right"
     count: number
   } | null>(null)
-  const lastTapRef = useRef<{ time: number; x: number }>({ time: 0, x: 0 })
+  const lastTapRef = useRef<{ time: number; side: "left" | "right" | "center" }>({
+    time: 0,
+    side: "center",
+  })
   const singleTapTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const rippleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -919,15 +931,17 @@ export function CinemaPlayer({
       const pctX = clickX / rect.width
       const now = Date.now()
       const prev = lastTapRef.current
+      const currentSide: "left" | "right" | "center" =
+        pctX < 0.35 ? "left" : pctX > 0.65 ? "right" : "center"
 
-      // Double tap threshold: < 300ms delay & tapped on same 35% side
-      if (now - prev.time < 300) {
+      // Double tap threshold: < 300ms delay & tapped on same outer side (left or right)
+      if (now - prev.time < 300 && prev.side === currentSide && currentSide !== "center") {
         if (singleTapTimerRef.current) {
           clearTimeout(singleTapTimerRef.current)
           singleTapTimerRef.current = null
         }
 
-        if (pctX < 0.35) {
+        if (currentSide === "left") {
           seekToRelative(-10)
           setDoubleTapRipple((prevRipple) => ({
             side: "left",
@@ -935,9 +949,9 @@ export function CinemaPlayer({
           }))
           if (rippleTimerRef.current) clearTimeout(rippleTimerRef.current)
           rippleTimerRef.current = setTimeout(() => setDoubleTapRipple(null), 600)
-          lastTapRef.current = { time: 0, x: 0 }
+          lastTapRef.current = { time: 0, side: "center" }
           return
-        } else if (pctX > 0.65) {
+        } else if (currentSide === "right") {
           seekToRelative(10)
           setDoubleTapRipple((prevRipple) => ({
             side: "right",
@@ -945,25 +959,30 @@ export function CinemaPlayer({
           }))
           if (rippleTimerRef.current) clearTimeout(rippleTimerRef.current)
           rippleTimerRef.current = setTimeout(() => setDoubleTapRipple(null), 600)
-          lastTapRef.current = { time: 0, x: 0 }
+          lastTapRef.current = { time: 0, side: "center" }
           return
         }
       }
 
-      lastTapRef.current = { time: now, x: clickX }
+      lastTapRef.current = { time: now, side: currentSide }
 
       // Capture controls state NOW — before any synthesized mouse events
       // (mousemove, etc.) can race and flip the flag.
       const wasVisible = controlsVisibleRef.current
       singleTapTimerRef.current = setTimeout(() => {
-        if (wasVisible) {
-          hideControls()
+        if (!isTouchDevice) {
+          togglePlay()
+          pokeControls()
         } else {
-          showControls()
+          if (wasVisible) {
+            hideControls()
+          } else {
+            showControls()
+          }
         }
       }, 250)
     },
-    [hideControls, seekToRelative, showControls]
+    [hideControls, isTouchDevice, pokeControls, seekToRelative, showControls, togglePlay]
   )
 
   const seekTo = useCallback(
@@ -1199,7 +1218,6 @@ export function CinemaPlayer({
         poster={poster}
         playsInline
         className="size-full pointer-events-none"
-        onDoubleClick={toggleFullscreen}
         onPlay={() => {
           setPlaying(true)
           setNeedsManualPlay(false)

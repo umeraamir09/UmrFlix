@@ -250,7 +250,10 @@ function AudioSubtitlesMenu({
       : (subtitleTracks.find((s) => s.index === subtitleIndex)?.title ?? "On")
 
   return (
-    <div className="absolute bottom-16 right-0 z-50 max-h-[75vh] w-[calc(100vw-2rem)] max-w-sm sm:w-96 overflow-y-auto rounded-[4px] border border-grey-400 bg-grey-900/95 p-2 shadow-2xl backdrop-blur-xl">
+    <div
+      onClick={(e) => e.stopPropagation()}
+      className="absolute bottom-16 right-0 z-50 max-h-[75vh] w-[calc(100vw-2rem)] max-w-sm sm:w-96 overflow-y-auto rounded-[4px] border border-grey-400 bg-grey-900/95 p-2 shadow-2xl backdrop-blur-xl"
+    >
       {section === "root" && (
         <>
           <div className="px-4 py-2 text-xs font-bold uppercase tracking-[0.2em] text-gray-400">
@@ -446,7 +449,10 @@ function SpeedQualityMenu({
   const speedLabel = playbackRate === 1 ? "Normal" : `${playbackRate}x`
 
   return (
-    <div className="absolute bottom-16 right-0 z-50 max-h-[75vh] w-[calc(100vw-2rem)] max-w-xs sm:w-80 overflow-y-auto rounded-[4px] border border-grey-400 bg-grey-900/95 p-2 shadow-2xl backdrop-blur-xl">
+    <div
+      onClick={(e) => e.stopPropagation()}
+      className="absolute bottom-16 right-0 z-50 max-h-[75vh] w-[calc(100vw-2rem)] max-w-xs sm:w-80 overflow-y-auto rounded-[4px] border border-grey-400 bg-grey-900/95 p-2 shadow-2xl backdrop-blur-xl"
+    >
       {section === "root" && (
         <>
           <div className="px-4 py-2 text-xs font-bold uppercase tracking-[0.2em] text-gray-400">
@@ -624,9 +630,8 @@ export function PlayerControls({
 
   return (
     <div
-      onClick={(e) => e.stopPropagation()}
-      className={`absolute inset-0 z-20 flex flex-col justify-between transition-opacity duration-300 ${
-        visible ? "opacity-100" : "pointer-events-none opacity-0"
+      className={`absolute inset-0 z-20 flex flex-col justify-between pointer-events-none transition-opacity duration-300 ${
+        visible ? "opacity-100" : "opacity-0"
       }`}
     >
       {/* Background gradients */}
@@ -634,7 +639,7 @@ export function PlayerControls({
       <div className="pointer-events-none absolute inset-x-0 bottom-0 h-36 bg-gradient-to-t from-black/95 via-black/60 to-transparent" />
 
       {/* Top Bar */}
-      <div className="relative z-30 flex items-center justify-between px-6 sm:px-8 pt-6">
+      <div className="relative z-30 pointer-events-auto flex items-center justify-between px-6 sm:px-8 pt-6">
         <button
           onClick={onBack ?? (() => window.history.back())}
           className="flex items-center justify-center p-1 text-white/90 transition-transform hover:scale-110 hover:text-white active:scale-95"
@@ -652,7 +657,7 @@ export function PlayerControls({
       </div>
 
       {/* Bottom Bar */}
-      <div className="relative z-30 px-6 sm:px-8 pb-6 pt-2">
+      <div className="relative z-30 pointer-events-auto px-6 sm:px-8 pb-6 pt-2">
         {/* Total duration above seekbar on the right */}
         <div className="mb-1.5 flex justify-end text-sm font-medium tabular-nums text-white">
           {formatTimecode(duration)}
