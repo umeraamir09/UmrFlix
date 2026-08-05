@@ -32,7 +32,7 @@ const fetcher = (url: string) => fetch(url).then((r) => r.json())
 const HOVER_OPEN_DELAY_MS = 0
 const HOVER_CLOSE_DELAY_MS = 0
 /** Must match the exit transform duration + delay on the flyout (exit uses duration-200). */
-const FLYOUT_EXIT_MS = 200
+const FLYOUT_EXIT_MS = 100
 
 export function ContinueWatchingSection() {
   const [items, setItems] = useState<ContinueWatchingItem[]>([])

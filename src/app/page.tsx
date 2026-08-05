@@ -333,7 +333,7 @@ export default async function HomePage() {
         {/* 10. Recently Added to Your Library */}
         {recentlyAddedItems.length > 0 && (
           <section className="space-y-3">
-            <h2 className="text-xl sm:text-2xl font-black uppercase tracking-tight text-white flex items-center gap-2">
+            <h2 className="text-xl sm:text-2xl font-black tracking-tight text-white flex items-center gap-2">
               Recently Added to your Library
             </h2>
             <p className="text-xs text-gray-400 font-medium">Newly downloaded shows and movies in Jellyfin</p>
