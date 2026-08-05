@@ -528,11 +528,20 @@ export async function getGenrePageData(
     hiddenGems
   )
   if (because.items.length > 0) {
+    let becauseTitle = because.seedTitle ? `Because You Watched ${because.seedTitle}` : "Because You Watched"
+    let becauseSubtitle = "More titles like what you have been watching"
+    if (because.seedSource === "my_list" || because.seedSource === "favorite") {
+      becauseTitle = because.seedTitle
+        ? `Because You Added ${because.seedTitle} to Your List`
+        : "Because You Added to Your List"
+      becauseSubtitle = "More titles like what you saved to your list"
+    }
+
     pushRow(
       {
         id: "because",
-        title: because.seedTitle ? `Because You Watched ${because.seedTitle}` : "Because You Watched",
-        subtitle: "More titles like what you have been watching",
+        title: becauseTitle,
+        subtitle: becauseSubtitle,
         type: because.seedMediaType === "tv" ? "tv" : because.seedMediaType === "movie" ? "movie" : "mixed",
       },
       because.items
