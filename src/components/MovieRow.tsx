@@ -16,12 +16,14 @@ export function MovieRow({
   type,
   endpoint,
   customItems,
+  rowKey,
 }: {
   title: string
   subtitle?: string
   type: "movie" | "tv"
   endpoint?: string
   customItems?: MovieCardItem[]
+  rowKey?: string
 }) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const [canScrollLeft, setCanScrollLeft] = useState(false)
@@ -88,6 +90,26 @@ export function MovieRow({
     }
   }
 
+  const handleCardClick = useCallback(() => {
+    if (rowKey) {
+      if (typeof navigator !== "undefined" && navigator.sendBeacon) {
+        navigator.sendBeacon(
+          "/api/discovery/impression",
+          new Blob(
+            [JSON.stringify({ rowCategoryKey: rowKey, clicked: true })],
+            { type: "application/json" }
+          )
+        )
+      } else {
+        void fetch("/api/discovery/impression", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ rowCategoryKey: rowKey, clicked: true }),
+        }).catch(() => {})
+      }
+    }
+  }, [rowKey])
+
   return (
     <section className="relative my-8 space-y-3 group/row">
       {/* Header & Subtitle (Stays aligned with left container padding) */}
@@ -148,12 +170,13 @@ export function MovieRow({
             : items.map((item) => {
                 const itemType = getItemType(item)
                 return (
-                  <MovieCard
-                    key={item.id}
-                    item={item}
-                    type={itemType}
-                    availabilityState={availabilityFor(item, itemType)}
-                  />
+                  <div key={item.id} onClick={handleCardClick} className="h-full">
+                    <MovieCard
+                      item={item}
+                      type={itemType}
+                      availabilityState={availabilityFor(item, itemType)}
+                    />
+                  </div>
                 )
               })}
         </div>

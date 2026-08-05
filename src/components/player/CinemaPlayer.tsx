@@ -441,8 +441,9 @@ export function CinemaPlayer({
       isMuted: video.muted,
       volumeLevel: Math.round((video.volume ?? 1) * 100),
       playMethod: engine === "direct" ? "DirectPlay" : "Transcode",
+      context: party?.partyId ? "party" : undefined,
     }
-  }, [payload, engine])
+  }, [payload, engine, party?.partyId])
   const reporter = usePlaybackReporter(getReporterState)
 
   // Stop reporting when leaving this item

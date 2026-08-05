@@ -5,7 +5,7 @@ import { SpotlightBanner, SpotlightItem } from "@/components/SpotlightBanner"
 import { GenreFilterBar } from "@/components/GenreFilterBar"
 import { getTrending, getItemLogo, discoverTv } from "@/lib/tmdb"
 import { filterReleasedContent } from "@/lib/catalog"
-import { generateRecommendations } from "@/lib/recommendations"
+import { PersonalizedFeed } from "@/components/PersonalizedFeed"
 import { getNextEpisode, getAiringLabel, lookupShowByTvdbId } from "@/lib/tvmaze"
 import { authenticate, getAllItems } from "@/lib/jellyfin"
 import { getGenreByParam, getTvGenres, getGenreDiscoverParams, buildGenreDiscoverQuery } from "@/lib/genres"
@@ -38,7 +38,6 @@ export default async function TvShowCatalogPage({
   let heroItems: BillboardItem[] = []
   let spotlightItem1: SpotlightItem | null = null
   let spotlightItem2: SpotlightItem | null = null
-  let forYouItems: any[] = []
   const airingMap: Record<number, string> = {}
 
   try {
@@ -113,25 +112,8 @@ export default async function TvShowCatalogPage({
         console.log("Jellyfin not reachable, skipping airing schedule labels")
       }
 
-      // 3. Fetch personalized TV recommendations based on Jellyfin watch history
-      const recommendations = await generateRecommendations("default", {
-        limit: 20,
-        mediaType: "tv",
-      })
-
-      forYouItems = recommendations.map((rec: any) => ({
-        id: rec.tmdbId,
-        title: rec.title,
-        name: rec.name,
-        poster_path: rec.poster_path,
-        backdrop_path: rec.backdrop_path,
-        overview: rec.overview,
-        release_date: rec.release_date,
-        first_air_date: rec.first_air_date,
-        vote_average: rec.vote_average,
-        media_type: "tv",
-        airingLabel: airingMap[rec.tmdbId],
-      }))
+      // 3. Personalized TV rows are client-fetched per session via
+      //    <PersonalizedFeed mediaType="tv" /> (discovery engine).
 
       // 4. Build hero billboard items
       const rawHero = tvResults.slice(0, 5)
@@ -256,22 +238,15 @@ export default async function TvShowCatalogPage({
           </>
         ) : (
           <>
-            {/* Personalized Recommendations */}
-            {forYouItems.length > 0 && (
-              <MovieRow
-                title="Recommended TV Shows For You"
-                subtitle="Based on series you watch on Jellyfin"
-                type="tv"
-                customItems={forYouItems}
-              />
-            )}
+            {/* Personalized Discovery Rows (Top Picks, micro-genres, BYW) */}
+            <PersonalizedFeed mediaType="tv" />
 
             {/* On The Air & Currently Airing */}
             <MovieRow
               title="Currently Airing & On The Air"
               subtitle="Series actively broadcasting new episodes right now"
               type="tv"
-              endpoint="/api/tmdb/tv/on_the_air"
+              endpoint="/api/discovery/row?facet=on-the-air-shows"
             />
 
             {/* Popular TV Shows */}
@@ -279,7 +254,7 @@ export default async function TvShowCatalogPage({
               title="Popular TV Shows"
               subtitle="Top trending series this week"
               type="tv"
-              endpoint="/api/tmdb/trending/tv/week"
+              endpoint="/api/discovery/row?facet=popular-shows"
             />
 
             {/* Mid-page Spotlight Banner 1 */}
@@ -290,7 +265,7 @@ export default async function TvShowCatalogPage({
               title="Top Rated & Legendary Series"
               subtitle="Highest rated television series of all time"
               type="tv"
-              endpoint="/api/tmdb/tv/top_rated"
+              endpoint="/api/discovery/row?facet=top-rated-shows"
             />
 
             {/* Sci-Fi & Fantasy Series */}
@@ -298,7 +273,7 @@ export default async function TvShowCatalogPage({
               title="Sci-Fi & Fantasy Series"
               subtitle="Mind-bending adventures, dystopian futures, and magic"
               type="tv"
-              endpoint="/api/tmdb/discover/tv?with_genres=10765&sort_by=popularity.desc"
+              endpoint="/api/discovery/row?facet=sci-fi-fantasy-shows"
             />
 
             {/* Crime & Mystery Thrillers */}
@@ -306,7 +281,7 @@ export default async function TvShowCatalogPage({
               title="Crime & Mystery Thrillers"
               subtitle="Detective procedurals, dark secrets, and criminal underworlds"
               type="tv"
-              endpoint="/api/tmdb/discover/tv?with_genres=80,9648&sort_by=popularity.desc"
+              endpoint="/api/discovery/row?facet=crime-mystery-shows"
             />
 
             {/* Mid-page Spotlight Banner 2 */}
@@ -317,7 +292,7 @@ export default async function TvShowCatalogPage({
               title="Bingeable Comedies"
               subtitle="Sitcoms and comedy series to brighten your day"
               type="tv"
-              endpoint="/api/tmdb/discover/tv?with_genres=35&sort_by=popularity.desc"
+              endpoint="/api/discovery/row?facet=comedy-shows"
             />
 
             {/* Animation & Anime */}
@@ -325,7 +300,7 @@ export default async function TvShowCatalogPage({
               title="Animation & Anime Series"
               subtitle="Top-rated animated series and anime shows"
               type="tv"
-              endpoint="/api/tmdb/discover/tv?with_genres=16&sort_by=popularity.desc"
+              endpoint="/api/discovery/row?facet=animation-shows"
             />
           </>
         )}

@@ -89,6 +89,69 @@ export default defineSchema({
     avatarUrl: v.string(),
     updatedAt: v.string(),
   }).index("by_user", ["userId"]),
+
+  // ── Discovery engine (personalized home/genre feed) ──
+
+  // Immutable signal log: implicit playback events, explicit favorites and
+  // impression/click tracking rows. `weight` is precomputed at ingestion time
+  // using the Module 1 weighting matrix; `title`/`mediaType` are denormalized
+  // to avoid re-fetching item detail when building profile vectors.
+  userEvents: defineTable({
+    userId: v.string(),
+    profileId: v.string(),
+    itemId: v.string(),
+    tmdbId: v.optional(v.number()),
+    mediaType: v.optional(v.string()),
+    title: v.optional(v.string()),
+    eventType: v.string(), // "play_complete", "partial_play", "abandonment", "rewatch", "favorite", "unfavorite", "request", "scroll_pass", "rating"
+    weight: v.optional(v.number()),
+    completionPct: v.optional(v.number()),
+    watchDurationSec: v.optional(v.number()),
+    context: v.optional(v.string()),
+    timestamp: v.number(),
+  })
+    .index("by_user_profile", ["userId", "profileId"])
+    .index("by_user_item", ["userId", "itemId"])
+    .index("by_timestamp", ["timestamp"]),
+
+  userFeatureProfiles: defineTable({
+    userId: v.string(),
+    profileId: v.string(),
+    shortTermVectorJson: v.string(), // 64-D float array JSON
+    longTermVectorJson: v.string(),  // 64-D float array JSON
+    lastActiveTimestamp: v.number(),
+    updatedAt: v.number(),
+  }).index("by_user_profile", ["userId", "profileId"]),
+
+  // Global (cross-user) bandit statistics per row category for UCB1.
+  rowImpressionStats: defineTable({
+    rowCategoryKey: v.string(),
+    totalImpressions: v.number(),
+    totalClicks: v.number(),
+    totalPlays: v.number(),
+    lastUpdated: v.number(),
+  }).index("by_category", ["rowCategoryKey"]),
+
+  userRowFatigue: defineTable({
+    userId: v.string(),
+    profileId: v.string(),
+    rowCategoryKey: v.string(),
+    unclickedImpressions: v.number(),
+    lastSeenTimestamp: v.number(),
+  }).index("by_user_row", ["userId", "profileId", "rowCategoryKey"]),
+
+  itemFeatures: defineTable({
+    itemKey: v.string(), // "movie:550" | "tv:1399"
+    dataJson: v.string(), // serialized ItemProfile (vector + scoring meta)
+    updatedAt: v.number(),
+  }).index("by_itemKey", ["itemKey"]),
+
+  userServeLog: defineTable({
+    userId: v.string(),
+    profileId: v.string(),
+    servesJson: v.string(), // { [itemKey]: { count: number, lastServedAt: number } }
+    updatedAt: v.number(),
+  }).index("by_user_profile", ["userId", "profileId"]),
 })
 
 

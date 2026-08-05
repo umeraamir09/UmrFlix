@@ -17,6 +17,8 @@ import {
   type RowItem,
 } from "./recommendations"
 import { getGenreDiscoverParams, type GenreDef } from "./genres"
+import { getUserDiscoveryProfile } from "./discovery/profile"
+import { buildItemVector, cosineSimilarity } from "./discovery/vector"
 
 /**
  * Per-user genre affinity engine.
@@ -306,6 +308,13 @@ export async function getGenreTopPicks(
   const profile = await getUserGenreProfile(userId)
   const excluded = buildExclusionKeys(profile)
 
+  // Discovery engine: 64-D vector affinity sharpens the horizontal ranking
+  // when the user has enough signals; genre-count affinity remains as the
+  // cold-start fallback.
+  const discoveryProfile = await getUserDiscoveryProfile(userId).catch(() => null)
+  const discoveryVector =
+    discoveryProfile && discoveryProfile.hasProfile ? discoveryProfile.vector : null
+
   const [movieData, tvData] = await Promise.all([
     genre.movieGenreIds.length > 0
       ? discoverMovies({
@@ -336,7 +345,7 @@ export async function getGenreTopPicks(
   const scored = candidates
     .filter((c) => !excluded.has(`${c.mediaType}:${c.id}`))
     .filter((c) => isDisplayable(c.data))
-    .map((c) => ({ ...c, score: scoreCandidate(c, profile) }))
+    .map((c) => ({ ...c, score: scoreCandidate(c, profile, discoveryVector) }))
     .sort((a, b) => b.score - a.score)
 
   // Composite dedupe across media types (movie 1 and tv 1 are distinct items).
@@ -353,13 +362,37 @@ export async function getGenreTopPicks(
   return picked.map((c) => toRowItem(c.data, c.mediaType))
 }
 
-function scoreCandidate(candidate: GenreCandidate, profile: GenreProfile): number {
+function scoreCandidate(
+  candidate: GenreCandidate,
+  profile: GenreProfile,
+  discoveryVector: number[] | null = null
+): number {
   let affinitySum = 0
   for (const id of candidate.genreIds) {
     affinitySum += profile.genreCounts[id] ?? 0
   }
   const topWeight = profile.topGenres[0]?.weight ?? 0
-  const affinity = topWeight > 0 ? Math.min(1, affinitySum / topWeight) : 0
+  let affinity = topWeight > 0 ? Math.min(1, affinitySum / topWeight) : 0
+
+  // Blend the 64-D cosine similarity into the affinity term when available.
+  if (discoveryVector) {
+    const dateStr =
+      "release_date" in candidate.data
+        ? candidate.data.release_date
+        : "first_air_date" in candidate.data
+          ? candidate.data.first_air_date
+          : null
+    const candidateVector = buildItemVector({
+      tmdbId: candidate.id,
+      mediaType: candidate.mediaType,
+      genreIds: candidate.genreIds,
+      releaseYear: dateStr ? new Date(dateStr).getFullYear() : null,
+      runtimeMinutes: null,
+    })
+    const sim = cosineSimilarity(discoveryVector, candidateVector)
+    const vectorAffinity = Math.min(1, Math.max(0, (sim + 1) / 2))
+    affinity = 0.5 * affinity + 0.5 * vectorAffinity
+  }
 
   const rating = Math.min(1, (candidate.data.vote_average ?? 0) / 10)
   const popularity = Math.min(1, (candidate.data.popularity ?? 0) / 400)

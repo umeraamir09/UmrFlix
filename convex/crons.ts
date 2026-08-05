@@ -11,4 +11,13 @@ crons.daily(
   { olderThanMs: 7 * 24 * 60 * 60 * 1000 }
 )
 
+// Discovery engine: prune signal events older than 90 days every 6 hours so
+// the event log stays bounded (profile builds read the last 90 days).
+crons.interval(
+  "prune discovery events",
+  { hours: 6 },
+  api.discovery.pruneOldEvents,
+  { olderThanMs: 90 * 24 * 60 * 60 * 1000 }
+)
+
 export default crons

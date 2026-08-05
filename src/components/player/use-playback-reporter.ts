@@ -13,6 +13,7 @@ export type ReporterState = {
   isMuted: boolean
   volumeLevel: number
   playMethod: "DirectPlay" | "DirectStream" | "Transcode"
+  context?: string
 }
 
 type ReporterEvent = "start" | "progress" | "stopped"

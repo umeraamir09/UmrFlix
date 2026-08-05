@@ -435,14 +435,15 @@ export async function createRequest(payload: {
   notifLog("createRequest", `Emitting SSE event request:created`, { requestId: id, title: payload.title })
   eventBus.emitEvent({ type: "request:created", payload: newRequest })
 
-  if (status === "pending") {
-    notifLog("createRequest", `Scheduling admin notification fan-out`, { requestId: id })
-    notifyAdminsOfNewRequest(newRequest).catch((err) => {
-      notifLog("createRequest", `notifyAdminsOfNewRequest threw`, { requestId: id, error: String(err) })
+  void import("@/lib/discovery/ingest").then(({ ingestRequestCreated }) =>
+    ingestRequestCreated({
+      userId: payload.requestedBy.userId,
+      itemId: `${payload.mediaType}:${payload.tmdbId}`,
+      tmdbId: payload.tmdbId,
+      mediaType: payload.mediaType === "tv" ? "tv" : "movie",
+      title: payload.title,
     })
-  } else if (status === "approved") {
-    void triggerTrackerTick()
-  }
+  ).catch(() => { /* ingestion must never break requests */ })
 
   return newRequest
 }
