@@ -311,21 +311,29 @@ export function NotificationBell() {
   return (
     <div className="relative h-full flex items-center" ref={menuRef}>
       <button
-        onClick={() => setOpen(!open)}
-        className="relative p-2.5 text-grey-100 hover:text-white transition-colors rounded-[4px]"
+        onClick={() => setOpen((o) => !o)}
+        className="relative flex min-h-[44px] min-w-[44px] items-center justify-center p-2.5 text-grey-100 hover:text-white transition-colors rounded-[4px]"
         title="Notifications"
         aria-label="View Notifications"
       >
         <Bell className="size-5" />
         {unreadCount > 0 && (
-          <span className="absolute top-1 right-1 flex size-4 items-center justify-center rounded-full bg-accent text-[10px] font-bold text-white shadow-md animate-pulse">
+          <span className="absolute top-1 right-1 flex size-4 items-center justify-center rounded-full bg-accent text-[10px] font-bold text-white shadow-md animate-pulse motion-reduce:animate-none">
             {unreadCount > 9 ? "9+" : unreadCount}
           </span>
         )}
       </button>
 
       {open && (
-        <div className="absolute right-0 top-full w-80 sm:w-96 border border-grey-600 bg-grey-900 shadow-2xl backdrop-blur-xl rounded-[4px] z-50 text-xs text-grey-10 animate-in fade-in slide-in-from-top-1 duration-150">
+        <>
+          {/* Mobile backdrop overlay */}
+          <div
+            className="fixed inset-0 bg-black/60 backdrop-blur-xs z-40 sm:hidden"
+            onClick={() => setOpen(false)}
+          />
+
+          {/* Notification Menu: Centered popover on mobile, right-aligned dropdown on desktop */}
+          <div className="fixed left-1/2 -translate-x-1/2 top-16 sm:absolute sm:left-auto sm:right-0 sm:top-full sm:translate-x-0 w-[calc(100vw-2rem)] max-w-sm sm:w-96 border border-grey-600 bg-grey-900 shadow-2xl backdrop-blur-xl rounded-[6px] z-50 text-xs text-grey-10 animate-in fade-in zoom-in-95 sm:slide-in-from-top-1 duration-150">
           <div className="p-3.5 border-b border-grey-750 bg-grey-850 flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Bell className="size-4 text-accent" />
@@ -419,6 +427,7 @@ export function NotificationBell() {
             </Link>
           </div>
         </div>
+      </>
       )}
     </div>
   )

@@ -1,4 +1,4 @@
-import type { Metadata } from "next"
+import type { Metadata, Viewport } from "next"
 import "./globals.css"
 import { LayoutShell } from "@/components/LayoutShell"
 import { ToastProvider } from "@/components/Toast"
@@ -7,9 +7,23 @@ import { SWRProvider } from "@/components/SWRProvider"
 export const metadata: Metadata = {
   title: "UmrFlix — Your Personal Media Client",
   description: "Browse TMDB, stream from Jellyfin, and request movies & TV shows via Radarr and Sonarr",
+  manifest: "/manifest.webmanifest",
   icons: {
     icon: "/favicon.ico",
   },
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "black-translucent",
+    title: "UmrFlix",
+  },
+}
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 5,
+  viewportFit: "cover",
+  themeColor: "#000000",
 }
 
 export default function RootLayout({
@@ -30,7 +44,7 @@ export default function RootLayout({
           href="https://api.fontshare.com/v2/css?f[]=satoshi@1,2&display=swap"
         />
       </head>
-      <body className="flex min-h-screen flex-col bg-background text-foreground font-sans">
+      <body className="flex min-h-[100dvh] flex-col bg-background text-foreground font-sans">
         <SWRProvider>
           <ToastProvider>
             <LayoutShell>{children}</LayoutShell>

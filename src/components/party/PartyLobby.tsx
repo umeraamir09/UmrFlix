@@ -148,7 +148,7 @@ export function PartyLobby({
   }, [episodes])
 
   return (
-    <div className="flex h-dvh w-screen flex-col items-center justify-center bg-black p-6 text-white">
+    <div className="flex min-h-[100dvh] w-full flex-col items-center justify-center bg-black p-6 text-white">
       <div className="w-full max-w-xl border border-border bg-[#141519] p-8 shadow-2xl space-y-6">
         {/* Header */}
         <div className="flex items-center justify-between border-b border-border/80 pb-4">
@@ -263,13 +263,13 @@ export function PartyLobby({
                     placeholder="Search library movies, series & episodes…"
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
-                    className="w-full bg-surface border border-border pl-9 pr-3 py-2 text-xs text-white placeholder-gray-500 focus:outline-none focus:border-accent"
+                    className="w-full bg-surface border border-border pl-9 pr-3 py-2 text-[16px] sm:text-xs text-white placeholder-gray-500 focus:outline-none focus:border-accent min-h-[44px]"
                   />
                 </div>
                 <button
                   type="submit"
                   disabled={searching}
-                  className="bg-accent hover:bg-accent-hover px-5 py-2 text-xs font-bold uppercase tracking-wider text-white transition-colors flex items-center gap-1.5"
+                  className="bg-accent hover:bg-accent-hover px-5 py-2 text-xs font-bold uppercase tracking-wider text-white transition-colors flex min-h-[44px] items-center gap-1.5"
                 >
                   {searching && <Loader2 className="size-3.5 animate-spin" />}
                   Search

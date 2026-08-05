@@ -139,37 +139,47 @@ export function EpisodeBrowser({
   const activeSeasonLabel = activeSeason?.name ?? `Season ${selectedSeason}`
 
   return (
-    <div
-      ref={dialogRef}
-      role="dialog"
-      aria-modal="true"
-      aria-label="Episode browser"
-      tabIndex={-1}
-      className="absolute inset-0 z-[70] flex flex-col bg-black/95 backdrop-blur-md animate-in fade-in duration-200"
-    >
-      {/* Header */}
-      <div className="flex items-end justify-between px-6 sm:px-8 pt-8 sm:pt-10 pb-3">
+    <>
+      {/* Backdrop overlay for closing */}
+      <div
+        className="fixed inset-0 bg-black/70 backdrop-blur-xs z-[65] animate-in fade-in duration-150"
+        onClick={onClose}
+      />
+
+      <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Episode browser"
+        tabIndex={-1}
+        className="fixed inset-x-0 bottom-0 sm:top-0 sm:right-0 sm:left-auto w-full sm:w-[480px] max-h-[85vh] sm:max-h-full rounded-t-2xl sm:rounded-none z-[70] flex flex-col bg-black/95 border-t sm:border-t-0 sm:border-l border-white/15 shadow-2xl backdrop-blur-xl pt-safe pb-safe animate-in fade-in slide-in-from-bottom-4 sm:slide-in-from-right-4 duration-200"
+      >
+        {/* Mobile top grab handle indicator */}
+        <div className="w-12 h-1 bg-white/25 rounded-full mx-auto mt-2.5 sm:hidden shrink-0" />
+
+        {/* Header */}
+        <div className="flex items-center justify-between px-4 sm:px-8 pt-3 sm:pt-8 pb-2">
         <div>
-          <h2 className="text-lg sm:text-2xl font-black uppercase tracking-tight text-white">Episodes</h2>
-          <p className="mt-0.5 text-[11px] sm:text-xs font-semibold uppercase tracking-widest text-gray-500">
+          <h2 className="text-base sm:text-2xl font-black uppercase tracking-tight text-white">Episodes</h2>
+          <p className="mt-0.5 text-[10px] sm:text-xs font-semibold uppercase tracking-widest text-gray-500">
             {activeSeasonLabel} · {seasonEpisodes.length} Episodes
           </p>
         </div>
         <button
           onClick={onClose}
-          className="flex items-center justify-center p-2 text-gray-300 transition-colors hover:text-white"
+          className="flex min-h-[40px] min-w-[40px] items-center justify-center p-1 text-gray-300 transition-colors hover:text-white"
           aria-label="Close episode browser"
         >
-          <X className="size-7 sm:size-8" />
+          <X className="size-5 sm:size-8" />
         </button>
       </div>
 
       {/* Season selector */}
-      <div className="px-6 sm:px-8 pb-4">
+      <div className="px-4 sm:px-8 pb-3">
         <div ref={seasonMenuRef} className="relative inline-block">
           <button
             onClick={() => setSeasonMenuOpen((o) => !o)}
-            className="flex items-center gap-2 border border-white/20 bg-white/10 px-4 py-2 text-xs sm:text-sm font-bold uppercase tracking-wider text-white transition-colors hover:bg-white/15"
+            className="flex min-h-[44px] items-center gap-2 border border-white/20 bg-white/10 px-4 py-2.5 text-xs sm:text-sm font-bold uppercase tracking-wider text-white transition-colors hover:bg-white/15"
           >
             {activeSeasonLabel}
             <ChevronDown
@@ -204,7 +214,7 @@ export function EpisodeBrowser({
       </div>
 
       {/* Episode list */}
-      <div className="flex-1 overflow-y-auto px-6 sm:px-8 pb-12">
+      <div className="flex-1 overflow-y-auto overflow-touch px-6 sm:px-8 pb-12 pb-safe">
         {seasonEpisodes.length === 0 ? (
           <p className="border border-dashed border-white/20 p-10 text-center text-sm text-gray-500">
             No episodes available for this season.
@@ -292,5 +302,6 @@ export function EpisodeBrowser({
         )}
       </div>
     </div>
+    </>
   )
 }
