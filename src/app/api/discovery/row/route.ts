@@ -67,8 +67,10 @@ export async function GET(req: Request) {
         ? scored.sort((a, b) => b.score - a.score).slice(0, 20).map((s) => s.item)
         : items.slice(0, 20)
 
-    const servedKeys = rankedItems.map((i) => i.key)
-    void recordServeLog(userId, "default", servedKeys)
+    if (session?.userId) {
+      const servedKeys = rankedItems.map((i) => i.key)
+      void recordServeLog(userId, "default", servedKeys)
+    }
 
     return NextResponse.json({ results: rankedItems.map((i) => i.rowItem) })
   } catch (err) {

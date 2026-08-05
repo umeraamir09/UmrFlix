@@ -432,8 +432,14 @@ export async function createRequest(payload: {
     notifLog("createRequest", `Saved to local store — requestId=${id}`)
   }
 
-  notifLog("createRequest", `Emitting SSE event request:created`, { requestId: id, title: payload.title })
-  eventBus.emitEvent({ type: "request:created", payload: newRequest })
+  if (status === "pending") {
+    notifLog("createRequest", `Scheduling admin notification fan-out`, { requestId: id })
+    notifyAdminsOfNewRequest(newRequest).catch((err) => {
+      notifLog("createRequest", `notifyAdminsOfNewRequest threw`, { requestId: id, error: String(err) })
+    })
+  } else if (status === "approved") {
+    void triggerTrackerTick()
+  }
 
   void import("@/lib/discovery/ingest").then(({ ingestRequestCreated }) =>
     ingestRequestCreated({

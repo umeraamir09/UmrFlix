@@ -191,8 +191,10 @@ export function buildItemVector(input: ItemFeatureInput): number[] {
     const currentYear = new Date().getFullYear()
     const centers = [...DECADE_CENTERS, currentYear]
     let norm = 0
-    const weights = centers.map((center) => {
-      const d = input.releaseYear! - center
+    const weights = centers.map((center, index) => {
+      // Classic era (center 0) covers all years <= 1960 without decaying for older classics
+      const year = index === 0 && input.releaseYear! < 1960 ? 1960 : input.releaseYear!
+      const d = year - center
       const w = Math.exp(-(d * d) / (2 * DECADE_SIGMA_YEARS * DECADE_SIGMA_YEARS))
       norm += w * w
       return w

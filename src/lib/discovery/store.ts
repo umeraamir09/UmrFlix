@@ -372,7 +372,21 @@ export async function getRowFatigueMap(
 
 const ITEM_CACHE_PREFIX = "discovery-item:"
 const ITEM_MEMORY_TTL = 6 * 60 * 60 * 1000 // 6 hours
+const MAX_ITEM_CACHE_SIZE = 500
 const itemMemoryCache = new Map<string, { profile: ItemProfile; timestamp: number }>()
+
+function pruneItemMemoryCache() {
+  const now = Date.now()
+  for (const [key, entry] of itemMemoryCache.entries()) {
+    if (now - entry.timestamp >= ITEM_MEMORY_TTL) {
+      itemMemoryCache.delete(key)
+    }
+  }
+  if (itemMemoryCache.size > MAX_ITEM_CACHE_SIZE) {
+    const oldestKey = itemMemoryCache.keys().next().value
+    if (oldestKey) itemMemoryCache.delete(oldestKey)
+  }
+}
 
 export async function getCachedItemProfile(
   mediaType: "movie" | "tv",
@@ -389,6 +403,7 @@ export async function getCachedItemProfile(
     const entry = await convex.query(getItemFeatureRef, { itemKey })
     if (!entry) return null
     const profile = JSON.parse(entry.dataJson) as ItemProfile
+    pruneItemMemoryCache()
     itemMemoryCache.set(memKey, { profile, timestamp: Date.now() })
     return profile
   } catch {
@@ -399,6 +414,7 @@ export async function getCachedItemProfile(
 export async function setCachedItemProfile(profile: ItemProfile): Promise<void> {
   const itemKey = `${profile.mediaType}:${profile.tmdbId}`
   const memKey = `${ITEM_CACHE_PREFIX}${itemKey}`
+  pruneItemMemoryCache()
   itemMemoryCache.set(memKey, { profile, timestamp: Date.now() })
 
   const convex = getConvexClient()

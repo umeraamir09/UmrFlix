@@ -382,11 +382,13 @@ function scoreCandidate(
         : "first_air_date" in candidate.data
           ? candidate.data.first_air_date
           : null
+    const yearParsed = dateStr ? new Date(dateStr).getFullYear() : null
+    const releaseYear = yearParsed && !Number.isNaN(yearParsed) ? yearParsed : null
     const candidateVector = buildItemVector({
       tmdbId: candidate.id,
       mediaType: candidate.mediaType,
       genreIds: candidate.genreIds,
-      releaseYear: dateStr ? new Date(dateStr).getFullYear() : null,
+      releaseYear,
       runtimeMinutes: null,
     })
     const sim = cosineSimilarity(discoveryVector, candidateVector)

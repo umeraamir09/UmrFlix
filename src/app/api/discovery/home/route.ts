@@ -23,7 +23,7 @@ export async function GET(req: Request) {
 
     const rows = await getPersonalizedFeed(userId, "default", { mediaType, clientHour })
 
-    if (rows.length > 0) {
+    if (rows.length > 0 && session?.userId) {
       const servedItemKeys = rows.flatMap((r) => r.items.map((i) => `${i.media_type ?? "movie"}:${i.id}`))
       void recordServeLog(userId, "default", servedItemKeys)
       for (const row of rows) {

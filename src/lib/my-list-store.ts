@@ -126,11 +126,12 @@ async function writeStorage(data: StorageSchema): Promise<void> {
 
 // Unambiguous, deterministic key strategy (Issue #16)
 export function getItemKey(target: {
-  id?: string
+  id?: string | number
   tmdbId?: number
   jellyfinId?: string
   mediaType?: "movie" | "tv"
 }): string {
+  if (!target) return ""
   const mediaType = target.mediaType || "movie"
 
   if (target.tmdbId) {
@@ -139,20 +140,21 @@ export function getItemKey(target: {
   if (target.jellyfinId) {
     return `jellyfin:${target.jellyfinId}`
   }
-  if (target.id) {
-    if (target.id.startsWith("tmdb:") || target.id.startsWith("jellyfin:")) {
-      return target.id
+  if (target.id !== undefined && target.id !== null) {
+    const idStr = String(target.id)
+    if (idStr.startsWith("tmdb:") || idStr.startsWith("jellyfin:")) {
+      return idStr
     }
-    if (target.id.startsWith("tmdb-")) {
-      return target.id.replace(/^tmdb-/, "tmdb:")
+    if (idStr.startsWith("tmdb-")) {
+      return idStr.replace(/^tmdb-/, "tmdb:")
     }
-    if (target.id.startsWith("jellyfin-")) {
-      return target.id.replace(/^jellyfin-/, "jellyfin:")
+    if (idStr.startsWith("jellyfin-")) {
+      return idStr.replace(/^jellyfin-/, "jellyfin:")
     }
-    if (/^\d+$/.test(target.id)) {
-      return `tmdb:${mediaType}:${target.id}`
+    if (/^\d+$/.test(idStr)) {
+      return `tmdb:${mediaType}:${idStr}`
     }
-    return target.id
+    return idStr
   }
   return ""
 }

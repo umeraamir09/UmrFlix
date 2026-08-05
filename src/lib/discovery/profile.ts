@@ -388,6 +388,16 @@ export async function getUserDiscoveryProfile(
       profile = emptyProfile(userId, profileId, await getColdStartVector())
     }
 
+    const now = Date.now()
+    if (profileMemoryCache.size > 200) {
+      for (const [k, v] of profileMemoryCache.entries()) {
+        if (now - v.timestamp >= PROFILE_MEMORY_TTL) profileMemoryCache.delete(k)
+      }
+      if (profileMemoryCache.size > 200) {
+        const oldestKey = profileMemoryCache.keys().next().value
+        if (oldestKey) profileMemoryCache.delete(oldestKey)
+      }
+    }
     profileMemoryCache.set(key, { profile, timestamp: Date.now() })
     return profile
   })

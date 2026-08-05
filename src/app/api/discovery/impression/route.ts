@@ -29,7 +29,10 @@ export async function POST(request: Request) {
   }
 
   const session = await getSession()
-  const userId = session?.userId ?? "default-user"
+  if (!session?.userId) {
+    return NextResponse.json({ ok: true })
+  }
+  const userId = session.userId
 
   if (action === "view") {
     await Promise.all([

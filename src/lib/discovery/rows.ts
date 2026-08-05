@@ -1,4 +1,4 @@
-import { discoverMovies, discoverTv, trending, type TmdbMovie, type TmdbTvShow } from "../tmdb"
+import { discoverMovies, discoverTv, type TmdbMovie, type TmdbTvShow } from "../tmdb"
 import { filterReleasedContent, filterDisplayableContent } from "../catalog"
 import { toRowItem, getTmdbRecommendations, type RowItem } from "../recommendations"
 import {

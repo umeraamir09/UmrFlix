@@ -45,10 +45,14 @@ export function classifyPlaybackStop(
 }
 
 /** Re-watch signal: flat +0.80 for a second completion within 30 days (spec: Module 1). */
-export function computeRewatchWeight(_daysSinceLastCompletion?: number): number {
+export function computeRewatchWeight(daysSinceLastCompletion?: number): number {
+  if (daysSinceLastCompletion != null && daysSinceLastCompletion > 30) {
+    return 0.4
+  }
   return 0.8
 }
 
+const MAX_SERIES_CACHE_SIZE = 500
 const seriesCache = new Map<string, { itemId: string; tmdbId?: number; title?: string }>()
 
 async function getSeriesMeta(seriesId: string): Promise<{ itemId: string; tmdbId?: number; title?: string }> {
@@ -61,6 +65,10 @@ async function getSeriesMeta(seriesId: string): Promise<{ itemId: string; tmdbId
     itemId: seriesId,
     tmdbId: Number.isFinite(tmdbId) ? tmdbId : undefined,
     title: detail?.Name ?? detail?.SeriesName,
+  }
+  if (seriesCache.size >= MAX_SERIES_CACHE_SIZE) {
+    const oldestKey = seriesCache.keys().next().value
+    if (oldestKey) seriesCache.delete(oldestKey)
   }
   seriesCache.set(seriesId, meta)
   return meta

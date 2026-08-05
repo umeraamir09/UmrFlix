@@ -216,6 +216,15 @@ export async function getPersonalizedFeed(
     if (finalFeed.length >= maxRows) break
   }
 
+  if (feedMemoryCache.size > 200) {
+    for (const [k, v] of feedMemoryCache.entries()) {
+      if (now - v.timestamp >= FEED_CACHE_TTL) feedMemoryCache.delete(k)
+    }
+    if (feedMemoryCache.size > 200) {
+      const oldestKey = feedMemoryCache.keys().next().value
+      if (oldestKey) feedMemoryCache.delete(oldestKey)
+    }
+  }
   feedMemoryCache.set(cacheKey, { rows: finalFeed, timestamp: Date.now() })
   return finalFeed
 }
