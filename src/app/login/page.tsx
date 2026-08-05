@@ -115,7 +115,7 @@ export default function LoginPage() {
                   onChange={(e) => setUsername(e.target.value)}
                   placeholder="Email or username"
                   required
-                  className="w-full rounded-[4px] bg-grey-600 border border-grey-400 focus:border-accent text-sm text-white placeholder-grey-200 py-3 pl-10 pr-4 focus:outline-none transition-colors"
+                  className="w-full rounded-[4px] bg-grey-600 border border-grey-400 focus:border-accent text-[16px] sm:text-sm text-white placeholder-grey-200 py-3 pl-10 pr-4 focus:outline-none transition-colors"
                 />
               </div>
             </div>
@@ -132,7 +132,7 @@ export default function LoginPage() {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="••••••••"
-                  className="w-full rounded-[4px] bg-grey-600 border border-grey-400 focus:border-accent text-sm text-white placeholder-grey-200 py-3 pl-10 pr-4 focus:outline-none transition-colors"
+                  className="w-full rounded-[4px] bg-grey-600 border border-grey-400 focus:border-accent text-[16px] sm:text-sm text-white placeholder-grey-200 py-3 pl-10 pr-4 focus:outline-none transition-colors"
                 />
               </div>
             </div>
@@ -156,7 +156,7 @@ export default function LoginPage() {
                     value={serverUrl}
                     onChange={(e) => setServerUrl(e.target.value)}
                     placeholder="http://localhost:8096"
-                    className="w-full rounded-[4px] bg-grey-600 border border-grey-400 focus:border-accent text-xs text-white placeholder-grey-200 py-2.5 px-3 focus:outline-none transition-colors"
+                    className="w-full rounded-[4px] bg-grey-600 border border-grey-400 focus:border-accent text-[16px] sm:text-xs text-white placeholder-grey-200 py-2.5 px-3 focus:outline-none transition-colors"
                   />
                   <p className="text-[10px] text-grey-200">
                     Leave blank to use default configured Jellyfin server URL.

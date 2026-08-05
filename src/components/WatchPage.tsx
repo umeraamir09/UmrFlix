@@ -261,7 +261,7 @@ export function WatchPage() {
 
   if (error) {
     return (
-      <div className="flex h-dvh w-screen flex-col items-center justify-center gap-4 bg-black px-6 text-center">
+      <div className="flex min-h-[100dvh] w-full flex-col items-center justify-center gap-4 bg-black px-6 text-center">
         <TriangleAlert className="size-10 text-accent" />
         <p className="text-lg font-bold text-white">Unable to play this title</p>
         <p className="max-w-md text-sm text-gray-400">{error.message}</p>
@@ -287,7 +287,7 @@ export function WatchPage() {
 
   if (!resolvedId) {
     return (
-      <div className="flex h-dvh w-screen flex-col items-center justify-center gap-3 bg-black text-gray-400">
+      <div className="flex min-h-[100dvh] w-full flex-col items-center justify-center gap-3 bg-black text-gray-400">
         <Loader2 className="size-10 animate-spin text-accent" />
         <p className="text-sm font-semibold">
           {partyParam ? "Joining watch party…" : "Preparing your stream…"}

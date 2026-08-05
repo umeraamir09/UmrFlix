@@ -68,7 +68,7 @@ export function PartyBar({
 
   return (
     <>
-      <div className="absolute top-4 right-4 z-40 flex flex-col items-end gap-1.5">
+      <div className="absolute top-4 sm:top-6 right-3 sm:right-6 z-40 flex flex-col items-end gap-1.5 max-w-[calc(100vw-3rem)] pt-safe">
         {/* Collapsed pill */}
         {isCollapsed && (
           <button
@@ -106,7 +106,7 @@ export function PartyBar({
 
         {/* Expanded bar */}
         <div
-          className={`flex items-center gap-2.5 bg-black/70 backdrop-blur-xl border border-white/15 px-3 py-2 text-white shadow-xl rounded-none transition-all duration-300 ${
+          className={`flex items-center gap-2.5 bg-black/70 backdrop-blur-xl border border-white/15 px-3 py-2 text-white shadow-xl rounded-none transition-all duration-300 max-w-full overflow-x-auto no-scrollbar ${
             isCollapsed
               ? "pointer-events-none max-h-0 scale-95 opacity-0 overflow-hidden px-0 py-0 border-transparent"
               : "max-h-20 scale-100 opacity-100"
@@ -116,26 +116,27 @@ export function PartyBar({
           <button
             onClick={toggleCollapsed}
             title="Collapse Party Bar"
-            className="flex items-center justify-center size-7 rounded-none bg-white/5 hover:bg-white/15 transition-colors shrink-0"
+            className="flex items-center justify-center size-8 rounded-none bg-white/5 hover:bg-white/15 transition-colors shrink-0 min-h-[36px] min-w-[36px]"
           >
             <ChevronDown className="size-3.5 text-gray-400 rotate-180" />
           </button>
 
           {/* Active Members Stack */}
-          <div className="flex items-center gap-1.5">
-            <Users className="size-4 text-accent mr-0.5" />
-            <div className="flex -space-x-2 overflow-hidden">
+          <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar">
+            <Users className="size-4 text-accent mr-0.5 shrink-0" />
+            <div className="flex items-center gap-1">
               {members.map((m) => (
                 <div
                   key={m.userId}
                   title={`${m.username}${m.buffering ? " (Buffering)" : ""}`}
-                  className={`relative flex size-7 items-center justify-center rounded-full border-2 text-[10px] font-bold transition-transform hover:z-10 hover:scale-110 ${
+                  className={`relative flex items-center gap-1 px-2 py-0.5 rounded-full border text-[10px] font-bold transition-transform shrink-0 ${
                     m.buffering
                       ? "border-amber-500 bg-amber-500/20 text-amber-300"
-                      : "border-black bg-accent text-white"
+                      : "border-white/20 bg-accent/20 text-white"
                   }`}
                 >
-                  {m.username.substring(0, 2).toUpperCase()}
+                  <span className="size-2 rounded-full bg-accent animate-pulse shrink-0" />
+                  <span className="max-w-[80px] sm:max-w-[110px] truncate">{m.username}</span>
                 </div>
               ))}
             </div>

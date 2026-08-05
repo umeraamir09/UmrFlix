@@ -299,7 +299,7 @@ export function SeasonBrowser({
                 className="fixed inset-0 z-30"
                 onClick={() => setIsSeasonMenuOpen(false)}
               />
-              <div className="absolute left-0 top-full mt-2 z-40 w-80 bg-[#181a20] border border-border shadow-2xl divide-y divide-border/40 py-1 rounded-none animate-in fade-in slide-in-from-top-2 duration-150">
+              <div className="absolute left-0 top-full mt-2 z-40 w-[calc(100vw-2rem)] max-w-xs sm:w-80 bg-[#181a20] border border-border shadow-2xl divide-y divide-border/40 py-1 rounded-none animate-in fade-in slide-in-from-top-2 duration-150">
                 {seasons.map((s) => {
                   const isSelected = s.seasonNumber === currentSeason
                   const isMissing = missingSeasons.includes(s.seasonNumber)
@@ -310,7 +310,7 @@ export function SeasonBrowser({
                         setSelectedSeason(s.seasonNumber)
                         setIsSeasonMenuOpen(false)
                       }}
-                      className={`w-full flex items-center justify-between px-4 py-3 text-left transition-colors ${
+                      className={`w-full flex items-center justify-between px-4 py-3 text-left transition-colors min-h-[44px] ${
                         isSelected
                           ? "bg-accent/15 text-accent font-extrabold"
                           : "text-gray-300 hover:bg-surface hover:text-white"
@@ -344,7 +344,7 @@ export function SeasonBrowser({
           {onRequestSeason && (
             <button
               onClick={() => onRequestSeason()}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-surface hover:bg-card border border-border text-accent hover:text-white transition-colors"
+              className="flex min-h-[44px] items-center gap-1.5 px-3 py-1.5 bg-surface hover:bg-card border border-border text-accent hover:text-white transition-colors"
             >
               <Plus className="size-3.5" />
               <span>REQUEST MORE SEASONS</span>
@@ -352,7 +352,7 @@ export function SeasonBrowser({
           )}
           <button
             onClick={() => setIsSortAscending(!isSortAscending)}
-            className="flex items-center gap-1.5 hover:text-white transition-colors"
+            className="flex min-h-[44px] items-center gap-1.5 hover:text-white transition-colors"
           >
             <ArrowUpDown className="size-3.5 text-gray-500" />
             <span>{isSortAscending ? "OLDEST" : "NEWEST"}</span>
@@ -377,7 +377,7 @@ export function SeasonBrowser({
           {onRequestSeason && (
             <button
               onClick={() => onRequestSeason(currentSeason)}
-              className="px-3.5 py-1.5 bg-accent hover:bg-accent/90 text-white font-bold text-xs uppercase tracking-wider flex items-center gap-1.5 shrink-0 transition-colors shadow-lg"
+              className="px-3.5 py-1.5 bg-accent hover:bg-accent/90 text-white font-bold text-xs uppercase tracking-wider flex items-center gap-1.5 shrink-0 transition-colors shadow-lg min-h-[44px]"
             >
               <Plus className="size-4" />
               Request Season {currentSeason}
@@ -413,7 +413,12 @@ export function SeasonBrowser({
                 {/* ── 1. Regular Card State ── */}
                 <div>
                   {/* Widescreen Thumbnail */}
-                  <div className="relative aspect-video w-full overflow-hidden bg-card">
+                  <div
+                    onClick={() => {
+                      if (playable) playEpisode(ep)
+                    }}
+                    className={`relative aspect-video w-full overflow-hidden bg-card ${playable ? "cursor-pointer" : ""}`}
+                  >
                     <Image
                       src={ep.thumbUrl}
                       alt={ep.title}
@@ -463,14 +468,14 @@ export function SeasonBrowser({
                     {/* Footer Row: Dub | Sub & Options */}
                     <div className="flex items-center justify-between text-[11px] text-gray-500 font-medium pt-1">
                       <span>Dub | Sub</span>
-                      <button className="hover:text-white transition-colors" aria-label="Options">
+                      <button className="min-h-[44px] min-w-[44px] flex items-center justify-end hover:text-white transition-colors" aria-label="Options">
                         <MoreVertical className="size-3.5 text-gray-400" />
                       </button>
                     </div>
                   </div>
                 </div>
 
-                {/* ── 2. Crunchyroll Hover/Active Overview Overlay Card (Look at E3 in reference image!) ── */}
+                {/* ── 2. Crunchyroll Hover/Active Overview Overlay Card ── */}
                 <div className="absolute inset-0 z-20 bg-[#16181f]/95 backdrop-blur-sm p-3.5 flex flex-col justify-between opacity-0 group-hover:opacity-100 transition-all duration-200 shadow-2xl pointer-events-none group-hover:pointer-events-auto">
                   <div className="space-y-1.5">
 
@@ -498,13 +503,13 @@ export function SeasonBrowser({
                     {playable ? (
                       <button
                         onClick={() => playEpisode(ep)}
-                        className="flex items-center gap-2 text-xs font-black uppercase tracking-wider text-accent hover:text-accent-light transition-colors active:scale-95"
+                        className="flex min-h-[44px] items-center gap-2 text-xs font-black uppercase tracking-wider text-accent hover:text-accent-light transition-colors active:scale-95"
                       >
                         <Play className="size-4 fill-accent text-accent" />
                         PLAY E{ep.episodeNumber}
                       </button>
                     ) : (
-                      <div className="flex items-center gap-1.5 text-[10px] font-extrabold uppercase tracking-wider text-gray-400">
+                      <div className="flex min-h-[44px] items-center gap-1.5 text-[10px] font-extrabold uppercase tracking-wider text-gray-400">
                         <Info className="size-3.5 text-gray-500" />
                         {ep.status === "unaired" ? "UNAIRED" : "NOT STREAMABLE YET"}
                       </div>

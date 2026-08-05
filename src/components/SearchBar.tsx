@@ -90,7 +90,7 @@ export function SearchBar() {
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           onFocus={() => query.length >= 2 && results.length > 0 && setOpen(true)}
-          className="h-9 w-full rounded-none border border-border bg-background pl-9 pr-8 text-xs font-medium text-white placeholder-gray-500 transition-all focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
+          className="h-9 w-full rounded-none border border-border bg-background pl-9 pr-8 text-[16px] sm:text-xs font-medium text-white placeholder-gray-500 transition-all focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
         />
         {loading ? (
           <Loader2 className="absolute right-2.5 size-4 animate-spin text-accent" />
@@ -156,7 +156,7 @@ export function SearchBar() {
             onClick={handleSubmit}
             className="w-full bg-card p-2 text-center text-xs font-semibold text-accent hover:bg-accent hover:text-white transition-colors"
           >
-            See all results for "{query}"
+            See all results for &quot;{query}&quot;
           </button>
         </div>
       )}

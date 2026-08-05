@@ -33,6 +33,7 @@ import { applyStreamParams, maskUrl } from "@/lib/url-utils"
 import { usePartySync } from "./use-party-sync"
 import { PartyBar } from "@/components/party/PartyBar"
 import type { EpisodeInfo, SeasonInfo } from "@/components/SeasonBrowser"
+import { IconPlay, IconPause, IconSkipBackward, IconSkipForward } from "@/components/ui/icons"
 
 const TICKS_PER_SECOND = 10_000_000
 const CONTROLS_HIDE_DELAY = 3_500
@@ -105,7 +106,7 @@ export function CinemaPlayer({
   // playhead across stream rebuilds (quality / track / subtitle-mode changes)
   const hadStreamRef = useRef(false)
 
-  const clientId = useMemo(() => `tab_${Math.random().toString(36).substring(2, 9)}`, [])
+  const [clientId] = useState(() => `tab_${Math.random().toString(36).substring(2, 9)}`)
 
   const seekToFn = useCallback((t: number) => {
     const video = videoRef.current
@@ -185,6 +186,9 @@ export function CinemaPlayer({
   const [muted, setMuted] = useState(false)
   const [playbackRate, setPlaybackRate] = useState(1)
   const [reportToast, setReportToast] = useState(false)
+  const [isTouchDevice] = useState(
+    () => typeof window !== "undefined" && ("ontouchstart" in window || navigator.maxTouchPoints > 0)
+  )
 
   // In party mode, show the party's authoritative playback rate
   const displayPlaybackRate = party?.partyId
@@ -238,6 +242,7 @@ export function CinemaPlayer({
   // ── Fetch playback payload ──
   useEffect(() => {
     let cancelled = false
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setPayload(null)
     setLoadError(null)
     setCueState(null)
@@ -728,22 +733,51 @@ export function CinemaPlayer({
     }
   }, [currentTime, duration, payload, onWatched])
 
+  const controlsVisibleRef = useRef(controlsVisible)
+  useEffect(() => {
+    controlsVisibleRef.current = controlsVisible
+  }, [controlsVisible])
+
+  const resetHideTimer = useCallback(() => {
+    if (hideTimerRef.current) {
+      clearTimeout(hideTimerRef.current)
+      hideTimerRef.current = null
+    }
+    if (!episodeBrowserOpen && videoRef.current && !videoRef.current.paused) {
+      hideTimerRef.current = setTimeout(() => {
+        setControlsVisible(false)
+      }, CONTROLS_HIDE_DELAY)
+    }
+  }, [episodeBrowserOpen])
+
+  const showControls = useCallback(() => {
+    setControlsVisible(true)
+    resetHideTimer()
+  }, [resetHideTimer])
+
+  const hideControls = useCallback(() => {
+    if (hideTimerRef.current) {
+      clearTimeout(hideTimerRef.current)
+      hideTimerRef.current = null
+    }
+    setControlsVisible(false)
+  }, [])
+
+  const pokeControls = useCallback(() => {
+    showControls()
+  }, [showControls])
+
   // ── Controls auto-hide (while playing) ──
   useEffect(() => {
     if (!playing || episodeBrowserOpen) return
-    hideTimerRef.current = setTimeout(() => setControlsVisible(false), CONTROLS_HIDE_DELAY)
+    resetHideTimer()
     return () => {
-      if (hideTimerRef.current) clearTimeout(hideTimerRef.current)
+      if (hideTimerRef.current) {
+        clearTimeout(hideTimerRef.current)
+        hideTimerRef.current = null
+      }
     }
-  }, [playing, episodeBrowserOpen])
-
-  const pokeControls = useCallback(() => {
-    setControlsVisible(true)
-    if (hideTimerRef.current) clearTimeout(hideTimerRef.current)
-    if (!episodeBrowserOpen && videoRef.current && !videoRef.current.paused) {
-      hideTimerRef.current = setTimeout(() => setControlsVisible(false), CONTROLS_HIDE_DELAY)
-    }
-  }, [episodeBrowserOpen])
+  }, [playing, episodeBrowserOpen, resetHideTimer])
 
   // Auto-open the diagnostics HUD for party hosts after prolonged buffering —
   // they need visibility into stuck streams, but we don't want to auto-show a
@@ -765,16 +799,41 @@ export function CinemaPlayer({
 
   // ── Fullscreen ──
   useEffect(() => {
-    const onChange = () => setIsFullscreen(!!document.fullscreenElement)
+    const onChange = () =>
+      setIsFullscreen(
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        !!document.fullscreenElement || !!(document as any).webkitFullscreenElement
+      )
     document.addEventListener("fullscreenchange", onChange)
-    return () => document.removeEventListener("fullscreenchange", onChange)
+    document.addEventListener("webkitfullscreenchange", onChange)
+    return () => {
+      document.removeEventListener("fullscreenchange", onChange)
+      document.removeEventListener("webkitfullscreenchange", onChange)
+    }
   }, [])
 
-  const toggleFullscreen = useCallback(() => {
-    if (document.fullscreenElement) {
-      void document.exitFullscreen()
-    } else {
-      void containerRef.current?.requestFullscreen()
+  const toggleFullscreen = useCallback(async () => {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      if (document.fullscreenElement || (document as any).webkitFullscreenElement) {
+        if (document.exitFullscreen) {
+          await document.exitFullscreen()
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        } else if ((document as any).webkitExitFullscreen) {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          ;(document as any).webkitExitFullscreen()
+        }
+      } else {
+        if (containerRef.current?.requestFullscreen) {
+          await containerRef.current.requestFullscreen()
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        } else if ((videoRef.current as any)?.webkitEnterFullscreen) {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          ;(videoRef.current as any).webkitEnterFullscreen()
+        }
+      }
+    } catch (err) {
+      console.error("[CinemaPlayer] Fullscreen toggle error:", err)
     }
   }, [])
 
@@ -805,6 +864,107 @@ export function CinemaPlayer({
       video.pause()
     }
   }, [party?.partyId, partySync])
+
+  // Auto-landscape orientation lock when playing on mobile devices
+  useEffect(() => {
+    if (!playing) return
+    try {
+      if (typeof window !== "undefined" && screen.orientation && "lock" in screen.orientation) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        ;(screen.orientation as any).lock("landscape").catch(() => {})
+      }
+    } catch {}
+    return () => {
+      try {
+        if (typeof window !== "undefined" && screen.orientation && "unlock" in screen.orientation) {
+          screen.orientation.unlock()
+        }
+      } catch {}
+    }
+  }, [playing])
+
+  // Double-tap skip gesture & single-tap overlay toggle handler
+  const [doubleTapRipple, setDoubleTapRipple] = useState<{
+    side: "left" | "right"
+    count: number
+  } | null>(null)
+  const lastTapRef = useRef<{ time: number; x: number }>({ time: 0, x: 0 })
+  const singleTapTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const rippleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const seekToRelative = useCallback(
+    (delta: number) => {
+      const video = videoRef.current
+      if (!video) return
+      const target = Math.min(Math.max(0, video.currentTime + delta), duration || video.duration || 0)
+      video.currentTime = target
+      setCurrentTime(target)
+    },
+    [duration]
+  )
+
+  const handlePointerMove = useCallback(
+    (e: React.PointerEvent) => {
+      // Only poke controls on actual mouse cursor movement (ignore touch emulated pointermove)
+      if (e.pointerType === "touch") return
+      pokeControls()
+    },
+    [pokeControls]
+  )
+
+  const handleCanvasTap = useCallback(
+    (e: React.MouseEvent<HTMLDivElement>) => {
+      const rect = e.currentTarget.getBoundingClientRect()
+      const clickX = e.clientX - rect.left
+      const pctX = clickX / rect.width
+      const now = Date.now()
+      const prev = lastTapRef.current
+
+      // Double tap threshold: < 300ms delay & tapped on same 35% side
+      if (now - prev.time < 300) {
+        if (singleTapTimerRef.current) {
+          clearTimeout(singleTapTimerRef.current)
+          singleTapTimerRef.current = null
+        }
+
+        if (pctX < 0.35) {
+          seekToRelative(-10)
+          setDoubleTapRipple((prevRipple) => ({
+            side: "left",
+            count: prevRipple?.side === "left" ? prevRipple.count + 1 : 1,
+          }))
+          if (rippleTimerRef.current) clearTimeout(rippleTimerRef.current)
+          rippleTimerRef.current = setTimeout(() => setDoubleTapRipple(null), 600)
+          lastTapRef.current = { time: 0, x: 0 }
+          return
+        } else if (pctX > 0.65) {
+          seekToRelative(10)
+          setDoubleTapRipple((prevRipple) => ({
+            side: "right",
+            count: prevRipple?.side === "right" ? prevRipple.count + 1 : 1,
+          }))
+          if (rippleTimerRef.current) clearTimeout(rippleTimerRef.current)
+          rippleTimerRef.current = setTimeout(() => setDoubleTapRipple(null), 600)
+          lastTapRef.current = { time: 0, x: 0 }
+          return
+        }
+      }
+
+      lastTapRef.current = { time: now, x: clickX }
+
+      // Capture controls state NOW — before any synthesized mouse events
+      // (mousemove, etc.) can race and flip the flag.
+      const wasVisible = controlsVisibleRef.current
+      singleTapTimerRef.current = setTimeout(() => {
+        if (wasVisible) {
+          hideControls()
+        } else {
+          showControls()
+        }
+      }, 250)
+    },
+    [hideControls, seekToRelative, showControls]
+  )
 
   const seekTo = useCallback(
     (t: number) => {
@@ -1023,18 +1183,22 @@ export function CinemaPlayer({
       ref={containerRef}
       tabIndex={0}
       onKeyDown={handleKeyDown}
-      onMouseMove={pokeControls}
-      onTouchStart={pokeControls}
+      onPointerMove={handlePointerMove}
       className={`group relative select-none overflow-hidden bg-black outline-none [container-type:inline-size] ${
-        fill ? "h-dvh w-screen rounded-none" : "aspect-video w-full rounded-lg"
+        fill ? "h-dvh w-full rounded-none" : "aspect-video w-full rounded-lg"
       } ${!controlsVisible && playing && !episodeBrowserOpen ? "cursor-none" : ""} ${className}`}
     >
+      {/* Video Tap & Gesture Backdrop Layer */}
+      <div
+        className="absolute inset-0 z-10 cursor-pointer"
+        onClick={handleCanvasTap}
+      />
+
       <video
         ref={videoRef}
         poster={poster}
         playsInline
-        className="size-full"
-        onClick={togglePlay}
+        className="size-full pointer-events-none"
         onDoubleClick={toggleFullscreen}
         onPlay={() => {
           setPlaying(true)
@@ -1151,9 +1315,83 @@ export function CinemaPlayer({
         />
       )}
 
+      {/* Double-Tap Skip Ripple Feedback Overlay */}
+      {doubleTapRipple && (
+        <div
+          className={`absolute inset-y-0 z-40 flex items-center justify-center w-1/3 bg-white/10 backdrop-blur-xs text-white pointer-events-none animate-in fade-in zoom-in-95 duration-150 ${
+            doubleTapRipple.side === "left"
+              ? "left-0 rounded-r-full"
+              : "right-0 rounded-l-full"
+          }`}
+        >
+          <div className="flex flex-col items-center gap-1 font-black text-sm uppercase tracking-wider drop-shadow-md">
+            {doubleTapRipple.side === "left" ? (
+              <>
+                <IconSkipBackward className="size-8 animate-bounce" />
+                <span>-{10 * doubleTapRipple.count}s</span>
+              </>
+            ) : (
+              <>
+                <IconSkipForward className="size-8 animate-bounce" />
+                <span>+{10 * doubleTapRipple.count}s</span>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Floating Center Transport Controls (Mobile / Touch Devices Only) */}
+      {isTouchDevice && (controlsVisible || !playing) && (
+        <div
+          onClick={(e) => e.stopPropagation()}
+          className="absolute inset-0 z-30 flex items-center justify-center gap-8 sm:gap-14 pointer-events-none"
+        >
+          <button
+            onClick={(e) => {
+              e.stopPropagation()
+              seekToRelative(-10)
+              pokeControls()
+            }}
+            className="pointer-events-auto flex size-12 sm:size-16 items-center justify-center bg-transparent text-white drop-shadow-[0_4px_12px_rgba(0,0,0,0.85)] hover:scale-115 active:scale-90 transition-all cursor-pointer"
+            aria-label="Skip backward 10 seconds"
+          >
+            <IconSkipBackward className="size-7 sm:size-10 text-white" />
+          </button>
+
+          <button
+            onClick={(e) => {
+              e.stopPropagation()
+              togglePlay()
+              pokeControls()
+            }}
+            className="pointer-events-auto flex size-16 sm:size-24 items-center justify-center bg-transparent text-white drop-shadow-[0_4px_18px_rgba(0,0,0,0.9)] hover:scale-115 active:scale-90 transition-all cursor-pointer"
+            aria-label={playing ? "Pause" : "Play"}
+          >
+            {playing ? (
+              <IconPause className="size-11 sm:size-16 fill-white text-white" />
+            ) : (
+              <IconPlay className="size-11 sm:size-16 fill-white text-white ml-1.5" />
+            )}
+          </button>
+
+          <button
+            onClick={(e) => {
+              e.stopPropagation()
+              seekToRelative(10)
+              pokeControls()
+            }}
+            className="pointer-events-auto flex size-12 sm:size-16 items-center justify-center bg-transparent text-white drop-shadow-[0_4px_12px_rgba(0,0,0,0.85)] hover:scale-115 active:scale-90 transition-all cursor-pointer"
+            aria-label="Skip forward 10 seconds"
+          >
+            <IconSkipForward className="size-7 sm:size-10 text-white" />
+          </button>
+        </div>
+      )}
+
       {/* Control bar */}
       {payload && startedOrWaiting && endpointReady && (
         <PlayerControls
+          isTouchDevice={isTouchDevice}
           visible={controlsVisible || !playing || !!nextPrompt || episodeBrowserOpen}
           title={title}
           subtitle={subtitle}

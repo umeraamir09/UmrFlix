@@ -122,13 +122,15 @@ export function ContinueWatchingCard({
             disabled={marking}
             title="Mark as watched"
             aria-label={`Mark ${item.title} as watched`}
-            className="absolute bottom-2 right-2 z-10 flex size-6 items-center justify-center rounded-full border border-white/25 bg-black/60 text-white backdrop-blur-sm transition-all hover:border-white active:scale-95 disabled:opacity-50 cursor-pointer"
+            className="absolute bottom-1 right-1 z-10 flex min-h-[44px] min-w-[44px] items-center justify-center rounded-full text-white transition-all hover:scale-110 active:scale-95 disabled:opacity-50 cursor-pointer"
           >
-            {marking ? (
-              <Loader2 className="size-3.5 animate-spin" />
-            ) : (
-              <Check className="size-3.5 stroke-[2.5]" />
-            )}
+            <div className="flex size-7 items-center justify-center rounded-full border border-white/25 bg-black/60 backdrop-blur-sm">
+              {marking ? (
+                <Loader2 className="size-3.5 animate-spin" />
+              ) : (
+                <Check className="size-3.5 stroke-[2.5]" />
+              )}
+            </div>
           </button>
         )}
       </div>

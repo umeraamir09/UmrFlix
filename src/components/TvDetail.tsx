@@ -112,7 +112,7 @@ export function TvDetail({ params }: { params: Promise<{ id: string }> }) {
               <div className="flex items-center gap-2 text-xs font-black uppercase tracking-widest text-accent">
                 <span className="bg-accent/20 px-2 py-0.5 border border-accent/40">SERIES</span>
               </div>
-              <div className="w-36 sm:w-44 md:w-52 shrink-0 overflow-hidden rounded-none border border-border shadow-2xl hidden sm:block">
+              <div className="w-28 sm:w-44 md:w-52 shrink-0 overflow-hidden rounded-none border border-border shadow-2xl block">
                 <img
                   src={getImageUrl(show.poster_path, "w500")}
                   alt={show.name}
@@ -189,7 +189,7 @@ export function TvDetail({ params }: { params: Promise<{ id: string }> }) {
               </div>
 
               {/* Action Buttons */}
-              <div className="flex flex-wrap items-center gap-3 pt-2">
+              <div className="flex flex-col sm:flex-row sm:items-center gap-3 pt-2 w-full sm:w-auto">
                 <RequestButton
                   type="tv"
                   tmdbId={show.id}

@@ -152,37 +152,37 @@ export function MovieCard({
         </div>
 
         {/* Bottom Action Bar (Crunchyroll Orange/Accent Icons) */}
-        <div className="flex items-center gap-3 pt-2">
+        <div className="flex items-center gap-2 pt-2">
           {!disabled && (
             <>
               <button
-                className="text-accent hover:scale-110 transition-transform cursor-pointer"
+                className="flex min-h-[44px] min-w-[44px] items-center justify-center p-2 text-accent hover:scale-110 transition-transform cursor-pointer"
                 title="Watch Now"
                 aria-label="Watch Now"
                 onClick={(e) => {
                   e.preventDefault()
                   e.stopPropagation()
-                  // The watch page resolves availability (and, for series, picks
-                  // the next episode) before starting playback.
                   router.push(`/watch?tmdb=${item.id}&type=${type}`)
                 }}
               >
                 <IconPlay className="size-5 fill-accent text-accent" />
               </button>
-              <BookmarkButton
-                itemId={availabilityState?.jellyfinItemId || String(item.id)}
-                tmdbId={item.id}
-                jellyfinId={availabilityState?.jellyfinItemId}
-                mediaType={type}
-                title={title}
-                posterPath={item.poster_path}
-                overview={item.overview}
-                releaseYear={year}
-                variant="icon"
-                className="!p-1.5 border-none bg-transparent hover:bg-white/10"
-              />
+              <div className="flex min-h-[44px] min-w-[44px] items-center justify-center">
+                <BookmarkButton
+                  itemId={availabilityState?.jellyfinItemId || String(item.id)}
+                  tmdbId={item.id}
+                  jellyfinId={availabilityState?.jellyfinItemId}
+                  mediaType={type}
+                  title={title}
+                  posterPath={item.poster_path}
+                  overview={item.overview}
+                  releaseYear={year}
+                  variant="icon"
+                  className="!p-1.5 border-none bg-transparent hover:bg-white/10"
+                />
+              </div>
               <button
-                className="text-accent hover:scale-110 transition-transform cursor-pointer"
+                className="flex min-h-[44px] min-w-[44px] items-center justify-center p-2 text-accent hover:scale-110 transition-transform cursor-pointer"
                 title="Request / Add to Library"
                 aria-label="Request or Add to Library"
                 onClick={(e) => {
@@ -196,10 +196,10 @@ export function MovieCard({
             </>
           )}
           {(onMarkWatched || onDelete) && (
-            <div className="ml-auto flex items-center gap-3">
+            <div className="ml-auto flex items-center gap-2">
               {onMarkWatched && (
                 <button
-                  className={`hover:scale-110 transition-transform cursor-pointer ${
+                  className={`flex min-h-[44px] min-w-[44px] items-center justify-center p-2 hover:scale-110 transition-transform cursor-pointer ${
                     isWatched ? "text-red-500 hover:text-red-400" : "text-white hover:text-accent"
                   }`}
                   title={

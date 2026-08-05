@@ -62,7 +62,7 @@ export function HeroBillboard({ items }: { items: BillboardItem[] }) {
   const title = activeItem.title || "Featured Title"
 
   return (
-    <div className="relative w-full h-[75vh] min-h-[600px] sm:h-[80vh] sm:min-h-[680px] md:h-[85vh] md:min-h-[750px] overflow-hidden bg-background group">
+    <div className="relative w-full h-[75dvh] min-h-[480px] sm:h-[80dvh] sm:min-h-[600px] md:h-[85dvh] md:min-h-[750px] overflow-hidden bg-background group">
       {/* Background Image with Swiping & Scale Animation */}
       <div className="absolute inset-0 overflow-hidden">
         <Image
@@ -77,8 +77,8 @@ export function HeroBillboard({ items }: { items: BillboardItem[] }) {
         />
 
         {/* Dark Vignette Gradients */}
-        <div className="absolute inset-0 bg-gradient-to-t from-background via-background/50 to-transparent" />
-        <div className="absolute inset-0 bg-gradient-to-r from-background via-background/80 to-transparent w-full md:w-3/4" />
+        <div className="absolute inset-0 bg-gradient-to-t from-background via-background/60 to-transparent" />
+        <div className="absolute inset-0 bg-gradient-to-r from-background via-background/90 to-transparent w-full md:w-3/4" />
         <div className="absolute inset-0 bg-gradient-to-b from-background/80 via-transparent to-transparent h-24" />
       </div>
 
@@ -113,7 +113,7 @@ export function HeroBillboard({ items }: { items: BillboardItem[] }) {
           )}
 
           {/* Synopsis */}
-          <p className="text-xs sm:text-sm md:text-base text-gray-300 line-clamp-3 max-w-xl font-normal leading-relaxed drop-shadow">
+          <p className="text-xs sm:text-sm md:text-base text-gray-200 line-clamp-3 max-w-xl font-normal leading-relaxed drop-shadow-[0_2px_4px_rgba(0,0,0,0.9)]">
             {activeItem.overview}
           </p>
 
@@ -125,7 +125,7 @@ export function HeroBillboard({ items }: { items: BillboardItem[] }) {
                   ? `/watch?id=${activeItem.jellyfinItemId}${activeItem.media_type === "tv" ? "&type=tv" : ""}`
                   : `/${activeItem.media_type}/${activeItem.id}`
               }
-              className="inline-flex items-center justify-center gap-2.5 rounded-[4px] border border-transparent bg-white px-6 py-3 text-sm font-semibold text-black shadow-lg hover:bg-grey-10 active:bg-grey-20 transition-all active:scale-[0.98] shrink-0 cursor-pointer"
+              className="inline-flex min-h-[44px] min-w-[44px] items-center justify-center gap-2.5 rounded-[4px] border border-transparent bg-white px-6 py-3 text-sm font-semibold text-black shadow-lg hover:bg-grey-10 active:bg-grey-20 transition-all active:scale-[0.98] shrink-0 cursor-pointer"
             >
               <IconPlay className="size-4 fill-black text-black" />
               {activeItem.inLibrary ? "Play" : "More Info"}
@@ -144,14 +144,14 @@ export function HeroBillboard({ items }: { items: BillboardItem[] }) {
         <>
           <button
             onClick={prevSlide}
-            className="absolute left-4 top-1/2 -translate-y-1/2 rounded-[4px] bg-black/60 p-2.5 text-white opacity-0 transition-all hover:bg-accent group-hover:opacity-100 z-30 cursor-pointer"
+            className="absolute left-4 top-1/2 -translate-y-1/2 min-h-[44px] min-w-[44px] flex items-center justify-center rounded-[4px] bg-black/60 p-2.5 text-white opacity-0 transition-all hover:bg-accent group-hover:opacity-100 z-30 cursor-pointer"
             aria-label="Previous Slide"
           >
             <ChevronLeft className="size-6" />
           </button>
           <button
             onClick={nextSlide}
-            className="absolute right-4 top-1/2 -translate-y-1/2 rounded-[4px] bg-black/60 p-2.5 text-white opacity-0 transition-all hover:bg-accent group-hover:opacity-100 z-30 cursor-pointer"
+            className="absolute right-4 top-1/2 -translate-y-1/2 min-h-[44px] min-w-[44px] flex items-center justify-center rounded-[4px] bg-black/60 p-2.5 text-white opacity-0 transition-all hover:bg-accent group-hover:opacity-100 z-30 cursor-pointer"
             aria-label="Next Slide"
           >
             <ChevronRight className="size-6" />

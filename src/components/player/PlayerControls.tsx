@@ -86,7 +86,7 @@ function SeekBar({
   return (
     <div
       ref={barRef}
-      className="group/seek relative flex h-6 cursor-pointer items-center touch-none select-none"
+      className="group/seek relative flex h-11 sm:h-6 cursor-pointer items-center touch-none select-none"
       onPointerDown={(e) => {
         e.currentTarget.setPointerCapture(e.pointerId)
         const t = fraction(e.clientX) * duration
@@ -140,7 +140,7 @@ function SeekBar({
 
       {/* red circular dot handle */}
       <div
-        className="pointer-events-none absolute size-4 sm:size-4.5 rounded-full bg-accent shadow-md transition-transform duration-100 group-hover/seek:scale-125"
+        className="pointer-events-none absolute size-4 sm:size-4.5 rounded-full bg-accent shadow-md transition-transform duration-100 group-hover/seek:scale-150 group-active/seek:scale-150"
         style={{ left: `calc(${playedPct}% - 8px)` }}
       />
 
@@ -250,7 +250,7 @@ function AudioSubtitlesMenu({
       : (subtitleTracks.find((s) => s.index === subtitleIndex)?.title ?? "On")
 
   return (
-    <div className="absolute bottom-16 right-0 z-50 max-h-[75vh] w-80 sm:w-96 overflow-y-auto rounded-[4px] border border-grey-400 bg-grey-900/95 p-2 shadow-2xl backdrop-blur-xl">
+    <div className="absolute bottom-16 right-0 z-50 max-h-[75vh] w-[calc(100vw-2rem)] max-w-sm sm:w-96 overflow-y-auto rounded-[4px] border border-grey-400 bg-grey-900/95 p-2 shadow-2xl backdrop-blur-xl">
       {section === "root" && (
         <>
           <div className="px-4 py-2 text-xs font-bold uppercase tracking-[0.2em] text-gray-400">
@@ -446,7 +446,7 @@ function SpeedQualityMenu({
   const speedLabel = playbackRate === 1 ? "Normal" : `${playbackRate}x`
 
   return (
-    <div className="absolute bottom-16 right-0 z-50 max-h-[75vh] w-72 sm:w-80 overflow-y-auto rounded-[4px] border border-grey-400 bg-grey-900/95 p-2 shadow-2xl backdrop-blur-xl">
+    <div className="absolute bottom-16 right-0 z-50 max-h-[75vh] w-[calc(100vw-2rem)] max-w-xs sm:w-80 overflow-y-auto rounded-[4px] border border-grey-400 bg-grey-900/95 p-2 shadow-2xl backdrop-blur-xl">
       {section === "root" && (
         <>
           <div className="px-4 py-2 text-xs font-bold uppercase tracking-[0.2em] text-gray-400">
@@ -498,6 +498,7 @@ function SpeedQualityMenu({
 // ── Main Control Bar ──
 
 export function PlayerControls({
+  isTouchDevice = false,
   visible,
   title,
   subtitle,
@@ -542,6 +543,7 @@ export function PlayerControls({
   onBack,
   onReport,
 }: {
+  isTouchDevice?: boolean
   visible: boolean
   title: string
   subtitle?: string
@@ -622,6 +624,7 @@ export function PlayerControls({
 
   return (
     <div
+      onClick={(e) => e.stopPropagation()}
       className={`absolute inset-0 z-20 flex flex-col justify-between transition-opacity duration-300 ${
         visible ? "opacity-100" : "pointer-events-none opacity-0"
       }`}
@@ -667,90 +670,96 @@ export function PlayerControls({
         />
 
         {/* Control Buttons Row */}
-        <div className="mt-3 flex items-center justify-between gap-3">
+        <div className="mt-2.5 sm:mt-3 flex items-center justify-between gap-2 sm:gap-4">
           {/* Left Controls */}
-          <div className="flex items-center gap-5 sm:gap-7 shrink-0">
-            <button
-              onClick={onTogglePlay}
-              className="flex items-center justify-center p-1 text-white transition-transform hover:scale-110 active:scale-95"
-              aria-label={playing ? "Pause" : "Play"}
-            >
-              {playing ? (
-                <IconPause className="size-9 sm:size-10 fill-white text-white" />
-              ) : (
-                <IconPlay className="size-9 sm:size-10 fill-white text-white" />
-              )}
-            </button>
+          <div className="flex items-center gap-2 sm:gap-6 shrink-0">
+            {!isTouchDevice && (
+              <>
+                <button
+                  onClick={onTogglePlay}
+                  className="flex items-center justify-center p-1 text-white transition-transform hover:scale-110 active:scale-95"
+                  aria-label={playing ? "Pause" : "Play"}
+                >
+                  {playing ? (
+                    <IconPause className="size-8 sm:size-9 fill-white text-white" />
+                  ) : (
+                    <IconPlay className="size-8 sm:size-9 fill-white text-white" />
+                  )}
+                </button>
 
-            <button
-              onClick={() => onSkipBy(-10)}
-              className="flex items-center justify-center p-1 text-white transition-transform hover:scale-110 active:scale-95"
-              aria-label="Skip back 10 seconds"
-            >
-              <IconSkipBackward className="size-9 sm:size-10 text-white" />
-            </button>
+                <button
+                  onClick={() => onSkipBy(-10)}
+                  className="flex items-center justify-center p-1 text-white transition-transform hover:scale-110 active:scale-95"
+                  aria-label="Skip back 10 seconds"
+                >
+                  <IconSkipBackward className="size-8 sm:size-9 text-white" />
+                </button>
 
-            <button
-              onClick={() => onSkipBy(10)}
-              className="flex items-center justify-center p-1 text-white transition-transform hover:scale-110 active:scale-95"
-              aria-label="Skip forward 10 seconds"
-            >
-              <IconSkipForward className="size-9 sm:size-10 text-white" />
-            </button>
+                <button
+                  onClick={() => onSkipBy(10)}
+                  className="flex items-center justify-center p-1 text-white transition-transform hover:scale-110 active:scale-95"
+                  aria-label="Skip forward 10 seconds"
+                >
+                  <IconSkipForward className="size-8 sm:size-9 text-white" />
+                </button>
+              </>
+            )}
 
             {/* Volume */}
             <div className="group/vol flex items-center relative">
               <button
                 onClick={onToggleMute}
-                className="flex items-center justify-center p-1 text-white transition-transform hover:scale-110 active:scale-95"
+                className="flex items-center justify-center p-1 text-white transition-transform hover:scale-110 active:scale-95 min-h-[36px] min-w-[36px]"
                 aria-label={muted ? "Unmute" : "Mute"}
               >
                 {muted || volume === 0 ? (
-                  <VolumeX className="size-9 sm:size-10 stroke-[2.2]" />
+                  <VolumeX className="size-5 sm:size-7 stroke-[2.2]" />
                 ) : (
-                  <Volume2 className="size-9 sm:size-10 stroke-[2.2]" />
+                  <Volume2 className="size-5 sm:size-7 stroke-[2.2]" />
                 )}
               </button>
-              <input
-                type="range"
-                min={0}
-                max={100}
-                value={muted ? 0 : Math.round(volume * 100)}
-                onChange={(e) => onVolumeChange(Number(e.target.value) / 100)}
-                className="w-0 opacity-0 transition-all duration-200 accent-accent h-2 group-hover/vol:ml-2.5 group-hover/vol:w-20 sm:group-hover/vol:w-24 group-hover/vol:opacity-100"
-                aria-label="Volume"
-              />
+              {typeof navigator !== "undefined" && !/iPad|iPhone|iPod/.test(navigator.userAgent) && (
+                <input
+                  type="range"
+                  min={0}
+                  max={100}
+                  value={muted ? 0 : Math.round(volume * 100)}
+                  onChange={(e) => onVolumeChange(Number(e.target.value) / 100)}
+                  className="w-0 opacity-0 transition-all duration-200 accent-accent h-2 group-hover/vol:ml-2.5 group-hover/vol:w-20 sm:group-hover/vol:w-24 group-hover/vol:opacity-100"
+                  aria-label="Volume"
+                />
+              )}
             </div>
           </div>
 
           {/* Center Title (+ episode subtitle) */}
-          <div className="flex-1 min-w-0 text-center px-2">
-            <span className="text-sm sm:text-base font-normal tracking-wide text-white text-center truncate block max-w-[220px] sm:max-w-xs md:max-w-md mx-auto drop-shadow-md">
+          <div className="flex-1 min-w-0 text-center px-1.5">
+            <span className="text-xs sm:text-base font-medium tracking-wide text-white text-center truncate block max-w-[160px] sm:max-w-xs md:max-w-md mx-auto drop-shadow-md">
               {title}
             </span>
             {subtitle && (
-              <span className="mt-0.5 text-[11px] sm:text-xs font-medium tracking-wide text-gray-300 text-center truncate block max-w-[220px] sm:max-w-xs md:max-w-md mx-auto drop-shadow-md">
+              <span className="mt-0.5 text-[10px] sm:text-xs font-normal tracking-wide text-gray-300 text-center truncate block max-w-[160px] sm:max-w-xs md:max-w-md mx-auto drop-shadow-md">
                 {subtitle}
               </span>
             )}
           </div>
 
           {/* Right Controls */}
-          <div className="flex items-center gap-5 sm:gap-7 shrink-0 relative">
+          <div className="flex items-center gap-2 sm:gap-5 shrink-0 relative">
             {/* Next Episode (only when one is available) */}
             {hasNext && onNextEpisode && (
               <button
                 onClick={onNextEpisode}
-                className="flex items-center justify-center p-1 text-white transition-all hover:scale-110 hover:opacity-100 active:scale-95 opacity-90"
+                className="flex items-center justify-center p-1 text-white transition-all hover:scale-110 hover:opacity-100 active:scale-95 opacity-90 min-h-[36px] min-w-[36px]"
                 aria-label="Play next episode"
                 title="Next Episode"
               >
                 <Image
                   src="/icons/next-ep.svg"
                   alt=""
-                  width={52}
-                  height={52}
-                  className="size-9 sm:size-10"
+                  width={40}
+                  height={40}
+                  className="size-5 sm:size-7"
                 />
               </button>
             )}
@@ -763,7 +772,7 @@ export function PlayerControls({
                   setSpeedOpen(false)
                   onToggleEpisodeBrowser()
                 }}
-                className={`flex items-center justify-center p-1 text-white transition-all hover:scale-110 hover:opacity-100 active:scale-95 opacity-90 ${
+                className={`flex items-center justify-center p-1 text-white transition-all hover:scale-110 hover:opacity-100 active:scale-95 opacity-90 min-h-[36px] min-w-[36px] ${
                   episodeBrowserOpen ? "text-accent" : ""
                 }`}
                 aria-label="Browse episodes"
@@ -772,9 +781,9 @@ export function PlayerControls({
                 <Image
                   src="/icons/ep-browser.svg"
                   alt=""
-                  width={72}
-                  height={72}
-                  className="size-9 sm:size-10"
+                  width={40}
+                  height={40}
+                  className="size-5 sm:size-7"
                 />
               </button>
             )}
@@ -786,12 +795,12 @@ export function PlayerControls({
                   setAudioSubsOpen((o) => !o)
                   setSpeedOpen(false)
                 }}
-                className={`flex items-center justify-center p-1 text-white transition-transform hover:scale-110 active:scale-95 ${
+                className={`flex items-center justify-center p-1 text-white transition-transform hover:scale-110 active:scale-95 min-h-[36px] min-w-[36px] ${
                   audioSubsOpen ? "text-accent" : ""
                 }`}
                 aria-label="Audio and Subtitles"
               >
-                <IconSubtitles className="size-9 sm:size-10" />
+                <IconSubtitles className="size-5 sm:size-7" />
               </button>
               {audioSubsOpen && (
                 <AudioSubtitlesMenu
@@ -814,12 +823,12 @@ export function PlayerControls({
                   setSpeedOpen((o) => !o)
                   setAudioSubsOpen(false)
                 }}
-                className={`flex items-center justify-center p-1 text-white transition-transform hover:scale-110 active:scale-95 ${
+                className={`flex items-center justify-center p-1 text-white transition-transform hover:scale-110 active:scale-95 min-h-[36px] min-w-[36px] ${
                   speedOpen ? "text-accent" : ""
                 }`}
                 aria-label="Playback Speed and Quality"
               >
-                <IconSpeed className="size-9 sm:size-10" />
+                <IconSpeed className="size-5 sm:size-7" />
               </button>
               {speedOpen && (
                 <SpeedQualityMenu
@@ -839,30 +848,30 @@ export function PlayerControls({
               aria-label="Picture in Picture"
               title="Picture in Picture"
             >
-              <PictureInPicture2 className="size-8 sm:size-9 stroke-[1.8]" />
+              <PictureInPicture2 className="size-6 sm:size-7 stroke-[1.8]" />
             </button>
 
             {/* Fullscreen */}
             <button
               onClick={onToggleFullscreen}
-              className="flex items-center justify-center p-1 text-white transition-transform hover:scale-110 active:scale-95"
+              className="flex items-center justify-center p-1 text-white transition-transform hover:scale-110 active:scale-95 min-h-[36px] min-w-[36px]"
               aria-label={isFullscreen ? "Exit Fullscreen" : "Fullscreen"}
             >
               {isFullscreen ? (
                 <Image
                   src="/icons/minimize.svg"
                   alt=""
-                  width={72}
-                  height={72}
-                  className="size-9 sm:size-10"
+                  width={40}
+                  height={40}
+                  className="size-5 sm:size-7"
                 />
               ) : (
                 <Image
                   src="/icons/maximize.svg"
                   alt=""
-                  width={72}
-                  height={72}
-                  className="size-9 sm:size-10"
+                  width={40}
+                  height={40}
+                  className="size-5 sm:size-7"
                 />
               )}
             </button>
