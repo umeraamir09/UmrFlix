@@ -250,7 +250,7 @@ function AudioSubtitlesMenu({
       : (subtitleTracks.find((s) => s.index === subtitleIndex)?.title ?? "On")
 
   return (
-    <div className="absolute bottom-16 right-0 z-50 max-h-[75vh] w-80 sm:w-96 overflow-y-auto rounded-none border border-white/15 bg-black p-2 shadow-2xl backdrop-blur-xl">
+    <div className="absolute bottom-16 right-0 z-50 max-h-[75vh] w-80 sm:w-96 overflow-y-auto rounded-[4px] border border-grey-400 bg-grey-900/95 p-2 shadow-2xl backdrop-blur-xl">
       {section === "root" && (
         <>
           <div className="px-4 py-2 text-xs font-bold uppercase tracking-[0.2em] text-gray-400">
@@ -446,7 +446,7 @@ function SpeedQualityMenu({
   const speedLabel = playbackRate === 1 ? "Normal" : `${playbackRate}x`
 
   return (
-    <div className="absolute bottom-16 right-0 z-50 max-h-[75vh] w-72 sm:w-80 overflow-y-auto rounded-none border border-white/15 bg-black p-2 shadow-2xl backdrop-blur-xl">
+    <div className="absolute bottom-16 right-0 z-50 max-h-[75vh] w-72 sm:w-80 overflow-y-auto rounded-[4px] border border-grey-400 bg-grey-900/95 p-2 shadow-2xl backdrop-blur-xl">
       {section === "root" && (
         <>
           <div className="px-4 py-2 text-xs font-bold uppercase tracking-[0.2em] text-gray-400">

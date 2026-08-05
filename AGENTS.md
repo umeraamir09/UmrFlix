@@ -15,10 +15,6 @@
 - Client-side data fetching generally uses SWR. Match the existing pattern used in components like MovieRow, TvDetail, SearchResults, and LibraryPage.
 - UI styling is Tailwind CSS v4. Prefer existing UI primitives in src/components/ui/** and utility classes instead of introducing new styling systems.
 - The player stack lives under src/components/player/** and uses hls.js plus subtitle helpers. When changing playback behavior, keep compatibility with the current player architecture.
-- When an image is attached and refered to specifically as a "Referecnce" or "By taking reference from the image" ONLY if it is meant in a design oriented change by the user - take design reference from the image and avoid making changes mindlessly. Here are a few examples of what not to do and what I mean by "making changes mindlessly":
-    1. Copying elements or features not meant for the app / project currently being worked on
-    2. Making design changes exactly from the reference like fonts, colors or icons unless specified by the user
-The goal is to use the reference image as a design referece and follow the user's instructions exactly and when specific instructions arent provided about design keep the desing cohesive to the project currently being worked on and donot copy from the reference exactly unless specified. See [design.md](./design.md) for design reference.
 
 ## Commands
 - Install deps: npm install

@@ -90,18 +90,17 @@ export function RequestButton({
   if (availability?.status === "in_library" && availability.jellyfinItemId) {
     return (
       <div className="flex flex-wrap items-center gap-3">
-        <Button size="lg" onClick={handlePlay}>
-          <Play className="mr-1 size-4" />
-          Watch Now
+        <Button size="lg" variant="play" onClick={handlePlay}>
+          <Play className="mr-1 size-4 fill-black text-black" />
+          Play
         </Button>
 
         <Button
           size="lg"
-          variant="secondary"
+          variant="moreInfo"
           onClick={() => setShowPartyModal(true)}
-          className="bg-surface hover:bg-card border border-border text-foreground font-semibold"
         >
-          <Users className="mr-1.5 size-4 text-accent" />
+          <Users className="mr-1.5 size-4 text-white" />
           Watch Party
         </Button>
 
@@ -115,11 +114,10 @@ export function RequestButton({
         {type === "tv" && hasMissingSeasons && (
           <Button
             size="lg"
-            variant="secondary"
+            variant="moreInfo"
             onClick={() => setShowModal(true)}
-            className="bg-surface hover:bg-card border border-border text-foreground font-semibold"
           >
-            <Layers className="mr-1.5 size-4 text-accent" />
+            <Layers className="mr-1.5 size-4 text-white" />
             Request More Seasons
           </Button>
         )}
@@ -133,19 +131,18 @@ export function RequestButton({
   if (availability?.status === "downloading") {
     return (
       <div className="flex flex-wrap items-center gap-3">
-        <Button size="lg" variant="secondary" disabled>
-          <Loader2 className="mr-1 size-4 animate-spin" />
+        <Button size="lg" variant="muted" disabled>
+          <Loader2 className="mr-1 size-4 animate-spin text-grey-100" />
           Downloading {availability.progress ? `${Math.round(availability.progress)}%` : ""}
         </Button>
 
         {type === "tv" && (
           <Button
             size="lg"
-            variant="secondary"
+            variant="moreInfo"
             onClick={() => setShowModal(true)}
-            className="bg-surface hover:bg-card border border-border text-foreground font-semibold"
           >
-            <Plus className="mr-1.5 size-4 text-accent" />
+            <Plus className="mr-1.5 size-4 text-white" />
             Request More
           </Button>
         )}
@@ -160,14 +157,14 @@ export function RequestButton({
     const requester = availability.requestedByUsername || "another user"
     return (
       <>
-        <Button size="lg" variant="secondary" disabled className="opacity-80 border-amber-500/40 text-amber-300">
+        <Button size="lg" variant="outlined" disabled className="opacity-80 border-amber-500/40 text-amber-300">
           <Clock className="mr-1.5 size-4 text-amber-400 animate-pulse" />
           Pending Approval
         </Button>
 
         {renderModal()}
 
-        <div className="w-full text-xs font-semibold text-amber-300/90 bg-amber-950/40 border border-amber-800/50 p-2.5 rounded-none flex items-center gap-2 mt-1">
+        <div className="w-full text-xs font-semibold text-amber-300/90 bg-amber-950/40 border border-amber-800/50 p-2.5 rounded-[4px] flex items-center gap-2 mt-1">
           <Clock className="size-4 text-amber-400 shrink-0" />
           <span>
             This item has already been requested by <strong className="font-bold text-amber-200">{requester}</strong>, please wait for an admin to approve the request
@@ -181,19 +178,18 @@ export function RequestButton({
   if (availability?.status === "in_radarr" || availability?.status === "in_sonarr") {
     return (
       <div className="flex flex-wrap items-center gap-3">
-        <Button size="lg" variant="secondary" disabled>
-          <Loader2 className="mr-1 size-4 animate-spin" />
+        <Button size="lg" variant="muted" disabled>
+          <Loader2 className="mr-1 size-4 animate-spin text-grey-100" />
           Requested
         </Button>
 
         {type === "tv" && (
           <Button
             size="lg"
-            variant="secondary"
+            variant="moreInfo"
             onClick={() => setShowModal(true)}
-            className="bg-surface hover:bg-card border border-border text-foreground font-semibold"
           >
-            <Plus className="mr-1.5 size-4 text-accent" />
+            <Plus className="mr-1.5 size-4 text-white" />
             Request More
           </Button>
         )}
@@ -206,8 +202,8 @@ export function RequestButton({
   // Case 4: Default - Not Requested yet
   return (
     <>
-      <Button size="lg" variant="accent" onClick={() => setShowModal(true)}>
-        <Plus className="mr-1 size-4" />
+      <Button size="lg" variant="primary" onClick={() => setShowModal(true)}>
+        <Plus className="mr-1 size-4 text-white" />
         Request
       </Button>
 

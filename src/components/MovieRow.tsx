@@ -93,7 +93,7 @@ export function MovieRow({
       {/* Header & Subtitle (Stays aligned with left container padding) */}
       <div className="flex items-end justify-between px-1">
         <div>
-          <h2 className="text-xl sm:text-2xl font-black uppercase tracking-tight text-white flex items-center gap-2">
+          <h2 className="text-xl sm:text-2xl font-black tracking-tight text-white flex items-center gap-2">
             {title}
           </h2>
           {subtitle && (

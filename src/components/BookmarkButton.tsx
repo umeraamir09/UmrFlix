@@ -133,12 +133,12 @@ export function BookmarkButton({
         onClick={handleToggle}
         disabled={loading}
         title={bookmarked ? "Remove from My List" : "Add to My List"}
-        className={`rounded-none bg-surface/90 border border-border p-2 text-white hover:border-accent hover:text-accent transition-all ${
+        className={`rounded-[4px] bg-grey-850 border border-grey-600 p-2 text-white hover:border-accent hover:text-accent transition-all cursor-pointer ${
           bookmarked ? "border-accent text-accent bg-accent/10" : ""
         } ${className}`}
       >
         {loading ? (
-          <Loader2 className="size-4 animate-spin text-gray-400" />
+          <Loader2 className="size-4 animate-spin text-grey-200" />
         ) : (
           <Bookmark
             className={`size-4 transition-colors ${
@@ -155,10 +155,10 @@ export function BookmarkButton({
       <button
         onClick={handleToggle}
         disabled={loading}
-        className={`inline-flex items-center justify-center gap-1.5 rounded-none px-3 py-1.5 text-xs font-bold uppercase tracking-wider transition-all shrink-0 border ${
+        className={`inline-flex items-center justify-center gap-1.5 rounded-[4px] px-3 py-1.5 text-xs font-semibold transition-all shrink-0 border cursor-pointer ${
           bookmarked
             ? "bg-accent/20 text-accent border-accent"
-            : "bg-surface hover:bg-surface-hover text-white border-border"
+            : "bg-grey-750 hover:bg-grey-600 text-white border-grey-600"
         } ${className}`}
       >
         {loading ? (
@@ -168,7 +168,7 @@ export function BookmarkButton({
         ) : (
           <Bookmark className="size-3.5" />
         )}
-        <span>{bookmarked ? "IN MY LIST" : "ADD TO LIST"}</span>
+        <span>{bookmarked ? "In My List" : "Add to List"}</span>
       </button>
     )
   }
@@ -177,20 +177,20 @@ export function BookmarkButton({
     <button
       onClick={handleToggle}
       disabled={loading}
-      className={`inline-flex items-center justify-center gap-2 rounded-none border px-5 sm:px-6 py-3 text-xs sm:text-sm font-bold uppercase tracking-wider transition-all active:scale-95 shrink-0 ${
+      className={`inline-flex items-center justify-center gap-2 rounded-[4px] border px-5 sm:px-6 py-3 text-sm font-semibold transition-all active:scale-[0.98] shrink-0 cursor-pointer ${
         bookmarked
           ? "border-accent bg-accent/20 text-accent hover:bg-accent/30"
-          : "border-gray-500 bg-black/40 text-white hover:border-white hover:bg-black/60"
+          : "border-transparent bg-grey-300-t70 text-white hover:bg-grey-300-t40 backdrop-blur-sm"
       } ${className}`}
     >
       {loading ? (
-        <Loader2 className="size-4 animate-spin text-gray-400" />
+        <Loader2 className="size-4 animate-spin text-grey-200" />
       ) : (
         <Bookmark
           className={`size-4 ${bookmarked ? "fill-accent text-accent" : ""}`}
         />
       )}
-      <span>{bookmarked ? "IN MY LIST" : "ADD TO MY LIST"}</span>
+      <span>{bookmarked ? "In My List" : "Add to My List"}</span>
     </button>
   )
 }

@@ -81,14 +81,14 @@ export function MovieCard({
       className={`group relative block w-full flex-shrink-0${disabled ? " cursor-default" : ""}`}
     >
       {/* Poster Image Container */}
-      <div className="relative aspect-[2/3] w-full overflow-hidden rounded-none bg-card shadow-md">
+      <div className="relative aspect-[2/3] w-full overflow-hidden rounded-[4px] bg-grey-850 shadow-md border border-grey-750">
         <Image
           src={posterUrl}
           alt={title}
           fill
           sizes="(max-width: 640px) 175px, (max-width: 1024px) 220px, 275px"
           unoptimized={posterUrl.startsWith("/api/")}
-          className="object-cover"
+          className="object-cover transition-transform duration-300 group-hover:scale-105"
         />
 
 
@@ -118,14 +118,14 @@ export function MovieCard({
         <h3 className="text-xs sm:text-sm font-bold text-white line-clamp-1 group-hover:text-accent transition-colors">
           {title}
         </h3>
-        <p className="text-[11px] font-medium text-gray-400 flex items-center gap-1.5">
+        <p className="text-[11px] font-medium text-grey-200 flex items-center gap-1.5">
           <span>Sub | Dub</span>
           {year && <span>• {year}</span>}
         </p>
       </div>
 
-      {/* Crunchyroll-Style Full Hover Overlay (Expands over full card height) */}
-      <div className="absolute inset-0 z-20 bg-surface/95 p-3 sm:p-3.5 flex flex-col justify-between opacity-0 group-hover:opacity-100 transition-opacity duration-200 border border-border shadow-2xl pointer-events-none group-hover:pointer-events-auto">
+      {/* Netflix-Style Full Hover Overlay (Expands over full card height) */}
+      <div className="absolute inset-0 z-20 bg-grey-850/95 p-3 sm:p-3.5 flex flex-col justify-between opacity-0 group-hover:opacity-100 transition-opacity duration-200 border border-grey-600 rounded-[4px] shadow-2xl pointer-events-none group-hover:pointer-events-auto">
         <div className="space-y-1.5 overflow-hidden">
           {/* Title */}
           <h3 className="text-sm sm:text-lg font-bold text-white leading-tight line-clamp-2">
