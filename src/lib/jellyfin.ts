@@ -440,6 +440,7 @@ export type JellyfinItemDetail = {
   Name: string
   Type: string
   RunTimeTicks?: number
+  ProviderIds?: Record<string, string>
   UserData?: JellyfinUserData
   Chapters?: JellyfinChapter[]
   SeriesId?: string
@@ -542,7 +543,7 @@ export async function getPlaybackInfo(itemId: string): Promise<JellyfinPlaybackI
 /** Full detail for one item, including UserData (resume position) and Chapters. */
 export async function getItemDetail(itemId: string): Promise<JellyfinItemDetail | null> {
   const { token, userId, breaker } = await authenticate()
-  const params = new URLSearchParams({ fields: "Chapters,Overview,MediaSources,Trickplay" })
+  const params = new URLSearchParams({ fields: "Chapters,Overview,MediaSources,Trickplay,ProviderIds" })
   const res = await jellyfinFetch(`${BASE}/Users/${userId}/Items/${itemId}?${params}`, {
     headers: getAuthHeaders(token),
   }, breaker)
@@ -562,6 +563,7 @@ export type PlaybackReport = {
   volumeLevel?: number
   playMethod?: "DirectPlay" | "DirectStream" | "Transcode"
   event: "start" | "progress" | "stopped"
+  context?: string
 }
 
 /**

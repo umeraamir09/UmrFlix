@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test:party": "tsx --test \"src/lib/party/__tests__/*.test.ts\""
+    "test:party": "tsx --test \"src/lib/party/__tests__/*.test.ts\"",
+    "test:discovery": "tsx --test \"src/lib/discovery/__tests__/*.test.ts\""
   },
   "dependencies": {
     "class-variance-authority": "^0.7.1",

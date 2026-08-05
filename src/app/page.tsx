@@ -2,11 +2,11 @@ import { HeroBillboard, BillboardItem } from "@/components/HeroBillboard"
 import { MovieRow } from "@/components/MovieRow"
 import { ContinueWatchingSection } from "@/components/ContinueWatchingSection"
 import { SpotlightBanner, SpotlightItem } from "@/components/SpotlightBanner"
+import { PersonalizedFeed } from "@/components/PersonalizedFeed"
 import { getTrending, getItemLogo } from "@/lib/tmdb"
 import { filterReleasedContent } from "@/lib/catalog"
-import { generateRecommendations, getTmdbRecommendations } from "@/lib/recommendations"
 import { getNextEpisode, getAiringLabel, lookupShowByTvdbId } from "@/lib/tvmaze"
-import { authenticate, getAllItems, getResumeItems } from "@/lib/jellyfin"
+import { authenticate, getAllItems } from "@/lib/jellyfin"
 
 // Type for Jellyfin items
 interface JellyfinApiItem {
@@ -27,11 +27,11 @@ interface JellyfinSeries extends JellyfinApiItem {
 }
 
 // ISR bounds the per-request cost of the homepage's heavy server-side build
-// (trending, Jellyfin items, TVMaze lookups, recommendations, hero logos) to at
-// most once an hour; the hero rotation (timeSeed) advances with each
-// regeneration. Continue Watching and dynamic category rows are client-fetched
-// per session, while Top Picks, Because You Watched, and Recently Added rows
-// are pre-rendered into the hourly shared shell.
+// (trending, Jellyfin items, TVMaze lookups, hero logos) to at most once an
+// hour; the hero rotation (timeSeed) advances with each regeneration.
+// Continue Watching and the personalized discovery rows (Top Picks, micro-
+// genres, Because You Watched) are client-fetched per session via
+// <PersonalizedFeed />, keeping this shell shareable across users.
 export const revalidate = 3600
 
 function seededShuffle<T>(arr: T[], seed: number): T[] {
@@ -43,63 +43,10 @@ function seededShuffle<T>(arr: T[], seed: number): T[] {
   return shuffled
 }
 
-const DYNAMIC_CATEGORY_POOL = [
-  {
-    title: "Action & Thrillers",
-    subtitle: "Pulse-pounding blockbusters and suspenseful thrillers",
-    type: "movie" as const,
-    endpoint: "/api/tmdb/discover/movie?with_genres=28,53&sort_by=popularity.desc",
-  },
-  {
-    title: "Sci-Fi & Fantasy Universes",
-    subtitle: "Future realms, alien encounters, and epic magic",
-    type: "movie" as const,
-    endpoint: "/api/tmdb/discover/movie?with_genres=878,14&sort_by=popularity.desc",
-  },
-  {
-    title: "Binge-Worthy Series",
-    subtitle: "Top-rated television shows and fan-favorite series",
-    type: "tv" as const,
-    endpoint: "/api/tmdb/tv/top_rated",
-  },
-  {
-    title: "Laugh-Out-Loud Comedies",
-    subtitle: "Feel-good comedies and hilarious stories",
-    type: "movie" as const,
-    endpoint: "/api/tmdb/discover/movie?with_genres=35&sort_by=popularity.desc",
-  },
-  {
-    title: "Mind-Bending Mysteries",
-    subtitle: "Unravel crime sagas, detective procedurals, and dark secrets",
-    type: "tv" as const,
-    endpoint: "/api/tmdb/discover/tv?with_genres=80,9648&sort_by=popularity.desc",
-  },
-  {
-    title: "Hidden Gems",
-    subtitle: "High rated, under-the-radar masterpieces worth discovering",
-    type: "movie" as const,
-    endpoint: "/api/tmdb/discover/movie?sort_by=vote_average.desc&vote_count.gte=50&vote_count.lte=400",
-  },
-  {
-    title: "Nostalgic 2000s Cinema",
-    subtitle: "Modern classics and iconic movies from the 2000s",
-    type: "movie" as const,
-    endpoint: "/api/tmdb/discover/movie?primary_release_date.gte=2000-01-01&primary_release_date.lte=2009-12-31&sort_by=popularity.desc",
-  },
-  {
-    title: "Animation & Family Night",
-    subtitle: "Wholesome entertainment for all ages",
-    type: "movie" as const,
-    endpoint: "/api/tmdb/discover/movie?with_genres=16,10751&sort_by=popularity.desc",
-  },
-]
-
 export default async function HomePage() {
   let heroItems: BillboardItem[] = []
   let spotlightItem1: SpotlightItem | null = null
   let spotlightItem2: SpotlightItem | null = null
-  let forYouItems: any[] = []
-  let becauseYouWatchedSeed: { title: string; items: any[] } | null = null
   let recentlyAddedItems: JellyfinApiItem[] = []
   const airingMap: Record<number, string> = {} // TMDB ID -> airing label
 
@@ -115,7 +62,7 @@ export default async function HomePage() {
     const tvResults = filterReleasedContent(trendingTvData?.results || [])
     const movieResults = filterReleasedContent(trendingMovieData?.results || [])
 
-    // 2. Get Jellyfin items for badge lookup & watch history seeds
+    // 2. Get Jellyfin items for badge lookup & recently-added row
     let jellyfinSeries: JellyfinApiItem[] = []
     try {
       const { token } = await authenticate()
@@ -159,60 +106,12 @@ export default async function HomePage() {
       await Promise.all(airingPromises)
     }
 
-    // 4. Generate personalized recommendations ("Top Picks For You")
-    try {
-      const recommendations = await generateRecommendations("default", { limit: 20 })
-      forYouItems = recommendations.map((rec: any) => ({
-        id: rec.tmdbId,
-        title: rec.title,
-        name: rec.name,
-        poster_path: rec.poster_path,
-        backdrop_path: rec.backdrop_path,
-        overview: rec.overview,
-        release_date: rec.release_date,
-        first_air_date: rec.first_air_date,
-        vote_average: rec.vote_average,
-        media_type: rec.media_type,
-        airingLabel: rec.media_type === "tv" ? airingMap[rec.tmdbId] : undefined,
-      }))
-    } catch (e) {
-      console.error("Failed to generate recommendations:", e)
-    }
+    // 4. Personalized rows (Top Picks, micro-genres, Because You Watched,
+    //    contextual triggers) are client-fetched per session via
+    //    <PersonalizedFeed /> → /api/discovery/home, keeping this ISR shell
+    //    shareable across users (see Discovery Engine in AGENTS.md).
 
-    // 5. Generate "Because You Watched {Title}" dynamic row - rotates seed title automatically over time
-    try {
-      const resumeItems = await getResumeItems(20)
-      const validSeeds = resumeItems.filter((item) => item.ProviderIds?.Tmdb)
-      if (validSeeds.length > 0) {
-        const seedIndex = timeSeed % validSeeds.length
-        const seedItem = validSeeds[seedIndex]
-        const seedTmdbId = parseInt(seedItem.ProviderIds!.Tmdb!, 10)
-        const seedMediaType = seedItem.Type === "Movie" ? "movie" : "tv"
-        const recs = await getTmdbRecommendations(seedTmdbId, seedMediaType)
-        const formatted = recs.map((rec: any) => ({
-          id: rec.tmdbId,
-          title: rec.title,
-          name: rec.name,
-          poster_path: rec.poster_path,
-          backdrop_path: rec.backdrop_path,
-          overview: rec.overview,
-          release_date: rec.release_date,
-          first_air_date: rec.first_air_date,
-          vote_average: rec.vote_average,
-          media_type: rec.media_type,
-        }))
-        if (formatted.length > 0) {
-          becauseYouWatchedSeed = {
-            title: seedItem.Name,
-            items: formatted,
-          }
-        }
-      }
-    } catch (e) {
-      console.error("Failed to load Because You Watched seed:", e)
-    }
-
-    // 6. Build hero items (Rotated using timeSeed for dynamic homepage hero presentation)
+    // 5. Build hero items (Rotated using timeSeed for dynamic homepage hero presentation)
     const rawHeroCandidates = [...tvResults.slice(0, 8), ...movieResults.slice(0, 8)]
     const shuffledHeroCandidates = seededShuffle(rawHeroCandidates, timeSeed).slice(0, 5)
 
@@ -235,7 +134,7 @@ export default async function HomePage() {
       })
     )
 
-    // 7. Dynamic Spotlight items (Rotated using timeSeed)
+    // 6. Dynamic Spotlight items (Rotated using timeSeed)
     if (tvResults.length > 2) {
       const spIndex = (timeSeed % (tvResults.length - 2)) + 2
       const sp = tvResults[spIndex] as any
@@ -263,27 +162,14 @@ export default async function HomePage() {
     console.error("Failed to load TMDB homepage data:", err)
   }
 
-  // Pick rotated dynamic category rows from pool
-  const selectedDynamicRows = seededShuffle(DYNAMIC_CATEGORY_POOL, timeSeed).slice(0, 4)
-
   return (
     <div className="space-y-10 pb-16">
       {/* 1. Hero Spotlight Carousel */}
       {heroItems.length > 0 && <HeroBillboard items={heroItems} />}
 
       <div className="mx-auto max-w-[1600px] px-4 sm:px-6 md:px-8 space-y-12 relative z-20 -mt-28 sm:-mt-36 md:-mt-44">
-        {/* 2. Top Picks For You (AI / Watch History Powered) */}
-        {forYouItems.length > 0 && (
-          <MovieRow
-            title="Top Picks For You"
-            subtitle="Personalized recommendations based on your viewing history"
-            type="movie"
-            customItems={forYouItems}
-          />
-        )}
-
-        {/* 3. Continue Watching */}
-        <ContinueWatchingSection />
+        {/* 2. Personalized Discovery Feed: Top Picks For You at row 1, Continue Watching at row 2, followed by remaining personalized rows */}
+        <PersonalizedFeed includeContinueWatching />
 
         {/* 4. Trending Right Now */}
         <MovieRow
@@ -293,20 +179,10 @@ export default async function HomePage() {
           endpoint="/api/tmdb/trending/all/week"
         />
 
-        {/* 5. Because You Watched {Title} */}
-        {becauseYouWatchedSeed && (
-          <MovieRow
-            title={`Because You Watched ${becauseYouWatchedSeed.title}`}
-            subtitle={`Recommendations inspired by your recent viewing of ${becauseYouWatchedSeed.title}`}
-            type="movie"
-            customItems={becauseYouWatchedSeed.items}
-          />
-        )}
-
-        {/* 6. Mid-Page Featured Spotlight Banner 1 */}
+        {/* 5. Mid-Page Featured Spotlight Banner 1 */}
         {spotlightItem1 && <SpotlightBanner item={spotlightItem1} />}
 
-        {/* 7. Something New To You */}
+        {/* 6. Something New To You */}
         <MovieRow
           title="Something New To You"
           subtitle="Freshly released movies available for home streaming"
@@ -314,7 +190,7 @@ export default async function HomePage() {
           endpoint={`/api/tmdb/discover/movie?sort_by=primary_release_date.desc&primary_release_date.lte=${thirtyDaysAgo}&vote_count.gte=10`}
         />
 
-        {/* 8. Critically Acclaimed */}
+        {/* 7. Critically Acclaimed */}
         <MovieRow
           title="Critically Acclaimed"
           subtitle="Highest rated masterworks and critically acclaimed cinema"
@@ -322,7 +198,7 @@ export default async function HomePage() {
           endpoint="/api/tmdb/discover/movie?sort_by=vote_average.desc&vote_count.gte=250"
         />
 
-        {/* 9. Global Hits */}
+        {/* 8. Global Hits */}
         <MovieRow
           title="Global Hits"
           subtitle="Worldwide blockbusters and top chart toppers"
@@ -330,7 +206,7 @@ export default async function HomePage() {
           endpoint="/api/tmdb/trending/movie/week"
         />
 
-        {/* 10. Recently Added to Your Library */}
+        {/* 9. Recently Added to Your Library */}
         {recentlyAddedItems.length > 0 && (
           <section className="space-y-3">
             <h2 className="text-xl sm:text-2xl font-black tracking-tight text-white flex items-center gap-2">
@@ -367,19 +243,8 @@ export default async function HomePage() {
           </section>
         )}
 
-        {/* 11. Mid-Page Featured Spotlight Banner 2 */}
+        {/* 10. Mid-Page Featured Spotlight Banner 2 */}
         {spotlightItem2 && <SpotlightBanner item={spotlightItem2} />}
-
-        {/* 12-15. Dynamically Rotated Category Rows */}
-        {selectedDynamicRows.map((row) => (
-          <MovieRow
-            key={row.title}
-            title={row.title}
-            subtitle={row.subtitle}
-            type={row.type}
-            endpoint={row.endpoint}
-          />
-        ))}
       </div>
     </div>
   )

@@ -9,6 +9,7 @@ import {
   removeFromMyList,
   MyListItem,
 } from "@/lib/my-list-store"
+import { ingestFavoriteToggle } from "@/lib/discovery/ingest"
 
 // Bounded concurrency pool for in-memory TMDB enrichment (Issue 1 & 2)
 async function enrichItemsInPool(items: MyListItem[], maxConcurrency = 5): Promise<MyListItem[]> {
@@ -137,6 +138,16 @@ export async function POST(req: Request) {
       releaseYear: body.releaseYear,
     })
 
+    // Discovery engine explicit-signal: favorite (+1.0)
+    void ingestFavoriteToggle({
+      userId,
+      itemId: item.id,
+      tmdbId: item.tmdbId,
+      mediaType: item.mediaType,
+      title: item.title,
+      added: true,
+    }).catch(() => {})
+
     return NextResponse.json({ success: true, item })
   } catch (e) {
     const message = e instanceof Error ? e.message : "Failed to add item to My List"
@@ -161,6 +172,18 @@ export async function DELETE(req: Request) {
       jellyfinId,
       mediaType,
     })
+
+    // Discovery engine explicit-signal: unfavorite (−0.6)
+    if (removed) {
+      void ingestFavoriteToggle({
+        userId,
+        itemId:
+          id || (tmdbId ? `tmdb:${mediaType === "tv" ? "tv" : "movie"}:${tmdbId}` : jellyfinId || ""),
+        tmdbId,
+        mediaType,
+        added: false,
+      }).catch(() => {})
+    }
 
     return NextResponse.json({ success: removed })
   } catch (e) {

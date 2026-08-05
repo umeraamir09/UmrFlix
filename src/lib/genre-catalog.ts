@@ -63,6 +63,7 @@ type DiscoverTemplate = {
   sortBy: "popularity" | "vote_average" | "release_date"
   voteCountGte?: { movie: number; tv: number }
   dateRange?: { gte?: string; lte?: string }
+  maxParentalRating?: string
 }
 
 function buildDiscoverParams(
@@ -90,6 +91,10 @@ function buildDiscoverParams(
     const key = mediaType === "movie" ? "primary_release_date" : "air_date"
     if (template.dateRange.gte) params[`${key}.gte`] = template.dateRange.gte
     if (template.dateRange.lte) params[`${key}.lte`] = template.dateRange.lte
+  }
+  if (template.maxParentalRating && mediaType === "movie") {
+    params.certification_country = "US"
+    params["certification.lte"] = template.maxParentalRating
   }
   return params
 }

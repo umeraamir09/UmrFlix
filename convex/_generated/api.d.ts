@@ -10,6 +10,7 @@
 
 import type * as cache from "../cache.js";
 import type * as crons from "../crons.js";
+import type * as discovery from "../discovery.js";
 import type * as myList from "../myList.js";
 import type * as party from "../party.js";
 import type * as requests from "../requests.js";
@@ -24,6 +25,7 @@ import type {
 declare const fullApi: ApiFromModules<{
   cache: typeof cache;
   crons: typeof crons;
+  discovery: typeof discovery;
   myList: typeof myList;
   party: typeof party;
   requests: typeof requests;

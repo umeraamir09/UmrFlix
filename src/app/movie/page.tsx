@@ -3,9 +3,9 @@ import { HeroBillboard, BillboardItem } from "@/components/HeroBillboard"
 import { MovieRow } from "@/components/MovieRow"
 import { SpotlightBanner, SpotlightItem } from "@/components/SpotlightBanner"
 import { GenreFilterBar } from "@/components/GenreFilterBar"
+import { PersonalizedFeed } from "@/components/PersonalizedFeed"
 import { getTrending, getItemLogo, discoverMovies } from "@/lib/tmdb"
 import { filterReleasedContent } from "@/lib/catalog"
-import { generateRecommendations } from "@/lib/recommendations"
 import { getGenreByParam, getMovieGenres, getGenreDiscoverParams, buildGenreDiscoverQuery } from "@/lib/genres"
 
 export const revalidate = 1800 // Revalidate page every 30 minutes
@@ -25,7 +25,6 @@ export default async function MovieCatalogPage({
   let heroItems: BillboardItem[] = []
   let spotlightItem1: SpotlightItem | null = null
   let spotlightItem2: SpotlightItem | null = null
-  let forYouItems: any[] = []
 
   try {
     if (selectedGenre) {
@@ -70,24 +69,8 @@ export default async function MovieCatalogPage({
       const trendingMovieData = await getTrending("movie", "week")
       const movieResults = filterReleasedContent(trendingMovieData?.results || [])
 
-      // 2. Fetch personalized movie recommendations based on Jellyfin watch history
-      const recommendations = await generateRecommendations("default", {
-        limit: 20,
-        mediaType: "movie",
-      })
-
-      forYouItems = recommendations.map((rec: any) => ({
-        id: rec.tmdbId,
-        title: rec.title,
-        name: rec.name,
-        poster_path: rec.poster_path,
-        backdrop_path: rec.backdrop_path,
-        overview: rec.overview,
-        release_date: rec.release_date,
-        first_air_date: rec.first_air_date,
-        vote_average: rec.vote_average,
-        media_type: "movie",
-      }))
+      // 2. Personalized movie rows are client-fetched per session via
+      //    <PersonalizedFeed mediaType="movie" /> (discovery engine).
 
       // 3. Build hero billboard items
       const rawHero = movieResults.slice(0, 5)
@@ -211,22 +194,15 @@ export default async function MovieCatalogPage({
           </>
         ) : (
           <>
-            {/* Personalized Recommendations */}
-            {forYouItems.length > 0 && (
-              <MovieRow
-                title="Recommended Movies For You"
-                subtitle="Based on films you watch on Jellyfin"
-                type="movie"
-                customItems={forYouItems}
-              />
-            )}
+            {/* Personalized Discovery Rows (Top Picks, micro-genres, BYW) */}
+            <PersonalizedFeed mediaType="movie" />
 
             {/* Recently Released Movies */}
             <MovieRow
               title="Recently Released Movies"
               subtitle="Freshly released movies available for streaming"
               type="movie"
-              endpoint="/api/tmdb/discover/movie?sort_by=primary_release_date.desc&vote_count.gte=50"
+              endpoint="/api/discovery/row?facet=recently-released-movies"
             />
 
             {/* Popular Movies */}
@@ -234,7 +210,7 @@ export default async function MovieCatalogPage({
               title="Popular Movies"
               subtitle="Top trending movies everyone is watching"
               type="movie"
-              endpoint="/api/tmdb/trending/movie/week"
+              endpoint="/api/discovery/row?facet=popular-movies"
             />
 
             {/* Mid-page Spotlight Banner 1 */}
@@ -245,7 +221,7 @@ export default async function MovieCatalogPage({
               title="Top Rated Classics & Masterpieces"
               subtitle="Highest critically acclaimed movies of all time"
               type="movie"
-              endpoint="/api/tmdb/movie/top_rated"
+              endpoint="/api/discovery/row?facet=top-rated-movies"
             />
 
             {/* Action & Adventure */}
@@ -253,7 +229,7 @@ export default async function MovieCatalogPage({
               title="Action & Adventure"
               subtitle="High-octane blockbusters and thrilling journeys"
               type="movie"
-              endpoint="/api/tmdb/discover/movie?with_genres=28,12&sort_by=popularity.desc"
+              endpoint="/api/discovery/row?facet=action-adventure-movies"
             />
 
             {/* Sci-Fi & Fantasy */}
@@ -261,7 +237,7 @@ export default async function MovieCatalogPage({
               title="Sci-Fi & Fantasy"
               subtitle="Explore alien worlds, future realms, and magic"
               type="movie"
-              endpoint="/api/tmdb/discover/movie?with_genres=878,14&sort_by=popularity.desc"
+              endpoint="/api/discovery/row?facet=sci-fi-fantasy-movies"
             />
 
             {/* Mid-page Spotlight Banner 2 */}
@@ -272,7 +248,7 @@ export default async function MovieCatalogPage({
               title="Comedy Hits"
               subtitle="Laugh-out-loud comedies and feel-good movies"
               type="movie"
-              endpoint="/api/tmdb/discover/movie?with_genres=35&sort_by=popularity.desc"
+              endpoint="/api/discovery/row?facet=comedy-movies"
             />
 
             {/* Horror & Suspense Thrillers */}
@@ -280,7 +256,7 @@ export default async function MovieCatalogPage({
               title="Horror & Suspense Thrillers"
               subtitle="Pulse-pounding chills and psychological mysteries"
               type="movie"
-              endpoint="/api/tmdb/discover/movie?with_genres=27,53&sort_by=popularity.desc"
+              endpoint="/api/discovery/row?facet=horror-thriller-movies"
             />
           </>
         )}
