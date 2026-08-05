@@ -258,10 +258,20 @@ export async function buildSeedRows(
           )
       )
       if (items.length < MIN_ROW_ITEMS) continue
+      let title = `Because You Watched ${seed.title}`
+      let subtitle = `Recommendations inspired by ${seed.title}`
+      if (seed.eventType === "favorite") {
+        title = `Because You Added ${seed.title} to Your List`
+        subtitle = `More titles like what you saved to your list`
+      } else if (seed.eventType === "request") {
+        title = `Because You Requested ${seed.title}`
+        subtitle = `Recommendations inspired by your request`
+      }
+
       rows.push({
         key: `byw:${seed.mediaType}:${seed.tmdbId}`,
-        title: `Because You Watched ${seed.title}`,
-        subtitle: `Recommendations inspired by ${seed.title}`,
+        title,
+        subtitle,
         type: seed.mediaType,
         items,
       })
