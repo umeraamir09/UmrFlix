@@ -649,9 +649,7 @@ export function SeasonBrowser({
                       >
                         <MoreVertical className="size-3.5 text-gray-400" />
                       </button>
-                      {openMenuEpisodeId === ep.id && (
-                        <div className="group-hover:hidden">{renderDropdownMenu(ep)}</div>
-                      )}
+                      {openMenuEpisodeId === ep.id && renderDropdownMenu(ep)}
                     </div>
                   </div>
                 </div>
