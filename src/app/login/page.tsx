@@ -6,11 +6,13 @@ import Image from "next/image"
 import { Lock, User, Server, ChevronDown, ChevronUp, AlertCircle, CheckCircle2, Loader2 } from "lucide-react"
 
 import { LoginPosterWall } from "@/components/LoginPosterWall"
+import { sanitizeRedirectUrl } from "@/lib/url-sanitize"
 
 function LoginForm() {
   const router = useRouter()
   const searchParams = useSearchParams()
-  const redirectTarget = searchParams.get("redirect") || "/"
+  const redirectTarget = sanitizeRedirectUrl(searchParams.get("redirect"))
+
 
   const [username, setUsername] = useState("")
   const [password, setPassword] = useState("")

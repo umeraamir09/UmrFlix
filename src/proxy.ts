@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import type { NextRequest } from "next/server"
-import { decryptSession, COOKIE_NAME } from "@/lib/auth"
+import { decryptSessionToken, COOKIE_NAME } from "@/lib/auth-crypto"
+import { sanitizeRedirectUrl } from "@/lib/url-sanitize"
 
 const PUBLIC_PATHS = [
   "/login",
@@ -26,14 +27,15 @@ export async function proxy(request: NextRequest) {
     pathname.startsWith("/api/auth/login") ||
     PUBLIC_PATHS.some((path) => pathname === path || pathname.startsWith("/public"))
   ) {
-    // If authenticated user tries to access /login, redirect to home /
+    // If authenticated user tries to access /login, redirect to their target path or home /
     if (pathname === "/login") {
       const sessionCookie = request.cookies.get(COOKIE_NAME)?.value
       if (sessionCookie) {
-        const session = await decryptSession(sessionCookie)
+        const session = await decryptSessionToken(sessionCookie)
         if (session) {
-          const homeUrl = new URL("/", request.url)
-          return NextResponse.redirect(homeUrl)
+          const redirectParam = request.nextUrl.searchParams.get("redirect")
+          const targetPath = sanitizeRedirectUrl(redirectParam, "/")
+          return NextResponse.redirect(new URL(targetPath, request.url))
         }
       }
     }
@@ -41,7 +43,7 @@ export async function proxy(request: NextRequest) {
   }
 
   const sessionCookie = request.cookies.get(COOKIE_NAME)?.value
-  const session = sessionCookie ? await decryptSession(sessionCookie) : null
+  const session = sessionCookie ? await decryptSessionToken(sessionCookie) : null
 
   // If user is unauthenticated or session decryption failed
   if (!session) {
@@ -58,7 +60,8 @@ export async function proxy(request: NextRequest) {
     }
 
     // For page requests, redirect to /login?redirect=<targetPath> and clear the invalid cookie
-    const targetPath = pathname + search
+    const rawTargetPath = pathname + search
+    const targetPath = sanitizeRedirectUrl(rawTargetPath, "/")
     const loginUrl = new URL(
       `/login?redirect=${encodeURIComponent(targetPath)}`,
       request.url

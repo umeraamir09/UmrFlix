@@ -2,6 +2,7 @@
 
 import { SWRConfig } from "swr"
 import { ReactNode } from "react"
+import { sanitizeRedirectUrl } from "@/lib/url-sanitize"
 
 const defaultFetcher = (url: string) =>
   fetch(url).then(async (res) => {
@@ -30,10 +31,11 @@ export function SWRProvider({ children }: { children: ReactNode }) {
             typeof window !== "undefined" &&
             window.location.pathname !== "/login"
           ) {
-            const currentPath = window.location.pathname + window.location.search
+            const currentPath = sanitizeRedirectUrl(window.location.pathname + window.location.search)
             window.location.href = `/login?redirect=${encodeURIComponent(currentPath)}`
           }
         },
+
         onErrorRetry: (error, _key, _config, revalidate, { retryCount }) => {
           // Never retry on 404 or 401
           if (error?.status === 404 || error?.status === 401) return
