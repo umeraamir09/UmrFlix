@@ -171,6 +171,24 @@ export function removeFromQueue(id: number, removeFromClient = true): Promise<vo
   })
 }
 
+export function updateEpisode(episodeId: number, payload: SonarrEpisode): Promise<SonarrEpisode> {
+  return sonarrFetch(`/episode/${episodeId}`, {
+    method: "PUT",
+    body: JSON.stringify(payload),
+  })
+}
+
+export function searchEpisodes(episodeIds: number[]): Promise<unknown> {
+  return sonarrFetch("/command", {
+    method: "POST",
+    body: JSON.stringify({
+      name: "EpisodeSearch",
+      episodeIds,
+    }),
+  })
+}
+
+
 
 
 
