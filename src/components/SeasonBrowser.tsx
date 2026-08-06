@@ -396,7 +396,7 @@ export function SeasonBrowser({
     return (
       <div
         onClick={(e) => e.stopPropagation()}
-        className="absolute bottom-[36px] right-0 z-50 w-44 bg-[#181a20] border border-border shadow-2xl py-1 rounded-none text-left"
+        className="absolute bottom-full mb-1 right-0 z-50 w-44 bg-[#181a20] border border-border shadow-2xl py-1 rounded-none text-left"
       >
         {isLoading ? (
           <div className="px-4 py-2.5 text-xs text-gray-400 flex items-center gap-2">
@@ -579,7 +579,7 @@ export function SeasonBrowser({
             return (
               <div
                 key={ep.id}
-                className="group relative flex flex-col justify-between overflow-hidden transition-all duration-200 border-border/50 hover:border-accent/80"
+                className="group relative flex flex-col justify-between transition-all duration-200 border-border/50 hover:border-accent/80"
               >
                 {/* ── 1. Regular Card State ── */}
                 <div>
@@ -649,7 +649,9 @@ export function SeasonBrowser({
                       >
                         <MoreVertical className="size-3.5 text-gray-400" />
                       </button>
-                      {openMenuEpisodeId === ep.id && renderDropdownMenu(ep)}
+                      {openMenuEpisodeId === ep.id && (
+                        <div className="group-hover:hidden">{renderDropdownMenu(ep)}</div>
+                      )}
                     </div>
                   </div>
                 </div>

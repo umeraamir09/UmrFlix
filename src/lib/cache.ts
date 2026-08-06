@@ -296,7 +296,7 @@ export async function invalidateAll(): Promise<void> {
     invalidateGenreCache()
     invalidateGenreProfileCache()
     invalidateRecommendationCache()
-  } catch {
-    /* ignore import errors */
+  } catch (err) {
+    console.error("Failed to invalidate derived caches in invalidateAll:", err)
   }
 }

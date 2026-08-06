@@ -1,10 +1,15 @@
 import { NextRequest, NextResponse } from "next/server"
-import { getSession } from "@/lib/auth"
-import { isAdminUser } from "@/lib/rbac"
-import { deleteJellyfinItem } from "@/lib/jellyfin"
+import { getSession, setSessionCookie } from "@/lib/auth"
+import { isAdminUser, canMakeRequest, incrementRequestCount } from "@/lib/rbac"
+import { deleteJellyfinItem, getItemDetail } from "@/lib/jellyfin"
 import * as sonarr from "@/lib/sonarr"
-import { invalidateAll } from "@/lib/cache"
+import { invalidateAll, ensureSonarrSeries } from "@/lib/cache"
 
+/**
+ * DELETE /api/library/episode
+ * Authorization: Admin access required (403) — deleting media files from disk/Jellyfin
+ * and unmonitoring is restricted to system administrators.
+ */
 export async function DELETE(request: NextRequest) {
   try {
     const session = await getSession()
@@ -19,9 +24,25 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json({ error: "Missing required parameters: tvdbId, seasonNumber, episodeNumber" }, { status: 400 })
     }
 
-    // 1. Unmonitor in Sonarr
-    const allSeries = await sonarr.getSeries().catch(() => [])
-    const sonarrShow = allSeries.find((s) => s.tvdbId === tvdbId)
+    // 1. Validate jellyfinId format and ownership/matching episode server-side if provided
+    if (jellyfinId) {
+      if (typeof jellyfinId !== "string" || !/^[a-fA-F0-9-]{32,36}$/.test(jellyfinId)) {
+        return NextResponse.json({ error: "Invalid jellyfinId format" }, { status: 400 })
+      }
+      const itemDetail = await getItemDetail(jellyfinId).catch(() => null)
+      if (
+        !itemDetail ||
+        itemDetail.Type !== "Episode" ||
+        itemDetail.IndexNumber !== episodeNumber ||
+        itemDetail.ParentIndexNumber !== seasonNumber
+      ) {
+        return NextResponse.json({ error: "Provided jellyfinId does not match the target episode" }, { status: 400 })
+      }
+    }
+
+    // 2. Unmonitor in Sonarr (using cached series lookup to avoid O(N) full fetch)
+    const seriesMap = await ensureSonarrSeries(sonarr.getSeries).catch(() => new Map())
+    const sonarrShow = seriesMap.get(Number(tvdbId))
     if (sonarrShow) {
       const sonarrEpisodes = await sonarr.getEpisodes(sonarrShow.id).catch(() => [])
       const ep = sonarrEpisodes.find(
@@ -37,7 +58,7 @@ export async function DELETE(request: NextRequest) {
       }
     }
 
-    // 2. Delete file from Jellyfin if present
+    // 3. Delete file from Jellyfin if present
     let jfDeleted = false
     if (jellyfinId) {
       jfDeleted = await deleteJellyfinItem(jellyfinId)
@@ -54,16 +75,22 @@ export async function DELETE(request: NextRequest) {
       message: "Episode removed from library and unmonitored in Sonarr",
     })
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Failed to delete episode"
-    return NextResponse.json({ error: message }, { status: 500 })
+    console.error("Failed to delete episode:", err)
+    return NextResponse.json({ error: "An error occurred while deleting the episode" }, { status: 500 })
   }
 }
 
+/**
+ * POST /api/library/episode
+ * Authorization: Authenticated users (401) subject to download permissions and daily quota (429).
+ * Standard users can monitor and request automated search for missing episodes.
+ */
 export async function POST(request: NextRequest) {
   try {
     const session = await getSession()
-    if (!session) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+    const check = canMakeRequest(session)
+    if (!check.allowed) {
+      return NextResponse.json({ error: check.reason }, { status: session ? 429 : 401 })
     }
 
     const body = await request.json()
@@ -73,9 +100,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Missing required parameters: tvdbId, seasonNumber, episodeNumber" }, { status: 400 })
     }
 
-    // Find Series in Sonarr
-    const allSeries = await sonarr.getSeries().catch(() => [])
-    const sonarrShow = allSeries.find((s) => s.tvdbId === tvdbId)
+    // Find Series in Sonarr (using cached series lookup)
+    const seriesMap = await ensureSonarrSeries(sonarr.getSeries).catch(() => new Map())
+    const sonarrShow = seriesMap.get(Number(tvdbId))
     if (!sonarrShow) {
       return NextResponse.json({
         error: "This TV show is not currently in Sonarr/Jellyfin. Please request the full TV Show first.",
@@ -98,19 +125,31 @@ export async function POST(request: NextRequest) {
       monitored: true,
     })
 
-    // Explicit Search
+    // Explicit Search with failure tracking
+    let searchTriggered = true
     await sonarr.searchEpisodes([ep.id]).catch((err) => {
       console.error("Failed to trigger Sonarr episode search command:", err)
+      searchTriggered = false
     })
+
+    // Increment request count for non-admin users
+    if (session && !session.isAdmin) {
+      const updatedSession = incrementRequestCount(session)
+      await setSessionCookie(updatedSession)
+    }
 
     await invalidateAll()
 
     return NextResponse.json({
       success: true,
-      message: "Episode is now monitored and search has been triggered",
+      searchTriggered,
+      message: searchTriggered
+        ? "Episode is now monitored and search has been triggered"
+        : "Episode is now monitored, but failed to trigger search in Sonarr",
     })
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Failed to request episode"
-    return NextResponse.json({ error: message }, { status: 500 })
+    console.error("Failed to request episode:", err)
+    return NextResponse.json({ error: "An error occurred while requesting the episode" }, { status: 500 })
   }
 }
+
