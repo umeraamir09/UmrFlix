@@ -75,11 +75,15 @@ export function SubtitleOverlay({
   currentTime,
   style,
   controlsVisible,
+  touchLayout = false,
 }: {
   cues: VttCue[]
   currentTime: number
   style: SubtitleStyle
   controlsVisible: boolean
+  /** Touch controls have a taller bottom stack (seek bar + timecodes + action
+   * row), so subtitles lift higher above it. */
+  touchLayout?: boolean
 }) {
   const activeCues = useMemo(
     () => (cues.length > 0 ? findActiveCues(cues, currentTime - style.offset) : []),
@@ -109,7 +113,7 @@ export function SubtitleOverlay({
       {bottomCues.length > 0 && (
         <div
           className={`pointer-events-none absolute inset-x-0 flex flex-col items-center gap-1.5 px-8 text-center transition-[bottom] duration-300 ${
-            controlsVisible ? "bottom-[14cqh]" : "bottom-[5cqh]"
+            controlsVisible ? (touchLayout ? "bottom-[128px]" : "bottom-[14cqh]") : "bottom-[5cqh]"
           }`}
         >
           {bottomCues.map((cue, idx) => (

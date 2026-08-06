@@ -71,27 +71,20 @@ export function RequestModal({
   const [minimumAvailability, setMinimumAvailability] = useState<string>("released")
   const [selectedTagIds, setSelectedTagIds] = useState<number[]>([])
 
+  // Default fallbacks for profiles & root folders
+  const defaultProfileId = filteredQualityProfiles.length
+    ? (filteredQualityProfiles.find((p) => /1080/i.test(p.name)) || filteredQualityProfiles[0]).id
+    : null
+  const activeQualityProfileId = qualityProfileId ?? defaultProfileId
+
+  const defaultRootPath = data?.rootFolders?.length ? data.rootFolders[0].path : null
+  const activeRootFolderPath = rootFolderPath ?? defaultRootPath
+
   // Default season monitoring selection set to initialSeasonMode or "first"
   const [seasonMode, setSeasonMode] = useState<"first" | "all" | "future" | "custom">(
     initialSeasonMode || (initialSelectedSeasons?.length ? "custom" : "first")
   )
-  const [customSeasons, setCustomSeasons] = useState<Record<number, boolean>>({})
-
-  const [submitting, setSubmitting] = useState(false)
-  const [submitError, setSubmitError] = useState<string | null>(null)
-
-  useEffect(() => {
-    if (filteredQualityProfiles.length && qualityProfileId === null) {
-      const preferred1080p = filteredQualityProfiles.find((p) => /1080/i.test(p.name))
-      setQualityProfileId(preferred1080p ? preferred1080p.id : filteredQualityProfiles[0].id)
-    }
-    if (data?.rootFolders?.length && rootFolderPath === null) {
-      setRootFolderPath(data.rootFolders[0].path)
-    }
-  }, [data, filteredQualityProfiles, qualityProfileId, rootFolderPath])
-
-  // Initialize custom seasons state if needed
-  useEffect(() => {
+  const [customSeasons, setCustomSeasons] = useState<Record<number, boolean>>(() => {
     const initial: Record<number, boolean> = {}
     const maxCount = Math.max(seasonsCount || 1, 1)
     for (let i = 1; i <= maxCount; i++) {
@@ -101,8 +94,11 @@ export function RequestModal({
         initial[i] = i === 1
       }
     }
-    setCustomSeasons(initial)
-  }, [seasonsCount, initialSelectedSeasons])
+    return initial
+  })
+
+  const [submitting, setSubmitting] = useState(false)
+  const [submitError, setSubmitError] = useState<string | null>(null)
 
   const toggleTag = (tagId: number) => {
     setSelectedTagIds((prev) =>
@@ -118,7 +114,7 @@ export function RequestModal({
   }
 
   const handleSubmit = async () => {
-    if (qualityProfileId === null || rootFolderPath === null) return
+    if (activeQualityProfileId === null || activeRootFolderPath === null) return
     setSubmitting(true)
     setSubmitError(null)
 
@@ -161,8 +157,8 @@ export function RequestModal({
           year: year ?? new Date().getFullYear(),
           posterPath,
           backdropPath,
-          qualityProfileId,
-          rootFolderPath,
+          qualityProfileId: activeQualityProfileId,
+          rootFolderPath: activeRootFolderPath,
           minimumAvailability: type === "movie" ? minimumAvailability : undefined,
           tags: selectedTagIds.length > 0 ? selectedTagIds : undefined,
           seasons: seasonsPayload,
@@ -182,30 +178,44 @@ export function RequestModal({
     }
   }
 
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose()
+    }
+    window.addEventListener("keydown", handleKeyDown)
+    return () => window.removeEventListener("keydown", handleKeyDown)
+  }, [onClose])
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in duration-200">
-      <div className="w-full max-w-lg rounded-[4px] bg-grey-900 border border-grey-600 p-6 shadow-2xl space-y-5 max-h-[90vh] overflow-y-auto">
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="request-modal-title"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-2 sm:p-4 animate-in fade-in duration-200"
+    >
+      <div className="w-full max-w-lg rounded-[4px] bg-grey-900 border border-grey-600 shadow-2xl flex flex-col max-h-[90dvh] overflow-hidden">
         {/* Header */}
-        <div className="flex items-start justify-between border-b border-grey-750 pb-4">
+        <div className="flex items-start justify-between border-b border-grey-750 p-4 sm:p-6 pb-4 shrink-0 bg-grey-900 z-10">
           <div>
             <div className="flex items-center gap-2 text-xs font-semibold text-accent mb-1">
               {type === "movie" ? <Film className="size-3.5" /> : <Tv className="size-3.5" />}
               <span>{type === "movie" ? "Movie Request" : "Series Request"}</span>
             </div>
-            <h2 className="text-xl font-bold text-white tracking-tight line-clamp-1">
+            <h2 id="request-modal-title" className="text-xl font-bold text-white tracking-tight line-clamp-1">
               {title} {year ? `(${year})` : ""}
             </h2>
           </div>
           <button
             onClick={onClose}
             className="text-grey-200 hover:text-white p-1 transition-colors rounded-[4px]"
+            aria-label="Close request modal"
           >
             <X className="size-5" />
           </button>
         </div>
 
         {isLoading && (
-          <div className="flex flex-col items-center justify-center py-12 space-y-3">
+          <div className="flex flex-col items-center justify-center py-12 space-y-3 p-6">
             <Loader2 className="size-8 animate-spin text-accent" />
             <p className="text-xs text-grey-100 font-medium">
               Fetching profiles & tags...
@@ -214,55 +224,54 @@ export function RequestModal({
         )}
 
         {error && (
-          <div className="p-4 bg-accent/10 border border-accent/40 text-xs text-secondary-red-100 rounded-[4px]">
+          <div className="p-4 bg-accent/10 border border-accent/40 text-xs text-secondary-red-100 rounded-[4px] m-4">
             Failed to connect to media management profiles. Please verify Radarr/Sonarr settings.
           </div>
         )}
 
         {data && (
-          <div className="space-y-5">
-            {/* Quality Profile & Root Folder Selectors */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <label className="mb-1.5 block text-xs font-semibold text-grey-100">
-                  Quality Profile
-                </label>
-                <select
-                  value={qualityProfileId ?? ""}
-                  onChange={(e) => setQualityProfileId(Number(e.target.value))}
-                  className="w-full rounded-[4px] border border-grey-400 bg-grey-600 px-3 py-2 text-sm text-white focus:border-accent focus:outline-none"
-                >
-                  {filteredQualityProfiles.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="mb-1.5 block text-xs font-semibold text-grey-100 flex items-center gap-1.5">
-                  <HardDrive className="size-3.5 text-accent" /> Root Folder
-                </label>
-                <select
-                  value={rootFolderPath ?? ""}
-                  onChange={(e) => setRootFolderPath(e.target.value)}
-                  className="w-full rounded-[4px] border border-grey-400 bg-grey-600 px-3 py-2 text-sm text-white focus:border-accent focus:outline-none"
-                >
-                  {data.rootFolders.map((f) => {
-                    const freeStr = formatBytes(f.freeSpace)
-                    return (
-                      <option key={f.id} value={f.path}>
-                        {f.path} {freeStr ? `(${freeStr})` : ""}
+          <>
+            <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-5">
+              {/* Quality Profile & Root Folder Selectors */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="mb-1.5 block text-xs font-semibold text-grey-100">
+                    Quality Profile
+                  </label>
+                  <select
+                    value={activeQualityProfileId ?? ""}
+                    onChange={(e) => setQualityProfileId(Number(e.target.value))}
+                    className="w-full rounded-[4px] border border-grey-400 bg-grey-600 px-3 py-2 text-[16px] sm:text-sm text-white focus:border-accent focus:outline-none"
+                  >
+                    {filteredQualityProfiles.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.name}
                       </option>
-                    )
-                  })}
-                </select>
-              </div>
-            </div>
+                    ))}
+                  </select>
+                </div>
 
-            {/* Direct Options (No Advanced Toggle) */}
-            <div className="space-y-4 pt-2 border-t border-border/60">
+                <div>
+                  <label className="mb-1.5 block text-xs font-semibold text-grey-100 flex items-center gap-1.5">
+                    <HardDrive className="size-3.5 text-accent" /> Root Folder
+                  </label>
+                  <select
+                    value={activeRootFolderPath ?? ""}
+                    onChange={(e) => setRootFolderPath(e.target.value)}
+                    className="w-full rounded-[4px] border border-grey-400 bg-grey-600 px-3 py-2 text-[16px] sm:text-sm text-white focus:border-accent focus:outline-none"
+                  >
+                    {data.rootFolders.map((f) => {
+                      const freeStr = formatBytes(f.freeSpace)
+                      return (
+                        <option key={f.id} value={f.path}>
+                          {f.path} {freeStr ? `(${freeStr})` : ""}
+                        </option>
+                      )
+                    })}
+                  </select>
+                </div>
+              </div>
+
               {/* Movie Availability */}
               {type === "movie" && (
                 <div>
@@ -272,7 +281,7 @@ export function RequestModal({
                   <select
                     value={minimumAvailability}
                     onChange={(e) => setMinimumAvailability(e.target.value)}
-                    className="w-full rounded-none border border-border bg-background px-3 py-2 text-sm text-foreground focus:border-accent focus:outline-none"
+                    className="w-full rounded-none border border-border bg-background px-3 py-2 text-[16px] sm:text-sm text-foreground focus:border-accent focus:outline-none"
                   >
                     <option value="announced">Announced (Early Monitoring)</option>
                     <option value="inCinemas">In Cinemas</option>
@@ -310,37 +319,32 @@ export function RequestModal({
                     ))}
                   </div>
 
-                  {/* Custom Season Checkboxes */}
                   {seasonMode === "custom" && (
-                    <div className="p-3 bg-surface/60 border border-border mt-2 space-y-2 max-h-36 overflow-y-auto">
-                      <span className="text-[11px] font-semibold text-gray-400 block mb-1">
-                        Select specific seasons to monitor:
-                      </span>
-                      <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
+                    <div className="mt-3 space-y-2 border border-border bg-surface/50 p-3 max-h-48 overflow-y-auto">
+                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                         {Array.from({ length: Math.max(seasonsCount || 1, 1) }, (_, i) => i + 1).map(
-                          (sNum) => {
-                            const isDownloaded = downloadedSeasons?.includes(sNum)
+                          (seasonNum) => {
+                            const isDownloaded = downloadedSeasons?.includes(seasonNum)
+                            const isSelected = Boolean(customSeasons[seasonNum])
                             return (
                               <label
-                                key={sNum}
-                                className="flex flex-col gap-0.5 text-xs text-gray-300 cursor-pointer hover:text-white border border-border/40 p-1.5 bg-surface/40 hover:bg-surface/80"
+                                key={seasonNum}
+                                className={`flex items-center gap-2 px-2.5 py-1.5 border text-xs cursor-pointer transition-colors ${
+                                  isSelected
+                                    ? "bg-accent/20 border-accent text-white font-bold"
+                                    : "bg-surface border-border text-gray-400 hover:text-white"
+                                }`}
                               >
-                                <div className="flex items-center gap-1.5">
-                                  <input
-                                    type="checkbox"
-                                    checked={Boolean(customSeasons[sNum])}
-                                    onChange={() => toggleSeason(sNum)}
-                                    className="accent-accent size-3.5"
-                                  />
-                                  <span className="font-semibold">Season {sNum}</span>
-                                </div>
-                                {downloadedSeasons && (
-                                  <span
-                                    className={`text-[10px] font-bold ml-5 ${
-                                      isDownloaded ? "text-emerald-400" : "text-amber-400"
-                                    }`}
-                                  >
-                                    {isDownloaded ? "In Library" : "Missing"}
+                                <input
+                                  type="checkbox"
+                                  checked={isSelected}
+                                  onChange={() => toggleSeason(seasonNum)}
+                                  className="accent-accent size-3.5"
+                                />
+                                <span>Season {seasonNum}</span>
+                                {isDownloaded && (
+                                  <span className="text-[10px] text-emerald-400 ml-auto font-semibold">
+                                    Downloaded
                                   </span>
                                 )}
                               </label>
@@ -369,8 +373,8 @@ export function RequestModal({
                           onClick={() => toggleTag(tag.id)}
                           className={`flex items-center gap-1 px-2.5 py-1 text-xs border font-medium transition-colors ${
                             active
-                              ? "bg-accent/20 border-accent text-white"
-                              : "bg-surface border-border text-gray-400 hover:border-gray-500"
+                              ? "bg-accent border-accent text-white font-bold"
+                              : "bg-surface border-border text-gray-400 hover:text-white"
                           }`}
                         >
                           {active && <Check className="size-3 text-accent" />}
@@ -381,31 +385,32 @@ export function RequestModal({
                   </div>
                 </div>
               )}
-            </div>
 
-            {isPending && (
-              <div className="p-3.5 bg-amber-950/50 border border-amber-700/60 text-amber-200 text-xs space-y-1">
-                <div className="flex items-center gap-1.5 font-bold uppercase text-amber-400">
-                  <Clock className="size-4 animate-pulse" /> Request Already Pending
+              {isPending && (
+                <div className="p-3.5 bg-amber-950/50 border border-amber-700/60 text-amber-200 text-xs space-y-1">
+                  <div className="flex items-center gap-1.5 font-bold uppercase text-amber-400">
+                    <Clock className="size-4 animate-pulse" /> Request Already Pending
+                  </div>
+                  <p>
+                    This item has already been requested by{" "}
+                    <span className="font-bold text-amber-100">{existingRequester || "another user"}</span>, please wait for an admin to approve the request
+                  </p>
                 </div>
-                <p>
-                  This item has already been requested by{" "}
-                  <span className="font-bold text-amber-100">{existingRequester || "another user"}</span>, please wait for an admin to approve the request
+              )}
+
+              {submitError && (
+                <p className="text-xs font-semibold text-red-400 bg-red-950/30 p-2.5 border border-red-900/40">
+                  {submitError}
                 </p>
+              )}
+
+              <div className="p-3 bg-surface/50 border border-border text-xs text-gray-400 leading-relaxed">
+                <span className="text-amber-400 font-bold">Note:</span> Non-admin requests will enter approval queue. Admin users auto-approve immediately.
               </div>
-            )}
-
-            {submitError && (
-              <p className="text-xs font-semibold text-red-400 bg-red-950/30 p-2.5 border border-red-900/40">
-                {submitError}
-              </p>
-            )}
-
-            <div className="p-3 bg-surface/50 border border-border text-xs text-gray-400 leading-relaxed">
-              <span className="text-amber-400 font-bold">Note:</span> Non-admin requests will enter approval queue. Admin users auto-approve immediately.
             </div>
 
-            <div className="flex items-center justify-end gap-3 pt-2">
+            {/* Sticky Action Footer */}
+            <div className="sticky bottom-0 bg-grey-900 border-t border-grey-750 p-4 shrink-0 z-10 flex items-center justify-end gap-3">
               <Button variant="secondary" onClick={onClose} disabled={submitting}>
                 Cancel
               </Button>
@@ -419,7 +424,7 @@ export function RequestModal({
                 )}
               </Button>
             </div>
-          </div>
+          </>
         )}
       </div>
     </div>

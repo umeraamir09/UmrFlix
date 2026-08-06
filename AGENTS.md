@@ -15,6 +15,7 @@
 - Client-side data fetching generally uses SWR. Match the existing pattern used in components like MovieRow, TvDetail, SearchResults, and LibraryPage.
 - UI styling is Tailwind CSS v4. Prefer existing UI primitives in src/components/ui/** and utility classes instead of introducing new styling systems.
 - The player stack lives under src/components/player/** and uses hls.js plus subtitle helpers. When changing playback behavior, keep compatibility with the current player architecture.
+- Player controls split: CinemaPlayer renders src/components/player/touch/TouchControls.tsx (Figma-referenced touch layout) + touch/use-touch-gestures.ts (pointer-event tap/double-tap-skip/lock recognizer) on (pointer: coarse) devices, and PlayerControls.tsx on desktop. Shared popovers (Audio/Subtitles, Speed/Quality) live in player-menus.tsx; SeekBar is exported from PlayerControls.tsx. All ±10s skip paths (double-tap, transport, keyboard) must route through CinemaPlayer's seekTo/skipBy so watch-party seek coalescing stays intact — never write video.currentTime directly.
 
 ## Commands
 - Install deps: npm install

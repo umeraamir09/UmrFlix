@@ -7,12 +7,19 @@ const PUBLIC_PATHS = [
   "/api/login-covers",
   "/favicon.ico",
   "/logo_header.png",
+  "/manifest.webmanifest",
+  "/manifest.json",
+  "/icon-192.svg",
+  "/icon-512.svg",
+  "/icon-192.png",
+  "/icon-512.png",
+  "/apple-touch-icon.png",
 ]
 
 export function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl
 
-  // Allow static files, Next.js internal assets, and public routes
+  // Allow static files, Next.js internal assets, PWA manifests, icons, and public routes
   if (
     pathname.startsWith("/_next") ||
     pathname.startsWith("/api/auth/login") ||
@@ -44,9 +51,8 @@ export const config = {
      * Match all request paths except for static files:
      * - _next/static (static files)
      * - _next/image (image optimization files)
-     * - favicon.ico (favicon file)
-     * - logo_header.png (logo file)
+     * - favicon.ico, logo_header.png, manifests, and static images/icons
      */
-    "/((?!_next/static|_next/image|favicon.ico|logo_header.png).*)",
+    "/((?!_next/static|_next/image|favicon\\.ico|logo_header\\.png|manifest\\.webmanifest|manifest\\.json|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)",
   ],
 }

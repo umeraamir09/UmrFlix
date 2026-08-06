@@ -1,7 +1,7 @@
 "use client"
 
 import Image from "next/image"
-import { Loader2, Play, SkipForward, TriangleAlert, X } from "lucide-react"
+import { Loader2, Play, TriangleAlert, X } from "lucide-react"
 
 export function formatTimecode(totalSeconds: number): string {
   const s = Math.max(0, Math.floor(totalSeconds))
@@ -27,20 +27,29 @@ export function SkipSegmentButton({
   type,
   onSkip,
   raised = false,
+  touchLayout = false,
 }: {
   type: string
   onSkip: () => void
   raised?: boolean
+  /** Touch controls have a taller bottom stack — keep the button clear of it. */
+  touchLayout?: boolean
 }) {
   return (
     <button
       onClick={onSkip}
-      className={`absolute right-6 z-30 flex items-center gap-2 rounded-none bg-white px-5 py-2.5 text-sm font-bold tracking-widest text-black backdrop-blur transition-all hover:border-accent hover:bg-accent ${
-        raised ? "bottom-40" : "bottom-28"
+      className={`absolute right-6 sm:right-8 z-50 flex items-center gap-2.5 rounded-md bg-white px-4 py-2 text-sm font-semibold text-black shadow-xl transition-colors hover:bg-[#e5e5e5] active:bg-[#d8d8d8] ${
+        touchLayout ? (raised ? "bottom-52" : "bottom-40") : raised ? "bottom-48" : "bottom-36"
       }`}
     >
-      {SKIP_LABELS[type] ?? "Skip"}
-      <SkipForward className="size-5" />
+      <Image
+        src="/icons/next-ep.svg"
+        alt=""
+        width={18}
+        height={18}
+        className="size-4.5 shrink-0"
+      />
+      <span>{SKIP_LABELS[type] ?? "Skip"}</span>
     </button>
   )
 }
@@ -120,13 +129,16 @@ export function CreditsNextEpisodePill({
   next,
   onPlayNow,
   onDismiss,
+  touchLayout = false,
 }: {
   next: NextEpisodeInfo
   onPlayNow: () => void
   onDismiss: () => void
+  /** Touch controls have a taller bottom stack — keep the pill clear of it. */
+  touchLayout?: boolean
 }) {
   return (
-    <div className="absolute bottom-28 right-6 z-30 flex items-center gap-3 rounded-none border border-border bg-black/85 p-3 backdrop-blur">
+    <div className={`absolute ${touchLayout ? "bottom-36" : "bottom-28"} right-6 z-30 flex items-center gap-3 rounded-none border border-border bg-black/85 p-3 backdrop-blur`}>
       <button
         onClick={onPlayNow}
         className="flex items-center gap-2 rounded-none bg-accent px-4 py-2 text-xs font-bold uppercase tracking-wider text-white transition-colors hover:bg-accent-hover"
@@ -149,7 +161,10 @@ export function CreditsNextEpisodePill({
 
 export function PlayerLoading({ message = "Loading stream…" }: { message?: string }) {
   return (
-    <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-3 bg-black/60">
+    // pointer-events-none: this sits above the tap/gesture layer (z-10) and
+    // would otherwise swallow every tap while loading/buffering, making it
+    // impossible to bring up the controls.
+    <div className="pointer-events-none absolute inset-0 z-20 flex flex-col items-center justify-center gap-3 bg-black/60">
       <Loader2 className="size-20 animate-spin text-white" />
       <p className="text-sm font-medium text-gray-300">{message}</p>
     </div>

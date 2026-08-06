@@ -64,7 +64,7 @@ export function Navbar() {
 
   return (
     <header
-      className={`fixed top-0 z-50 w-full transition-all duration-300 ${
+      className={`fixed top-0 z-50 w-full pt-safe transition-all duration-300 ${
         scrolled
           ? "bg-black/90 backdrop-blur-md shadow-lg"
           : "bg-gradient-to-b from-black/90 via-black/40 to-transparent"
@@ -134,11 +134,11 @@ export function Navbar() {
 
               {categoriesOpen && (
                 <div
-                  className="absolute top-full left-0 w-[640px] bg-black/95 p-6 shadow-2xl backdrop-blur-xl flex gap-6 animate-in fade-in slide-in-from-top-1 duration-150 z-50 rounded-none"
+                  className="absolute top-full left-1/2 -translate-x-1/2 md:left-0 md:translate-x-0 w-[calc(100vw-2rem)] md:w-[640px] max-w-2xl bg-black/95 p-4 md:p-6 shadow-2xl backdrop-blur-xl flex flex-col md:flex-row gap-4 md:gap-6 animate-in fade-in slide-in-from-top-1 duration-150 z-50 rounded-lg md:rounded-none"
                   onMouseEnter={() => setCategoriesOpen(true)}
                 >
                   {/* Left Column: Quick links */}
-                  <div className="w-52 flex flex-col gap-1.5 pr-6 shrink-0">
+                  <div className="w-full md:w-52 flex flex-col gap-1.5 pr-0 md:pr-6 shrink-0">
                     {QUICK_LINKS.map((quick) => (
                       <Link
                         key={quick.href}
@@ -156,7 +156,7 @@ export function Navbar() {
                     <span className="text-[11px] font-bold text-gray-400 uppercase tracking-wider mb-3.5 block">
                       GENRES
                     </span>
-                    <div className="grid grid-cols-3 gap-x-6 gap-y-3">
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-4 sm:gap-x-6 gap-y-2.5 sm:gap-y-3">
                       {GENRE_CATALOG.map((genre) => (
                         <Link
                           key={genre.slug}
@@ -192,8 +192,9 @@ export function Navbar() {
           {/* Search Button */}
           <Link
             href="/search"
-            className="h-full flex items-center justify-center px-3 text-white/80 hover:text-gray-300 transition-colors"
+            className="h-full min-w-[44px] min-h-[44px] flex items-center justify-center px-3 text-white/80 hover:text-gray-300 transition-colors"
             title="Search Catalog"
+            aria-label="Search media catalog"
           >
             <IconSearch className="size-5" />
           </Link>
@@ -202,7 +203,8 @@ export function Navbar() {
           <Link
             href="/library"
             title="Watchlist / My Library"
-            className="h-full flex items-center justify-center px-3 text-white/80 hover:text-gray-300 transition-colors"
+            aria-label="View Watchlist and Downloads"
+            className="h-full min-w-[44px] min-h-[44px] flex items-center justify-center px-3 text-white/80 hover:text-gray-300 transition-colors"
           >
             <IconDownloadNav className="size-5" />
           </Link>
@@ -220,8 +222,8 @@ export function Navbar() {
           {/* Mobile Drawer Trigger */}
           <button
             onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-            className="h-full flex items-center justify-center px-3 text-white hover:text-gray-300 md:hidden transition-colors"
-            aria-label="Toggle Navigation Menu"
+            className="h-full min-w-[44px] min-h-[44px] flex items-center justify-center px-3 text-white hover:text-gray-300 md:hidden transition-colors"
+            aria-label={mobileMenuOpen ? "Close navigation menu" : "Open navigation menu"}
           >
             {mobileMenuOpen ? <IconClose className="size-6" /> : <Menu className="size-6" />}
           </button>

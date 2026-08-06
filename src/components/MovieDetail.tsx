@@ -81,9 +81,9 @@ export function MovieDetail({ params }: { params: Promise<{ id: string }> }) {
     : movie.similar?.results || []
 
   return (
-    <div className="min-h-screen bg-background text-foreground pb-16">
+    <div className="min-h-[100dvh] bg-background text-foreground pb-16">
       {/* ── Hero Backdrop & Title Section ── */}
-      <div className="relative h-[65vh] min-h-[500px] max-h-[750px] w-full overflow-hidden bg-background">
+      <div className="relative h-[65dvh] min-h-[450px] sm:min-h-[500px] max-h-[750px] w-full overflow-hidden bg-background">
         {movie.backdrop_path ? (
           <img
             src={getImageUrl(movie.backdrop_path, "w1280")}
@@ -106,13 +106,13 @@ export function MovieDetail({ params }: { params: Promise<{ id: string }> }) {
               <div className="flex items-center gap-2 text-xs font-black uppercase tracking-widest text-accent">
                 <span className="bg-accent/20 px-2 py-0.5 border border-accent/40">MOVIE</span>
               </div>
-            <div className="w-36 sm:w-44 md:w-52 shrink-0 overflow-hidden rounded-none border border-border shadow-2xl hidden sm:block">
-              <img
-                src={getImageUrl(movie.poster_path, "w500")}
-                alt={movie.title}
-                className="w-full h-auto object-cover"
-              />
-            </div>
+              <div className="w-28 sm:w-44 md:w-52 shrink-0 overflow-hidden rounded-none border border-border shadow-2xl block">
+                <img
+                  src={getImageUrl(movie.poster_path, "w500")}
+                  alt={movie.title}
+                  className="w-full h-auto object-cover"
+                />
+              </div>
             </div>
 
             {/* Title / Logo / Metadata Details */}
@@ -180,7 +180,7 @@ export function MovieDetail({ params }: { params: Promise<{ id: string }> }) {
               </div>
 
               {/* Action Buttons */}
-              <div className="flex flex-wrap items-center gap-3 pt-2">
+              <div className="flex flex-col sm:flex-row sm:items-center gap-3 pt-2 w-full sm:w-auto">
                 <RequestButton
                   type="movie"
                   tmdbId={movie.id}

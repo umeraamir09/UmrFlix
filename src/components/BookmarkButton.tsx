@@ -15,7 +15,7 @@ export type BookmarkButtonProps = {
   overview?: string
   releaseYear?: string
   initialBookmarked?: boolean
-  variant?: "button" | "icon" | "pill"
+  variant?: "button" | "icon" | "pill" | "menu-item"
   className?: string
 }
 
@@ -125,6 +125,27 @@ export function BookmarkButton({
       setLoading(false)
       pendingLockRef.current = false
     }
+  }
+
+  if (variant === "menu-item") {
+    return (
+      <button
+        onClick={handleToggle}
+        disabled={loading}
+        className={`w-full flex items-center gap-2.5 px-3 py-2 text-xs font-medium text-gray-200 hover:text-white hover:bg-white/10 rounded transition-colors text-left cursor-pointer ${className}`}
+      >
+        {loading ? (
+          <Loader2 className="size-4 animate-spin text-grey-200" />
+        ) : (
+          <Bookmark
+            className={`size-4 ${
+              bookmarked ? "fill-accent text-accent" : "text-gray-300"
+            }`}
+          />
+        )}
+        <span>{bookmarked ? "Remove from My List" : "Add to My List"}</span>
+      </button>
+    )
   }
 
   if (variant === "icon") {
