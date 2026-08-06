@@ -31,20 +31,15 @@ const RIPPLE_LIFETIME_MS = 700
  */
 export function useTouchGestures({
   enabled,
-  locked = false,
   onSingleTap,
   onSkip,
   onMouseClick,
-  onLockedTap,
 }: {
   /** Master switch — disable while a modal surface (episode browser) is up. */
   enabled: boolean
-  /** Screen-lock: swallow all gestures and route taps to `onLockedTap`. */
-  locked?: boolean
   onSingleTap: () => void
   onSkip: (deltaSec: number) => void
   onMouseClick: () => void
-  onLockedTap?: () => void
 }) {
   const [ripple, setRipple] = useState<SkipRipple>(null)
 
@@ -57,10 +52,10 @@ export function useTouchGestures({
   const rippleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // Latest-callback refs keep the gesture handlers referentially stable.
-  const callbacksRef = useRef({ onSingleTap, onSkip, onMouseClick, onLockedTap })
+  const callbacksRef = useRef({ onSingleTap, onSkip, onMouseClick })
   useEffect(() => {
-    callbacksRef.current = { onSingleTap, onSkip, onMouseClick, onLockedTap }
-  }, [onSingleTap, onSkip, onMouseClick, onLockedTap])
+    callbacksRef.current = { onSingleTap, onSkip, onMouseClick }
+  }, [onSingleTap, onSkip, onMouseClick])
 
   const clearSingleTapTimer = () => {
     if (singleTapTimerRef.current !== null) {
@@ -97,11 +92,6 @@ export function useTouchGestures({
     if (!down) return
     // A drag that crossed the slop threshold is not a tap.
     if (Math.hypot(e.clientX - down.x, e.clientY - down.y) > TAP_SLOP_PX) return
-
-    if (locked) {
-      callbacksRef.current.onLockedTap?.()
-      return
-    }
 
     const rect = e.currentTarget.getBoundingClientRect()
     const pctX = rect.width > 0 ? (e.clientX - rect.left) / rect.width : 0.5

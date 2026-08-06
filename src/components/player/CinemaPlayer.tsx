@@ -171,12 +171,7 @@ export function CinemaPlayer({
   const [endpointReady, setEndpointReady] = useState(false) // playback info settled
   const [controlsVisible, setControlsVisible] = useState(true)
   const [episodeBrowserOpen, setEpisodeBrowserOpen] = useState(false)
-  // Touch screen-lock (Netflix-style): while locked all gestures are swallowed
-  // and only the unlock affordance is interactive.
-  const [controlsLocked, setControlsLocked] = useState(false)
-  // Incremented on every tap that lands while locked — TouchControls surfaces
-  // the "tap to unlock" prompt in response.
-  const [lockSignal, setLockSignal] = useState(0)
+
   const [isFullscreen, setIsFullscreen] = useState(false)
   const [nextPrompt, setNextPrompt] = useState<{ secondsLeft: number } | null>(null)
   const [creditsPillDismissed, setCreditsPillDismissed] = useState(false)
@@ -273,7 +268,6 @@ export function CinemaPlayer({
     setCurrentTime(0)
     setDuration(0)
     setBuffered(0)
-    setControlsLocked(false)
     watchedReportedRef.current = false
     seekTargetRef.current = 0
     hadStreamRef.current = false
@@ -973,21 +967,10 @@ export function CinemaPlayer({
 
   const { gestureHandlers, ripple: skipRipple } = useTouchGestures({
     enabled: !episodeBrowserOpen,
-    locked: controlsLocked,
     onSingleTap: handleSingleTap,
     onSkip: skipBy,
     onMouseClick: handleSurfaceMouseClick,
-    onLockedTap: () => setLockSignal((s) => s + 1),
   })
-
-  const handleLockChange = useCallback(
-    (next: boolean) => {
-      setControlsLocked(next)
-      if (next) hideControls()
-      else showControls()
-    },
-    [hideControls, showControls],
-  )
 
   // Flush a pending scrub seek when leaving the page: fire-and-forget the
   // final drag position so the room isn't left at a stale playhead when the
@@ -1348,9 +1331,8 @@ export function CinemaPlayer({
             onBack={onBack}
             onReport={handleReport}
             onInteract={pokeControls}
-            locked={controlsLocked}
-            onLockChange={handleLockChange}
-            lockSignal={lockSignal}
+            isFullscreen={isFullscreen}
+            onToggleFullscreen={toggleFullscreen}
             ripple={skipRipple}
             hasParty={!!party?.partyId}
           />

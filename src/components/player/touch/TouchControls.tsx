@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react"
 import Image from "next/image"
-import { ArrowLeft } from "lucide-react"
+import { ArrowLeft, Maximize, Minimize } from "lucide-react"
 import { formatTimecode } from "../PlayerOverlays"
 import type {
   AudioTrack,
@@ -18,8 +18,6 @@ import type { SubtitleStyle } from "../SubtitleOverlay"
 import type { SkipRipple } from "./use-touch-gestures"
 import {
   IconBrightness,
-  IconLockClosed,
-  IconLockOpen,
   IconPause,
   IconPlay,
   IconSkipBackward,
@@ -197,11 +195,10 @@ export function TouchControls({
   onSubtitleChange,
   onPlaybackRateChange,
   onBack,
-  onReport,
+  onReport: _onReport,
   onInteract,
-  locked,
-  onLockChange,
-  lockSignal,
+  isFullscreen = false,
+  onToggleFullscreen,
   ripple,
   hasParty = false,
 }: {
@@ -241,10 +238,8 @@ export function TouchControls({
   onReport?: () => void
   /** Re-arms the auto-hide timer (transport presses, scrub release, etc.). */
   onInteract: () => void
-  locked: boolean
-  onLockChange: (locked: boolean) => void
-  /** Increments whenever a locked tap lands — used to surface the unlock hint. */
-  lockSignal: number
+  isFullscreen?: boolean
+  onToggleFullscreen?: () => void
   ripple: SkipRipple
   /** True in watch-party rooms — the PartyBar occupies the top-right corner,
    * so the touch chrome shifts down to stay clear of it. */
@@ -255,7 +250,6 @@ export function TouchControls({
   const [isScrubbing, setIsScrubbing] = useState(false)
   const [brightness, setBrightnessState] = useState(loadBrightness)
   const [brightnessDragging, setBrightnessDragging] = useState(false)
-  const [unlockPrompt, setUnlockPrompt] = useState(false)
 
   const brightnessRef = useRef(brightness)
   useEffect(() => {
@@ -284,7 +278,7 @@ export function TouchControls({
 
   const isAnyMenuOpen =
     audioSubsOpen || speedOpen || episodeBrowserOpen || isScrubbing || brightnessDragging
-  const show = (visible || isAnyMenuOpen) && !locked
+  const show = visible || isAnyMenuOpen
   // Islands only receive touches while visible — otherwise invisible controls
   // would swallow taps that should toggle the overlay (no hover-poke on touch).
   const pe = show ? "pointer-events-auto" : "pointer-events-none"
@@ -299,25 +293,6 @@ export function TouchControls({
       setSpeedOpen(false)
     }
   }
-
-  // Lock-mode unlock hint: surfaces on lock + whenever a locked tap lands,
-  // then auto-dismisses. (Render-time state adjustments — same pattern as the
-  // show-tracking above.)
-  const [prevLocked, setPrevLocked] = useState(locked)
-  if (prevLocked !== locked) {
-    setPrevLocked(locked)
-    setUnlockPrompt(locked)
-  }
-  const [prevLockSignal, setPrevLockSignal] = useState(lockSignal)
-  if (prevLockSignal !== lockSignal) {
-    setPrevLockSignal(lockSignal)
-    if (lockSignal > prevLockSignal) setUnlockPrompt(true)
-  }
-  useEffect(() => {
-    if (!unlockPrompt) return
-    const id = setTimeout(() => setUnlockPrompt(false), 3_000)
-    return () => clearTimeout(id)
-  }, [unlockPrompt])
 
   const speedLabel = `Speed (${playbackRate === 1 ? "1x" : `${playbackRate}x`})`
 
@@ -506,12 +481,13 @@ export function TouchControls({
               }}
             />
             <ActionButton
-              icon={<IconLockOpen className="size-5 shrink-0" />}
-              label="Lock"
+              icon={<IconSubtitles className="size-5 shrink-0" />}
+              label="Audio & Subtitles"
+              active={audioSubsOpen}
               onClick={() => {
-                setAudioSubsOpen(false)
+                setAudioSubsOpen((o) => !o)
                 setSpeedOpen(false)
-                onLockChange(true)
+                onInteract()
               }}
             />
             {seriesId && onSelectEpisode && episodes && episodes.length > 0 && (
@@ -535,51 +511,25 @@ export function TouchControls({
               />
             )}
             <ActionButton
-              icon={<IconSubtitles className="size-5 shrink-0" />}
-              label="Audio & Subtitles"
-              active={audioSubsOpen}
+              icon={
+                isFullscreen ? (
+                  <Minimize className="size-5 shrink-0" />
+                ) : (
+                  <Maximize className="size-5 shrink-0" />
+                )
+              }
+              label={isFullscreen ? "Exit Fullscreen" : "Fullscreen"}
+              active={isFullscreen}
               onClick={() => {
-                setAudioSubsOpen((o) => !o)
+                setAudioSubsOpen(false)
                 setSpeedOpen(false)
+                onToggleFullscreen?.()
                 onInteract()
               }}
             />
           </div>
         </div>
       </div>
-
-      {/* Screen-lock overlay: persistent lock chip + tap-to-unlock prompt */}
-      {locked && (
-        <div className="absolute inset-0 z-40 pointer-events-none">
-          <button
-            onClick={(e) => {
-              e.stopPropagation()
-              setUnlockPrompt(true)
-            }}
-            className={`pointer-events-auto absolute ${EDGE_L} top-1/2 flex size-12 -translate-y-1/2 items-center justify-center rounded-full bg-[#292929]/85 text-white/90 shadow-lg backdrop-blur-sm transition-all active:scale-95 ${
-              unlockPrompt ? "opacity-100" : "opacity-50"
-            }`}
-            aria-label="Show unlock control"
-          >
-            <IconLockClosed className="size-5" />
-          </button>
-          {unlockPrompt && (
-            <div className="absolute inset-x-0 top-1/2 flex -translate-y-1/2 justify-center pointer-events-none">
-              <button
-                onClick={(e) => {
-                  e.stopPropagation()
-                  setUnlockPrompt(false)
-                  onLockChange(false)
-                }}
-                className="pointer-events-auto flex items-center gap-2.5 rounded-full bg-[#292929]/95 px-6 py-3.5 text-sm font-semibold text-white shadow-2xl backdrop-blur-md animate-in fade-in zoom-in-95 duration-150 active:scale-95"
-              >
-                <IconLockOpen className="size-5" />
-                Tap to unlock
-              </button>
-            </div>
-          )}
-        </div>
-      )}
 
       {/* In-player episode browser overlay */}
       {episodeBrowserOpen && seriesId && episodes && episodes.length > 0 && onSelectEpisode && (
