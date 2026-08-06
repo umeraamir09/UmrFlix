@@ -33,7 +33,8 @@ import { applyStreamParams, maskUrl } from "@/lib/url-utils"
 import { usePartySync } from "./use-party-sync"
 import { PartyBar } from "@/components/party/PartyBar"
 import type { EpisodeInfo, SeasonInfo } from "@/components/SeasonBrowser"
-import { IconPlay, IconPause, IconSkipBackward, IconSkipForward } from "@/components/ui/icons"
+import { TouchControls } from "./touch/TouchControls"
+import { useTouchGestures } from "./touch/use-touch-gestures"
 
 const TICKS_PER_SECOND = 10_000_000
 const CONTROLS_HIDE_DELAY = 3_500
@@ -170,6 +171,12 @@ export function CinemaPlayer({
   const [endpointReady, setEndpointReady] = useState(false) // playback info settled
   const [controlsVisible, setControlsVisible] = useState(true)
   const [episodeBrowserOpen, setEpisodeBrowserOpen] = useState(false)
+  // Touch screen-lock (Netflix-style): while locked all gestures are swallowed
+  // and only the unlock affordance is interactive.
+  const [controlsLocked, setControlsLocked] = useState(false)
+  // Incremented on every tap that lands while locked — TouchControls surfaces
+  // the "tap to unlock" prompt in response.
+  const [lockSignal, setLockSignal] = useState(0)
   const [isFullscreen, setIsFullscreen] = useState(false)
   const [nextPrompt, setNextPrompt] = useState<{ secondsLeft: number } | null>(null)
   const [creditsPillDismissed, setCreditsPillDismissed] = useState(false)
@@ -266,6 +273,7 @@ export function CinemaPlayer({
     setCurrentTime(0)
     setDuration(0)
     setBuffered(0)
+    setControlsLocked(false)
     watchedReportedRef.current = false
     seekTargetRef.current = 0
     hadStreamRef.current = false
@@ -859,7 +867,9 @@ export function CinemaPlayer({
   // ── Playback helpers ──
   const togglePlay = useCallback(() => {
     const video = videoRef.current
-    if (!video) return
+    // No stream attached yet (initial load): a play() here only rejects and
+    // would flash the "press play to start" helper for no reason.
+    if (!video || !hadStreamRef.current) return
 
     if (party?.partyId) {
       const isPaused = video.paused
@@ -874,9 +884,10 @@ export function CinemaPlayer({
     }
   }, [party?.partyId, partySync])
 
-  // Auto-landscape orientation lock when playing on mobile devices
+  // Auto-landscape orientation lock when playing on mobile/touch devices —
+  // desktop browsers lack (or refuse) orientation.lock, so gate on coarse pointers.
   useEffect(() => {
-    if (!playing) return
+    if (!playing || !isTouchDevice) return
     try {
       if (typeof window !== "undefined" && screen.orientation && "lock" in screen.orientation) {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -890,30 +901,7 @@ export function CinemaPlayer({
         }
       } catch {}
     }
-  }, [playing])
-
-  // Double-tap skip gesture & single-tap overlay toggle handler
-  const [doubleTapRipple, setDoubleTapRipple] = useState<{
-    side: "left" | "right"
-    count: number
-  } | null>(null)
-  const lastTapRef = useRef<{ time: number; side: "left" | "right" | "center" }>({
-    time: 0,
-    side: "center",
-  })
-  const singleTapTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const rippleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-
-  const seekToRelative = useCallback(
-    (delta: number) => {
-      const video = videoRef.current
-      if (!video) return
-      const target = Math.min(Math.max(0, video.currentTime + delta), duration || video.duration || 0)
-      video.currentTime = target
-      setCurrentTime(target)
-    },
-    [duration]
-  )
+  }, [playing, isTouchDevice])
 
   const handlePointerMove = useCallback(
     (e: React.PointerEvent) => {
@@ -922,67 +910,6 @@ export function CinemaPlayer({
       pokeControls()
     },
     [pokeControls]
-  )
-
-  const handleCanvasTap = useCallback(
-    (e: React.MouseEvent<HTMLDivElement>) => {
-      const rect = e.currentTarget.getBoundingClientRect()
-      const clickX = e.clientX - rect.left
-      const pctX = clickX / rect.width
-      const now = Date.now()
-      const prev = lastTapRef.current
-      const currentSide: "left" | "right" | "center" =
-        pctX < 0.35 ? "left" : pctX > 0.65 ? "right" : "center"
-
-      // Double tap threshold: < 300ms delay & tapped on same outer side (left or right)
-      if (now - prev.time < 300 && prev.side === currentSide && currentSide !== "center") {
-        if (singleTapTimerRef.current) {
-          clearTimeout(singleTapTimerRef.current)
-          singleTapTimerRef.current = null
-        }
-
-        if (currentSide === "left") {
-          seekToRelative(-10)
-          setDoubleTapRipple((prevRipple) => ({
-            side: "left",
-            count: prevRipple?.side === "left" ? prevRipple.count + 1 : 1,
-          }))
-          if (rippleTimerRef.current) clearTimeout(rippleTimerRef.current)
-          rippleTimerRef.current = setTimeout(() => setDoubleTapRipple(null), 600)
-          lastTapRef.current = { time: 0, side: "center" }
-          return
-        } else if (currentSide === "right") {
-          seekToRelative(10)
-          setDoubleTapRipple((prevRipple) => ({
-            side: "right",
-            count: prevRipple?.side === "right" ? prevRipple.count + 1 : 1,
-          }))
-          if (rippleTimerRef.current) clearTimeout(rippleTimerRef.current)
-          rippleTimerRef.current = setTimeout(() => setDoubleTapRipple(null), 600)
-          lastTapRef.current = { time: 0, side: "center" }
-          return
-        }
-      }
-
-      lastTapRef.current = { time: now, side: currentSide }
-
-      // Capture controls state NOW — before any synthesized mouse events
-      // (mousemove, etc.) can race and flip the flag.
-      const wasVisible = controlsVisibleRef.current
-      singleTapTimerRef.current = setTimeout(() => {
-        if (!isTouchDevice) {
-          togglePlay()
-          pokeControls()
-        } else {
-          if (wasVisible) {
-            hideControls()
-          } else {
-            showControls()
-          }
-        }
-      }, 250)
-    },
-    [hideControls, isTouchDevice, pokeControls, seekToRelative, showControls, togglePlay]
   )
 
   const seekTo = useCallback(
@@ -1015,6 +942,49 @@ export function CinemaPlayer({
       }
     },
     [party?.partyId, partySync]
+  )
+
+  // ── Relative skip (±10s) — goes through seekTo so party rooms stay in sync
+  // (the old touch path wrote currentTime directly and the drift loop fought it)
+  const skipBy = useCallback(
+    (delta: number) => {
+      const video = videoRef.current
+      if (!video) return
+      seekTo(Math.min(Math.max(0, video.currentTime + delta), duration || video.duration || 0))
+    },
+    [seekTo, duration],
+  )
+
+  // ── Tap gestures (touch + mouse) on the player surface ──
+  const handleSingleTap = useCallback(() => {
+    if (controlsVisibleRef.current) {
+      hideControls()
+    } else {
+      showControls()
+    }
+  }, [hideControls, showControls])
+
+  const handleSurfaceMouseClick = useCallback(() => {
+    togglePlay()
+    pokeControls()
+  }, [togglePlay, pokeControls])
+
+  const { gestureHandlers, ripple: skipRipple } = useTouchGestures({
+    enabled: !episodeBrowserOpen,
+    locked: controlsLocked,
+    onSingleTap: handleSingleTap,
+    onSkip: skipBy,
+    onMouseClick: handleSurfaceMouseClick,
+    onLockedTap: () => setLockSignal((s) => s + 1),
+  })
+
+  const handleLockChange = useCallback(
+    (next: boolean) => {
+      setControlsLocked(next)
+      if (next) hideControls()
+      else showControls()
+    },
+    [hideControls, showControls],
   )
 
   // Flush a pending scrub seek when leaving the page: fire-and-forget the
@@ -1210,7 +1180,7 @@ export function CinemaPlayer({
       {/* Video Tap & Gesture Backdrop Layer */}
       <div
         className="absolute inset-0 z-10 cursor-pointer"
-        onClick={handleCanvasTap}
+        {...gestureHandlers}
       />
 
       <video
@@ -1293,6 +1263,7 @@ export function CinemaPlayer({
         currentTime={currentTime}
         style={subStyle}
         controlsVisible={controlsVisible || !playing}
+        touchLayout={isTouchDevice}
       />
 
       {/* Loading / buffering / error */}
@@ -1307,6 +1278,7 @@ export function CinemaPlayer({
         <SkipSegmentButton
           type={activeMarker.type}
           raised={showCreditsPill}
+          touchLayout={isTouchDevice}
           onSkip={() => {
             seekTo(activeMarker.end + 0.3)
             pokeControls()
@@ -1320,6 +1292,7 @@ export function CinemaPlayer({
           next={nextEpisode}
           onPlayNow={beginNextEpisode}
           onDismiss={() => setCreditsPillDismissed(true)}
+          touchLayout={isTouchDevice}
         />
       )}
 
@@ -1333,135 +1306,105 @@ export function CinemaPlayer({
         />
       )}
 
-      {/* Double-Tap Skip Ripple Feedback Overlay */}
-      {doubleTapRipple && (
-        <div
-          className={`absolute inset-y-0 z-40 flex items-center justify-center w-1/3 bg-white/10 backdrop-blur-xs text-white pointer-events-none animate-in fade-in zoom-in-95 duration-150 ${
-            doubleTapRipple.side === "left"
-              ? "left-0 rounded-r-full"
-              : "right-0 rounded-l-full"
-          }`}
-        >
-          <div className="flex flex-col items-center gap-1 font-black text-sm uppercase tracking-wider drop-shadow-md">
-            {doubleTapRipple.side === "left" ? (
-              <>
-                <IconSkipBackward className="size-8 animate-bounce" />
-                <span>-{10 * doubleTapRipple.count}s</span>
-              </>
-            ) : (
-              <>
-                <IconSkipForward className="size-8 animate-bounce" />
-                <span>+{10 * doubleTapRipple.count}s</span>
-              </>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* Floating Center Transport Controls (Mobile / Touch Devices Only) */}
-      {isTouchDevice && (controlsVisible || !playing) && (
-        <div
-          onClick={(e) => e.stopPropagation()}
-          className="absolute inset-0 z-30 flex items-center justify-center gap-8 sm:gap-14 pointer-events-none"
-        >
-          <button
-            onClick={(e) => {
-              e.stopPropagation()
-              seekToRelative(-10)
-              pokeControls()
-            }}
-            className="pointer-events-auto flex size-12 sm:size-16 items-center justify-center bg-transparent text-white drop-shadow-[0_4px_12px_rgba(0,0,0,0.85)] hover:scale-115 active:scale-90 transition-all cursor-pointer"
-            aria-label="Skip backward 10 seconds"
-          >
-            <IconSkipBackward className="size-7 sm:size-10 text-white" />
-          </button>
-
-          <button
-            onClick={(e) => {
-              e.stopPropagation()
-              togglePlay()
-              pokeControls()
-            }}
-            className="pointer-events-auto flex size-16 sm:size-24 items-center justify-center bg-transparent text-white drop-shadow-[0_4px_18px_rgba(0,0,0,0.9)] hover:scale-115 active:scale-90 transition-all cursor-pointer"
-            aria-label={playing ? "Pause" : "Play"}
-          >
-            {playing ? (
-              <IconPause className="size-11 sm:size-16 fill-white text-white" />
-            ) : (
-              <IconPlay className="size-11 sm:size-16 fill-white text-white ml-1.5" />
-            )}
-          </button>
-
-          <button
-            onClick={(e) => {
-              e.stopPropagation()
-              seekToRelative(10)
-              pokeControls()
-            }}
-            className="pointer-events-auto flex size-12 sm:size-16 items-center justify-center bg-transparent text-white drop-shadow-[0_4px_12px_rgba(0,0,0,0.85)] hover:scale-115 active:scale-90 transition-all cursor-pointer"
-            aria-label="Skip forward 10 seconds"
-          >
-            <IconSkipForward className="size-7 sm:size-10 text-white" />
-          </button>
-        </div>
-      )}
-
-      {/* Control bar */}
+      {/* Control bar — touch devices get the dedicated touch layout,
+          everything else keeps the desktop chrome */}
       {payload && startedOrWaiting && endpointReady && (
-        <PlayerControls
-          isTouchDevice={isTouchDevice}
-          visible={controlsVisible || !playing || !!nextPrompt || episodeBrowserOpen}
-          title={title}
-          subtitle={subtitle}
-          playing={playing}
-          currentTime={currentTime}
-          duration={duration || payload.runtimeTicks / TICKS_PER_SECOND}
-          buffered={buffered}
-          volume={volume}
-          muted={muted}
-          qualityId={qualityId}
-          autoResolvedLabel={autoResolvedLabel}
-          audioTracks={payload.audio}
-          audioIndex={audioIndex}
-          subtitleTracks={payload.subtitles}
-          subtitleIndex={subtitleIndex}
-          subStyle={subStyle}
-          playbackRate={displayPlaybackRate}
-          isFullscreen={isFullscreen}
-          hasNext={!!nextEpisode && !!onNextEpisode}
-          chapters={payload.chapters}
-          itemId={payload.itemId}
-          trickplay={payload.trickplay}
-          seriesId={payload.series?.id}
-          episodes={episodes}
-          seasons={seasons}
-          onSelectEpisode={onSelectEpisode}
-          episodeBrowserOpen={episodeBrowserOpen}
-          onToggleEpisodeBrowser={() => setEpisodeBrowserOpen((o) => !o)}
-          onTogglePlay={togglePlay}
-          onSeek={seekTo}
-          onSkipBy={(d) => {
-            const v = videoRef.current
-            if (v) seekTo(Math.min(Math.max(0, v.currentTime + d), duration || v.duration))
-          }}
-          onVolumeChange={updateVolume}
-          onToggleMute={() => {
-            const v = videoRef.current
-            const next = !muted
-            if (v) v.muted = next
-            setMuted(next)
-          }}
-          onQualityChange={handleQualityChange}
-          onAudioChange={handleAudioChange}
-          onSubtitleChange={handleSubtitleChange}
-          onSubStyleChange={updateSubStyle}
-          onPlaybackRateChange={handlePlaybackRateChange}
-          onToggleFullscreen={toggleFullscreen}
-          onTogglePip={togglePip}
-          onNextEpisode={beginNextEpisode}
-          onBack={onBack}
-          onReport={handleReport}
-        />
+        isTouchDevice ? (
+          <TouchControls
+            visible={controlsVisible || !playing || !!nextPrompt || episodeBrowserOpen}
+            title={title}
+            subtitle={subtitle}
+            playing={playing}
+            currentTime={currentTime}
+            duration={duration || payload.runtimeTicks / TICKS_PER_SECOND}
+            buffered={buffered}
+            qualityId={qualityId}
+            autoResolvedLabel={autoResolvedLabel}
+            audioTracks={payload.audio}
+            audioIndex={audioIndex}
+            subtitleTracks={payload.subtitles}
+            subtitleIndex={subtitleIndex}
+            subStyle={subStyle}
+            onSubStyleChange={updateSubStyle}
+            playbackRate={displayPlaybackRate}
+            chapters={payload.chapters}
+            itemId={payload.itemId}
+            trickplay={payload.trickplay}
+            seriesId={payload.series?.id}
+            episodes={episodes}
+            seasons={seasons}
+            onSelectEpisode={onSelectEpisode}
+            episodeBrowserOpen={episodeBrowserOpen}
+            onToggleEpisodeBrowser={() => setEpisodeBrowserOpen((o) => !o)}
+            onTogglePlay={togglePlay}
+            onSeek={seekTo}
+            onSkipBy={skipBy}
+            onQualityChange={handleQualityChange}
+            onAudioChange={handleAudioChange}
+            onSubtitleChange={handleSubtitleChange}
+            onPlaybackRateChange={handlePlaybackRateChange}
+            onBack={onBack}
+            onReport={handleReport}
+            onInteract={pokeControls}
+            locked={controlsLocked}
+            onLockChange={handleLockChange}
+            lockSignal={lockSignal}
+            ripple={skipRipple}
+            hasParty={!!party?.partyId}
+          />
+        ) : (
+          <PlayerControls
+            isTouchDevice={isTouchDevice}
+            visible={controlsVisible || !playing || !!nextPrompt || episodeBrowserOpen}
+            title={title}
+            subtitle={subtitle}
+            playing={playing}
+            currentTime={currentTime}
+            duration={duration || payload.runtimeTicks / TICKS_PER_SECOND}
+            buffered={buffered}
+            volume={volume}
+            muted={muted}
+            qualityId={qualityId}
+            autoResolvedLabel={autoResolvedLabel}
+            audioTracks={payload.audio}
+            audioIndex={audioIndex}
+            subtitleTracks={payload.subtitles}
+            subtitleIndex={subtitleIndex}
+            subStyle={subStyle}
+            playbackRate={displayPlaybackRate}
+            isFullscreen={isFullscreen}
+            hasNext={!!nextEpisode && !!onNextEpisode}
+            chapters={payload.chapters}
+            itemId={payload.itemId}
+            trickplay={payload.trickplay}
+            seriesId={payload.series?.id}
+            episodes={episodes}
+            seasons={seasons}
+            onSelectEpisode={onSelectEpisode}
+            episodeBrowserOpen={episodeBrowserOpen}
+            onToggleEpisodeBrowser={() => setEpisodeBrowserOpen((o) => !o)}
+            onTogglePlay={togglePlay}
+            onSeek={seekTo}
+            onSkipBy={skipBy}
+            onVolumeChange={updateVolume}
+            onToggleMute={() => {
+              const v = videoRef.current
+              const next = !muted
+              if (v) v.muted = next
+              setMuted(next)
+            }}
+            onQualityChange={handleQualityChange}
+            onAudioChange={handleAudioChange}
+            onSubtitleChange={handleSubtitleChange}
+            onSubStyleChange={updateSubStyle}
+            onPlaybackRateChange={handlePlaybackRateChange}
+            onToggleFullscreen={toggleFullscreen}
+            onTogglePip={togglePip}
+            onNextEpisode={beginNextEpisode}
+            onBack={onBack}
+            onReport={handleReport}
+          />
+        )
       )}
 
       {/* Report Toast Notification */}
