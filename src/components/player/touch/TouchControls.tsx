@@ -18,10 +18,8 @@ import type { SubtitleStyle } from "../SubtitleOverlay"
 import type { SkipRipple } from "./use-touch-gestures"
 import {
   IconBrightness,
-  IconClose,
   IconLockClosed,
   IconLockOpen,
-  IconMirror,
   IconPause,
   IconPlay,
   IconSkipBackward,
@@ -44,7 +42,10 @@ function loadBrightness(): number {
   if (typeof window === "undefined") return 1
   try {
     const v = window.localStorage.getItem(BRIGHTNESS_KEY)
-    if (v !== null) return Math.min(1, Math.max(BRIGHTNESS_MIN, Number(v)))
+    if (v !== null) {
+      const n = Number(v)
+      if (Number.isFinite(n)) return Math.min(1, Math.max(BRIGHTNESS_MIN, n))
+    }
   } catch {}
   return 1
 }
@@ -256,13 +257,30 @@ export function TouchControls({
   const [brightnessDragging, setBrightnessDragging] = useState(false)
   const [unlockPrompt, setUnlockPrompt] = useState(false)
 
+  const brightnessRef = useRef(brightness)
+  useEffect(() => {
+    brightnessRef.current = brightness
+  }, [brightness])
+
   const setBrightness = (v: number) => {
     const clamped = Math.min(1, Math.max(BRIGHTNESS_MIN, v))
     setBrightnessState(clamped)
-    try {
-      window.localStorage.setItem(BRIGHTNESS_KEY, String(clamped))
-    } catch {}
+    if (!brightnessDragging) {
+      try {
+        window.localStorage.setItem(BRIGHTNESS_KEY, String(clamped))
+      } catch {}
+    }
   }
+
+  const prevDraggingRef = useRef(brightnessDragging)
+  useEffect(() => {
+    if (prevDraggingRef.current && !brightnessDragging) {
+      try {
+        window.localStorage.setItem(BRIGHTNESS_KEY, String(brightnessRef.current))
+      } catch {}
+    }
+    prevDraggingRef.current = brightnessDragging
+  }, [brightnessDragging])
 
   const isAnyMenuOpen =
     audioSubsOpen || speedOpen || episodeBrowserOpen || isScrubbing || brightnessDragging

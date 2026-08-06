@@ -289,7 +289,7 @@ export function PlayerControls({
   const [prevVisible, setPrevVisible] = useState(visible)
   if (prevVisible !== visible) {
     setPrevVisible(visible)
-    if (!visible && !audioSubsOpen && !speedOpen && !isScrubbing) {
+    if (!visible) {
       setAudioSubsOpen(false)
       setSpeedOpen(false)
     }

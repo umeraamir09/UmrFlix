@@ -133,6 +133,7 @@ export function useTouchGestures({
 
   const onPointerCancel = () => {
     downPosRef.current = null
+    clearSingleTapTimer()
   }
 
   return {

@@ -867,9 +867,11 @@ export function CinemaPlayer({
   // ── Playback helpers ──
   const togglePlay = useCallback(() => {
     const video = videoRef.current
-    // No stream attached yet (initial load): a play() here only rejects and
-    // would flash the "press play to start" helper for no reason.
-    if (!video || !hadStreamRef.current) return
+    // No stream attached yet (initial load): set play intent so playback starts as soon as stream attaches
+    if (!video || !hadStreamRef.current) {
+      playIntentRef.current = true
+      return
+    }
 
     if (party?.partyId) {
       const isPaused = video.paused
