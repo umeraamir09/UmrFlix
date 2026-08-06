@@ -81,7 +81,15 @@ export function Navbar() {
               alt="UmrFlix Logo"
               width={140}
               height={36}
-              className="h-8 w-auto object-contain transition-all duration-200 group-hover:brightness-0 group-hover:invert"
+              className="hidden sm:block h-8 w-auto object-contain transition-all duration-200 group-hover:brightness-0 group-hover:invert"
+              priority
+            />
+            <Image
+              src="/logo-nav-small.svg"
+              alt="UmrFlix Logo"
+              width={36}
+              height={36}
+              className="block sm:hidden h-8 w-auto object-contain transition-all duration-200 group-hover:brightness-0 group-hover:invert"
               priority
             />
           </Link>
