@@ -14,7 +14,7 @@ export type UserSession = {
   lastRequestResetDate?: string
 }
 
-const COOKIE_NAME = "umrflix_session"
+export const COOKIE_NAME = "umrflix_session"
 const SECRET_SEED = process.env.SESSION_SECRET || env("JELLYFIN_URL") || "umrflix-secret-key-default-32bytes!"
 
 async function getEncryptionKey(): Promise<CryptoKey> {

@@ -31,6 +31,13 @@ function breakerKey(serverUrl: string, userId?: string): string {
   return userId ? `jellyfin:${serverUrl}:${userId}` : `jellyfin:${serverUrl}`
 }
 
+export class JellyfinAuthError extends Error {
+  constructor(message = "Jellyfin session token expired or invalid (401)") {
+    super(message)
+    this.name = "JellyfinAuthError"
+  }
+}
+
 async function jellyfinFetch(url: string, options?: RequestInit, breaker?: CircuitBreaker): Promise<Response> {
   const circuit = breaker ?? getBreaker(breakerKey(serverUrlOf(url)))
   if (!circuit.canExecute()) {
@@ -41,7 +48,10 @@ async function jellyfinFetch(url: string, options?: RequestInit, breaker?: Circu
   const id = setTimeout(() => controller.abort(), TIMEOUT)
   try {
     const res = await fetch(url, { ...options, signal: controller.signal })
-    if (res.status === 401) tokenCache.delete(serverUrlOf(url)) // re-auth next time
+    if (res.status === 401) {
+      tokenCache.delete(serverUrlOf(url)) // re-auth next time
+      throw new JellyfinAuthError(`Jellyfin authentication failed (401): ${url}`)
+    }
     if (res.ok || res.status < 500) {
       circuit.recordSuccess()
     } else {
@@ -49,7 +59,9 @@ async function jellyfinFetch(url: string, options?: RequestInit, breaker?: Circu
     }
     return res
   } catch (err) {
-    circuit.recordFailure()
+    if (!(err instanceof JellyfinAuthError)) {
+      circuit.recordFailure()
+    }
     throw err
   } finally {
     clearTimeout(id)
@@ -293,6 +305,7 @@ export async function getResumeItems(
     const data: JellyfinResumeResponse = await res.json()
     return data.Items ?? []
   } catch (err) {
+    if (err instanceof JellyfinAuthError) throw err
     console.error("Failed to fetch Jellyfin resume items:", err)
     return []
   }
@@ -335,6 +348,7 @@ export async function getNextUpItems(
     const data: JellyfinResumeResponse = await res.json()
     return data.Items ?? []
   } catch (err) {
+    if (err instanceof JellyfinAuthError) throw err
     console.error("Failed to fetch Jellyfin next-up items:", err)
     return []
   }

@@ -1,11 +1,12 @@
 import { NextResponse } from "next/server"
-import { getSession } from "@/lib/auth"
+import { getSession, clearSessionCookie } from "@/lib/auth"
 import { getUserAvatar } from "@/lib/avatar-store"
 
 export async function GET() {
   const session = await getSession()
   if (!session) {
-    return NextResponse.json({ authenticated: false, user: null })
+    await clearSessionCookie()
+    return NextResponse.json({ authenticated: false, user: null }, { status: 401 })
   }
 
   let avatarUrl = session.avatarUrl

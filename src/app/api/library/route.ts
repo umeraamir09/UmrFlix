@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server"
-import { authenticate, getAllItems, JellyfinItem } from "@/lib/jellyfin"
+import { authenticate, getAllItems, JellyfinItem, JellyfinAuthError } from "@/lib/jellyfin"
 import { setJellyfinIndex } from "@/lib/cache"
 import { tmdbProxyFetch } from "@/lib/tmdb-proxy"
-import { getSession } from "@/lib/auth"
+import { getSession, clearSessionCookie } from "@/lib/auth"
+
 import { checkRateLimit } from "@/lib/rate-limit"
 import { SingleFlight } from "@/lib/circuit-breaker"
 
@@ -156,6 +157,13 @@ export async function GET(request: NextRequest) {
       headers: { "Content-Type": "application/json", "Cache-Control": "private, max-age=30" },
     })
   } catch (err) {
+    if (err instanceof JellyfinAuthError) {
+      await clearSessionCookie()
+      return NextResponse.json(
+        { movies: [], series: [], total: 0, error: "Unauthorized", authenticated: false },
+        { status: 401 }
+      )
+    }
     const message = err instanceof Error ? err.message : "Failed to fetch Jellyfin library"
     console.error("Library API error:", message)
     return NextResponse.json(
@@ -164,3 +172,4 @@ export async function GET(request: NextRequest) {
     )
   }
 }
+

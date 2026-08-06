@@ -4,14 +4,15 @@ import { SWRConfig } from "swr"
 import { ReactNode } from "react"
 
 const defaultFetcher = (url: string) =>
-  fetch(url).then((res) => {
-    if (!res.ok) {
-      const error = new Error(`HTTP Error ${res.status}: ${res.statusText}`)
+  fetch(url).then(async (res) => {
+    const data = await res.json().catch(() => ({}))
+    if (!res.ok || data?.authenticated === false || data?.error === "Unauthorized") {
+      const error = new Error(data?.error || `HTTP Error ${res.status}: ${res.statusText}`)
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      ;(error as any).status = res.status
+      ;(error as any).status = res.status === 200 ? 401 : res.status
       throw error
     }
-    return res.json()
+    return data
   })
 
 export function SWRProvider({ children }: { children: ReactNode }) {
@@ -23,6 +24,16 @@ export function SWRProvider({ children }: { children: ReactNode }) {
         revalidateOnFocus: false, // Eliminate screen flickering and API storms on tab focus
         revalidateOnReconnect: true,
         errorRetryCount: 3,
+        onError: (error) => {
+          if (
+            error?.status === 401 &&
+            typeof window !== "undefined" &&
+            window.location.pathname !== "/login"
+          ) {
+            const currentPath = window.location.pathname + window.location.search
+            window.location.href = `/login?redirect=${encodeURIComponent(currentPath)}`
+          }
+        },
         onErrorRetry: (error, _key, _config, revalidate, { retryCount }) => {
           // Never retry on 404 or 401
           if (error?.status === 404 || error?.status === 401) return
@@ -38,3 +49,4 @@ export function SWRProvider({ children }: { children: ReactNode }) {
     </SWRConfig>
   )
 }
+
