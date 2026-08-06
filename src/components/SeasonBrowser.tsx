@@ -17,6 +17,7 @@ import {
   Layers,
 } from "lucide-react"
 import { getImageUrl, formatDate } from "@/lib/utils"
+import { useToast } from "@/components/Toast"
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json())
 
@@ -111,6 +112,7 @@ interface SeasonBrowserProps {
   }[]
   seriesId?: string
   tvdbId?: number
+  availabilityStatus?: string
   onRequestSeason?: (seasonNumber?: number) => void
   onSeasonsStateChange?: (state: {
     downloadedSeasons: number[]
@@ -125,11 +127,12 @@ export function SeasonBrowser({
   tmdbSeasons = [],
   seriesId,
   tvdbId,
+  availabilityStatus,
   onRequestSeason,
   onSeasonsStateChange,
 }: SeasonBrowserProps) {
   // Jellyfin Episodes SWR
-  const { data: jellyfinData } = useSWR<JellyfinEpisodesResponse>(
+  const { data: jellyfinData, mutate: mutateEpisodes } = useSWR<JellyfinEpisodesResponse>(
     seriesId ? `/api/jellyfin/series/${seriesId}/episodes${tvdbId ? `?tvdbId=${tvdbId}` : ""}` : null,
     fetcher,
     { refreshInterval: 30_000 }
@@ -272,6 +275,174 @@ export function SeasonBrowser({
   const activeSeasonInfo = seasons.find((s) => s.seasonNumber === currentSeason) || seasons[0]
   const isCurrentSeasonMissing = missingSeasons.includes(currentSeason)
 
+  // User authorization
+  const { data: meData } = useSWR("/api/auth/me", fetcher)
+  const isAdmin = Boolean(meData?.user?.isAdmin)
+
+  // Options menu states
+  const [openMenuEpisodeId, setOpenMenuEpisodeId] = useState<string | null>(null)
+  const [actionLoadingId, setActionLoadingId] = useState<string | null>(null)
+  const { toast } = useToast()
+
+  // Handle outside clicks to close the dropdown menu
+  useEffect(() => {
+    if (!openMenuEpisodeId) return
+    const handleOutsideClick = (e: MouseEvent) => {
+      const target = e.target as HTMLElement
+      if (!target.closest(".episode-options-container")) {
+        setOpenMenuEpisodeId(null)
+      }
+    }
+    document.addEventListener("click", handleOutsideClick)
+    return () => document.removeEventListener("click", handleOutsideClick)
+  }, [openMenuEpisodeId])
+
+  const handleTogglePlayed = async (ep: EpisodeInfo) => {
+    if (!ep.jellyfinItemId) return
+    setActionLoadingId(ep.id)
+    try {
+      const method = ep.played ? "DELETE" : "POST"
+      const res = await fetch(`/api/jellyfin/played/${ep.jellyfinItemId}`, { method })
+      if (res.ok) {
+        toast(
+          ep.played
+            ? `Marked "${ep.title}" as unwatched`
+            : `Marked "${ep.title}" as watched`,
+          "success"
+        )
+        await mutateEpisodes()
+      } else {
+        toast(`Failed to update watched status for "${ep.title}"`, "error")
+      }
+    } catch {
+      toast("Error updating watched status", "error")
+    } finally {
+      setActionLoadingId(null)
+      setOpenMenuEpisodeId(null)
+    }
+  }
+
+  const handleRequestEpisode = async (ep: EpisodeInfo) => {
+    if (!tvdbId) {
+      toast("Cannot request: TVDB ID is missing", "error")
+      return
+    }
+    setActionLoadingId(ep.id)
+    try {
+      const res = await fetch("/api/library/episode", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          tvdbId,
+          seasonNumber: ep.seasonNumber,
+          episodeNumber: ep.episodeNumber,
+        }),
+      })
+      if (res.ok) {
+        toast(`Requested Episode E${ep.episodeNumber}. Search triggered in Sonarr.`, "success")
+        await mutateEpisodes()
+      } else {
+        const errData = await res.json().catch(() => ({}))
+        toast(errData.error || "Failed to request episode", "error")
+      }
+    } catch {
+      toast("Error requesting episode", "error")
+    } finally {
+      setActionLoadingId(null)
+      setOpenMenuEpisodeId(null)
+    }
+  }
+
+  const handleDeleteEpisode = async (ep: EpisodeInfo) => {
+    const confirmed = window.confirm(
+      `Are you sure you want to delete Episode E${ep.episodeNumber} – "${ep.title}"?\n\nThis will permanently delete the file from Jellyfin and unmonitor it in Sonarr.`
+    )
+    if (!confirmed) return
+    setActionLoadingId(ep.id)
+    try {
+      const res = await fetch("/api/library/episode", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          jellyfinId: ep.jellyfinItemId,
+          tvdbId,
+          seasonNumber: ep.seasonNumber,
+          episodeNumber: ep.episodeNumber,
+        }),
+      })
+      if (res.ok) {
+        toast(`Deleted Episode E${ep.episodeNumber} from Jellyfin & unmonitored in Sonarr`, "success")
+        await mutateEpisodes()
+      } else {
+        const errData = await res.json().catch(() => ({}))
+        toast(errData.error || "Failed to delete episode", "error")
+      }
+    } catch {
+      toast("Error deleting episode", "error")
+    } finally {
+      setActionLoadingId(null)
+      setOpenMenuEpisodeId(null)
+    }
+  }
+
+  const renderDropdownMenu = (ep: EpisodeInfo) => {
+    const isEpisodeInLibrary = ep.status === "in_library"
+    const isLoading = actionLoadingId === ep.id
+    const isShowInSonarr =
+      availabilityStatus === "in_sonarr" ||
+      availabilityStatus === "in_library" ||
+      availabilityStatus === "downloading"
+
+    return (
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="absolute bottom-full mb-1 right-0 z-50 w-44 bg-[#181a20] border border-border shadow-2xl py-1 rounded-none text-left"
+      >
+        {isLoading ? (
+          <div className="px-4 py-2.5 text-xs text-gray-400 flex items-center gap-2">
+            <span className="animate-spin border border-accent border-t-transparent rounded-full size-3" />
+            <span>Processing...</span>
+          </div>
+        ) : (
+          <>
+            {isEpisodeInLibrary && (
+              <button
+                onClick={() => handleTogglePlayed(ep)}
+                className="w-full text-left px-4 py-2 text-xs font-bold uppercase tracking-wider text-gray-300 hover:bg-surface hover:text-white transition-colors"
+              >
+                {ep.played ? "Mark Unplayed" : "Mark Played"}
+              </button>
+            )}
+
+            {!isEpisodeInLibrary && (
+              <button
+                disabled={!isShowInSonarr}
+                onClick={() => handleRequestEpisode(ep)}
+                className={`w-full text-left px-4 py-2 text-xs font-bold uppercase tracking-wider transition-colors ${
+                  isShowInSonarr
+                    ? "text-accent hover:bg-surface hover:text-white"
+                    : "text-gray-600 cursor-not-allowed"
+                }`}
+                title={!isShowInSonarr ? "Please request the TV show first" : undefined}
+              >
+                Request Episode
+              </button>
+            )}
+
+            {isEpisodeInLibrary && isAdmin && (
+              <button
+                onClick={() => handleDeleteEpisode(ep)}
+                className="w-full text-left px-4 py-2 text-xs font-bold uppercase tracking-wider text-red-500 hover:bg-red-500/10 transition-colors"
+              >
+                Delete Episode
+              </button>
+            )}
+          </>
+        )}
+      </div>
+    )
+  }
+
   const playEpisode = (ep: EpisodeInfo) => {
     if (ep.jellyfinItemId) router.push(`/watch?id=${ep.jellyfinItemId}`)
   }
@@ -408,7 +579,7 @@ export function SeasonBrowser({
             return (
               <div
                 key={ep.id}
-                className="group relative flex flex-col justify-between overflow-hidden transition-all duration-200 border-border/50 hover:border-accent/80"
+                className="group relative flex flex-col justify-between transition-all duration-200 border-border/50 hover:border-accent/80"
               >
                 {/* ── 1. Regular Card State ── */}
                 <div>
@@ -466,11 +637,19 @@ export function SeasonBrowser({
                     </h4>
 
                     {/* Footer Row: Dub | Sub & Options */}
-                    <div className="flex items-center justify-between text-[11px] text-gray-500 font-medium pt-1">
+                    <div className="flex items-center justify-between text-[11px] text-gray-500 font-medium pt-1 relative episode-options-container">
                       <span>Dub | Sub</span>
-                      <button className="min-h-[44px] min-w-[44px] flex items-center justify-end hover:text-white transition-colors" aria-label="Options">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          setOpenMenuEpisodeId(openMenuEpisodeId === ep.id ? null : ep.id)
+                        }}
+                        className="min-h-[44px] min-w-[44px] flex items-center justify-end hover:text-white transition-colors"
+                        aria-label="Options"
+                      >
                         <MoreVertical className="size-3.5 text-gray-400" />
                       </button>
+                      {openMenuEpisodeId === ep.id && renderDropdownMenu(ep)}
                     </div>
                   </div>
                 </div>
@@ -498,8 +677,8 @@ export function SeasonBrowser({
                     </p>
                   </div>
 
-                  {/* Bottom Play Action CTA Button */}
-                  <div className="pt-3 border-t border-border/50 mt-auto">
+                  {/* Bottom Play Action CTA Button & Options */}
+                  <div className="pt-3 border-t border-border/50 mt-auto flex items-center justify-between relative episode-options-container">
                     {playable ? (
                       <button
                         onClick={() => playEpisode(ep)}
@@ -514,6 +693,17 @@ export function SeasonBrowser({
                         {ep.status === "unaired" ? "UNAIRED" : "NOT STREAMABLE YET"}
                       </div>
                     )}
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        setOpenMenuEpisodeId(openMenuEpisodeId === ep.id ? null : ep.id)
+                      }}
+                      className="min-h-[44px] min-w-[44px] flex items-center justify-end hover:text-white text-gray-400 transition-colors"
+                      aria-label="Options"
+                    >
+                      <MoreVertical className="size-4" />
+                    </button>
+                    {openMenuEpisodeId === ep.id && renderDropdownMenu(ep)}
                   </div>
                 </div>
               </div>

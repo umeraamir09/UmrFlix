@@ -305,6 +305,7 @@ export function TvDetail({ params }: { params: Promise<{ id: string }> }) {
             tmdbSeasons={show.seasons}
             seriesId={availability?.jellyfinItemId}
             tvdbId={tvdbId}
+            availabilityStatus={availability?.status}
             onSeasonsStateChange={setSeasonsState}
             onRequestSeason={(seasonNum) => {
               setRequestSeasonTarget(seasonNum)

@@ -279,6 +279,20 @@ export async function invalidateAll(): Promise<void> {
   tmdbToTvdbCache.timestamp = 0
   jellyfinIndexCache.timestamp = 0
 
+  // Clear L2 Convex cache store so subsequent queries fetch origin data
+  const convex = getConvexClient()
+  if (convex) {
+    try {
+      await Promise.all([
+        convex.mutation(api.cache.setCacheEntry, { key: "radarr_movies", dataJson: "[]" }),
+        convex.mutation(api.cache.setCacheEntry, { key: "sonarr_series", dataJson: "[]" }),
+        convex.mutation(api.cache.setCacheEntry, { key: "jellyfin_index", dataJson: "[]" }),
+      ])
+    } catch (err) {
+      console.error("Failed to clear L2 Convex cache in invalidateAll:", err)
+    }
+  }
+
   // Invalidate the derived in-memory caches (genre rows, per-user genre
   // profiles, recommendations) so library changes are reflected immediately
   // instead of after their 30-minute TTL. Dynamic imports avoid an import
@@ -296,7 +310,7 @@ export async function invalidateAll(): Promise<void> {
     invalidateGenreCache()
     invalidateGenreProfileCache()
     invalidateRecommendationCache()
-  } catch {
-    /* ignore import errors */
+  } catch (err) {
+    console.error("Failed to invalidate derived caches in invalidateAll:", err)
   }
 }
