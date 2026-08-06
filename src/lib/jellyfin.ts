@@ -31,6 +31,13 @@ function breakerKey(serverUrl: string, userId?: string): string {
   return userId ? `jellyfin:${serverUrl}:${userId}` : `jellyfin:${serverUrl}`
 }
 
+export class JellyfinAuthError extends Error {
+  constructor(message = "Jellyfin session token expired or invalid (401)") {
+    super(message)
+    this.name = "JellyfinAuthError"
+  }
+}
+
 async function jellyfinFetch(url: string, options?: RequestInit, breaker?: CircuitBreaker): Promise<Response> {
   const circuit = breaker ?? getBreaker(breakerKey(serverUrlOf(url)))
   if (!circuit.canExecute()) {
@@ -41,7 +48,11 @@ async function jellyfinFetch(url: string, options?: RequestInit, breaker?: Circu
   const id = setTimeout(() => controller.abort(), TIMEOUT)
   try {
     const res = await fetch(url, { ...options, signal: controller.signal })
-    if (res.status === 401) tokenCache.delete(serverUrlOf(url)) // re-auth next time
+    if (res.status === 401) {
+      tokenCache.delete(serverUrlOf(url)) // re-auth next time
+      circuit.recordFailure()
+      throw new JellyfinAuthError(`Jellyfin authentication failed (401): ${url}`)
+    }
     if (res.ok || res.status < 500) {
       circuit.recordSuccess()
     } else {
@@ -55,6 +66,7 @@ async function jellyfinFetch(url: string, options?: RequestInit, breaker?: Circu
     clearTimeout(id)
   }
 }
+
 
 
 export type JellyfinAuthResponse = {
@@ -293,6 +305,7 @@ export async function getResumeItems(
     const data: JellyfinResumeResponse = await res.json()
     return data.Items ?? []
   } catch (err) {
+    if (err instanceof JellyfinAuthError) throw err
     console.error("Failed to fetch Jellyfin resume items:", err)
     return []
   }
@@ -335,6 +348,7 @@ export async function getNextUpItems(
     const data: JellyfinResumeResponse = await res.json()
     return data.Items ?? []
   } catch (err) {
+    if (err instanceof JellyfinAuthError) throw err
     console.error("Failed to fetch Jellyfin next-up items:", err)
     return []
   }
@@ -869,7 +883,10 @@ export async function setFavoriteItem(
   const res = await jellyfinFetch(path, {
     method,
     headers: getAuthHeaders(auth.token),
-  }, auth.breaker).catch(() => null)
+  }, auth.breaker).catch((err) => {
+    if (err instanceof JellyfinAuthError) throw err
+    return null
+  })
 
   return Boolean(res && res.ok)
 }
@@ -913,7 +930,8 @@ export async function getActiveSessions(): Promise<JellyfinSession[]> {
     if (!res.ok) return []
     const data: JellyfinSession[] = await res.json()
     return data.filter((s) => s.NowPlayingItem != null)
-  } catch {
+  } catch (err) {
+    if (err instanceof JellyfinAuthError) throw err
     return []
   }
 }
@@ -926,7 +944,8 @@ export async function stopSession(sessionId: string): Promise<boolean> {
       headers: getAuthHeaders(token),
     }, breaker)
     return res.ok
-  } catch {
+  } catch (err) {
+    if (err instanceof JellyfinAuthError) throw err
     return false
   }
 }
@@ -971,6 +990,7 @@ export async function getJellyfinAdmins(): Promise<string[]> {
     adminUserIdsCache = { ids, timestamp: Date.now() }
     return ids
   } catch (err) {
+    if (err instanceof JellyfinAuthError) throw err
     adminUserIdsCache = { ids: [], timestamp: Date.now() }
     console.error("[Notif][getJellyfinAdmins] Exception — failed to resolve admin IDs:", err)
     return []
@@ -987,6 +1007,7 @@ export async function getJellyfinUsers(): Promise<JellyfinUserPublic[]> {
     const users: JellyfinUserPublic[] = await res.json()
     return users ?? []
   } catch (err) {
+    if (err instanceof JellyfinAuthError) throw err
     console.error("Failed to fetch Jellyfin users:", err)
     return []
   }
@@ -1005,6 +1026,7 @@ export async function triggerLibraryScan(): Promise<boolean> {
     }, breaker)
     return res.ok
   } catch (err) {
+    if (err instanceof JellyfinAuthError) throw err
     console.error("Failed to trigger Jellyfin library scan:", err)
     return false
   }
@@ -1023,10 +1045,12 @@ export async function deleteJellyfinItem(itemId: string): Promise<boolean> {
     }, breaker)
     return res.ok
   } catch (err) {
+    if (err instanceof JellyfinAuthError) throw err
     console.error(`Failed to delete Jellyfin item ${itemId}:`, err)
     return false
   }
 }
+
 
 
 

@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server"
 import type { NextRequest } from "next/server"
+import { decryptSessionToken, COOKIE_NAME } from "@/lib/auth-crypto"
+import { sanitizeRedirectUrl } from "@/lib/url-sanitize"
 
 const PUBLIC_PATHS = [
   "/login",
@@ -16,8 +18,8 @@ const PUBLIC_PATHS = [
   "/apple-touch-icon.png",
 ]
 
-export function proxy(request: NextRequest) {
-  const { pathname } = request.nextUrl
+export async function proxy(request: NextRequest) {
+  const { pathname, search } = request.nextUrl
 
   // Allow static files, Next.js internal assets, PWA manifests, icons, and public routes
   if (
@@ -25,21 +27,50 @@ export function proxy(request: NextRequest) {
     pathname.startsWith("/api/auth/login") ||
     PUBLIC_PATHS.some((path) => pathname === path || pathname.startsWith("/public"))
   ) {
+    // If authenticated user tries to access /login, redirect to their target path or home /
+    if (pathname === "/login") {
+      const sessionCookie = request.cookies.get(COOKIE_NAME)?.value
+      if (sessionCookie) {
+        const session = await decryptSessionToken(sessionCookie)
+        if (session) {
+          const redirectParam = request.nextUrl.searchParams.get("redirect")
+          const targetPath = sanitizeRedirectUrl(redirectParam, "/")
+          return NextResponse.redirect(new URL(targetPath, request.url))
+        }
+      }
+    }
     return NextResponse.next()
   }
 
-  const sessionCookie = request.cookies.get("umrflix_session")?.value
+  const sessionCookie = request.cookies.get(COOKIE_NAME)?.value
+  const session = sessionCookie ? await decryptSessionToken(sessionCookie) : null
 
-  // If user is not authenticated and trying to access any route other than /login
-  if (!sessionCookie && pathname !== "/login") {
-    const loginUrl = new URL("/login", request.url)
-    return NextResponse.redirect(loginUrl)
-  }
+  // If user is unauthenticated or session decryption failed
+  if (!session) {
+    // For API requests, return 401 Unauthorized and clear the invalid cookie
+    if (pathname.startsWith("/api/")) {
+      const response = NextResponse.json(
+        { error: "Unauthorized", authenticated: false },
+        { status: 401 }
+      )
+      if (sessionCookie) {
+        response.cookies.set(COOKIE_NAME, "", { path: "/", maxAge: 0 })
+      }
+      return response
+    }
 
-  // If user IS authenticated and trying to access /login, redirect to home /
-  if (sessionCookie && pathname === "/login") {
-    const homeUrl = new URL("/", request.url)
-    return NextResponse.redirect(homeUrl)
+    // For page requests, redirect to /login?redirect=<targetPath> and clear the invalid cookie
+    const rawTargetPath = pathname + search
+    const targetPath = sanitizeRedirectUrl(rawTargetPath, "/")
+    const loginUrl = new URL(
+      `/login?redirect=${encodeURIComponent(targetPath)}`,
+      request.url
+    )
+    const response = NextResponse.redirect(loginUrl)
+    if (sessionCookie) {
+      response.cookies.set(COOKIE_NAME, "", { path: "/", maxAge: 0 })
+    }
+    return response
   }
 
   return NextResponse.next()
