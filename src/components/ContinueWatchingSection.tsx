@@ -20,6 +20,7 @@ type ApiContinueWatchingItem = {
   episodeNumber?: string
   overview?: string
   imageUrl: string
+  logoUrl?: string
   mediaType: "movie" | "tv"
   progressPercent: number
   timeLeft?: string
@@ -162,8 +163,11 @@ export function ContinueWatchingSection() {
           timeLeft: item.timeLeft,
           jellyfinItemId: item.jellyfinItemId,
           jellyfinImageUrl: item.imageUrl,
+          jellyfinLogoUrl: item.logoUrl,
           isNextUp: item.isNextUp,
         }))
+
+        setItems(mapped)
 
         setItems(mapped)
       } catch (err) {
@@ -448,7 +452,7 @@ function ContinueWatchingFlyout({
     }
   }, [open, onExited])
 
-  const { playHref, detailHref, backdropUrl, displayEpisodeInfo } = getContinueWatchingMedia(item)
+  const { playHref, detailHref, backdropUrl, logoUrl, displayEpisodeInfo } = getContinueWatchingMedia(item)
 
   // Expanded geometry: 12px beyond the base card on every side, clamped inside the viewport
   const EXPAND = 12

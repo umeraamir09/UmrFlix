@@ -17,6 +17,7 @@ export interface ContinueWatchingItem {
   timeLeft?: string
   jellyfinItemId?: string
   jellyfinImageUrl?: string
+  jellyfinLogoUrl?: string
   isNextUp?: boolean
 }
 
@@ -36,11 +37,13 @@ export function getContinueWatchingMedia(item: ContinueWatchingItem) {
       ? `https://image.tmdb.org/t/p/w500${item.backdrop_path}`
       : "https://image.tmdb.org/t/p/w500/muth4OYamv31pG2LX2jU2u2vY1n.jpg"
 
+  const logoUrl = item.jellyfinLogoUrl || null
+
   const displayEpisodeInfo = item.episodeNumber
     ? `${item.episodeNumber}${item.episodeTitle ? ` - ${item.episodeTitle}` : ""}`
     : item.episodeTitle || ""
 
-  return { playHref, detailHref, backdropUrl, displayEpisodeInfo }
+  return { playHref, detailHref, backdropUrl, logoUrl, displayEpisodeInfo }
 }
 
 export function ContinueWatchingCard({
@@ -61,7 +64,7 @@ export function ContinueWatchingCard({
   dimmed?: boolean
 }) {
   const cardRef = useRef<HTMLDivElement>(null)
-  const { playHref, backdropUrl } = getContinueWatchingMedia(item)
+  const { playHref, backdropUrl, logoUrl } = getContinueWatchingMedia(item)
 
   // Hover flyout only makes sense on devices with a real pointer
   const hoverCapable = () =>

@@ -249,6 +249,8 @@ export type JellyfinResumeItem = {
   BackdropImageTags?: string[]
   ParentBackdropImageTags?: string[]
   ParentBackdropItemId?: string
+  ParentThumbItemId?: string
+  ParentThumbImageTag?: string
   ProviderIds?: Record<string, string>
   MediaType: string
 }
@@ -344,18 +346,38 @@ export async function getNextUpItems(
  */
 export function buildJellyfinImageUrl(
   item: JellyfinResumeItem,
-  type: "Primary" | "Backdrop" | "Thumb" = "Backdrop",
+  type: "Primary" | "Backdrop" | "Thumb" | "Logo" = "Backdrop",
 ): string {
-  // Episodes carry the exact frame thumbnail as their Primary image — use it
-  // so continue-watching cards show that precise episode frame, not the
-  // generic series backdrop.
-  if (item.Type === "Episode" && item.ImageTags?.Primary) {
-    return `/api/jellyfin/image/${item.Id}?type=Primary`
+  // For episodes/movies in Continue Watching, prefer the show/item "Thumb" (landscape artwork with title logo)
+  if (type === "Backdrop" || type === "Thumb") {
+    // 1. If parent series has a landscape Thumb image tag
+    if (item.ParentThumbItemId && item.ParentThumbImageTag) {
+      return `/api/jellyfin/image/${item.ParentThumbItemId}?type=Thumb`
+    }
+    // 2. If parent backdrop item exists
+    if (item.ParentBackdropItemId && item.ParentBackdropImageTags && item.ParentBackdropImageTags.length > 0) {
+      return `/api/jellyfin/image/${item.ParentBackdropItemId}?type=Backdrop`
+    }
+    // 3. Fallback to SeriesId or Item Backdrop
+    if (item.SeriesId) {
+      return `/api/jellyfin/image/${item.SeriesId}?type=Thumb`
+    }
+    if (item.BackdropImageTags && item.BackdropImageTags.length > 0) {
+      return `/api/jellyfin/image/${item.Id}?type=Backdrop`
+    }
   }
 
-  // For episodes without their own thumbnail, try the parent (series) backdrop item if applicable
-  if (type === "Backdrop" && item.ParentBackdropItemId && item.ParentBackdropImageTags && item.ParentBackdropImageTags.length > 0) {
-    return `/api/jellyfin/image/${item.ParentBackdropItemId}?type=Backdrop`
+  // Logo: if an episode doesn't have a logo tag itself, check series / parent item
+  if (type === "Logo") {
+    if (item.ImageTags?.Logo) {
+      return `/api/jellyfin/image/${item.Id}?type=Logo`
+    }
+    if (item.SeriesId) {
+      return `/api/jellyfin/image/${item.SeriesId}?type=Logo`
+    }
+    if (item.ParentBackdropItemId) {
+      return `/api/jellyfin/image/${item.ParentBackdropItemId}?type=Logo`
+    }
   }
 
   return `/api/jellyfin/image/${item.Id}?type=${type}`

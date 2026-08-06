@@ -43,6 +43,9 @@ function mapItem(item: JellyfinResumeItem, isNextUp: boolean) {
   // Image – prefer backdrop for the 16:9 card; episodes use their exact thumbnail
   const imageUrl = buildJellyfinImageUrl(item, "Backdrop")
 
+  // Logo – try to retrieve official show / movie logo artwork
+  const logoUrl = buildJellyfinImageUrl(item, "Logo")
+
   return {
     jellyfinItemId: item.Id,
     title,
@@ -50,6 +53,7 @@ function mapItem(item: JellyfinResumeItem, isNextUp: boolean) {
     episodeNumber,
     overview: item.Overview,
     imageUrl,
+    logoUrl,
     mediaType: item.Type === "Episode" ? "tv" : "movie",
     progressPercent,
     timeLeft,
