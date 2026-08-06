@@ -6,10 +6,10 @@ import { useRouter } from "next/navigation"
 import { getImageUrl, formatYear, formatRating } from "@/lib/utils"
 import { AvailabilityBadge } from "@/components/AvailabilityBadge"
 import { BookmarkButton } from "@/components/BookmarkButton"
-import { Star, Trash2, Check, CheckCheck } from "lucide-react"
+import { useState, useRef, useEffect, type ElementType } from "react"
+import { Star, Trash2, Check, CheckCheck, MoreVertical } from "lucide-react"
 import { IconPlay, IconAdd } from "@/components/ui/icons"
 import type { AvailabilityResult } from "@/app/api/availability/route"
-import type { ElementType } from "react"
 
 export type MovieCardItem = {
   id: number
@@ -74,6 +74,22 @@ export function MovieCard({
   const year = formatYear(dateStr)
   const posterUrl = getImageUrl(item.poster_path, "w342")
   const Wrapper = (disabled ? "div" : Link) as ElementType
+
+  const [menuOpen, setMenuOpen] = useState(false)
+  const menuRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!menuOpen) return
+    const handleClickOutside = (event: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
+        setMenuOpen(false)
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside)
+    return () => document.removeEventListener("mousedown", handleClickOutside)
+  }, [menuOpen])
+
+  const hasMenuItems = !disabled || Boolean(onDelete)
 
   return (
     <Wrapper
@@ -151,11 +167,12 @@ export function MovieCard({
           </p>
         </div>
 
-        {/* Bottom Action Bar (Crunchyroll Orange/Accent Icons) */}
-        <div className="flex items-center gap-2 pt-2">
-          {!disabled && (
-            <>
+        {/* Bottom Action Bar */}
+        <div className="flex items-center justify-between pt-2">
+          <div className="flex items-center gap-1">
+            {!disabled && (
               <button
+                type="button"
                 className="flex min-h-[44px] min-w-[44px] items-center justify-center p-2 text-accent hover:scale-110 transition-transform cursor-pointer"
                 title="Watch Now"
                 aria-label="Watch Now"
@@ -167,73 +184,102 @@ export function MovieCard({
               >
                 <IconPlay className="size-5 fill-accent text-accent" />
               </button>
-              <div className="flex min-h-[44px] min-w-[44px] items-center justify-center">
-                <BookmarkButton
-                  itemId={availabilityState?.jellyfinItemId || String(item.id)}
-                  tmdbId={item.id}
-                  jellyfinId={availabilityState?.jellyfinItemId}
-                  mediaType={type}
-                  title={title}
-                  posterPath={item.poster_path}
-                  overview={item.overview}
-                  releaseYear={year}
-                  variant="icon"
-                  className="!p-1.5 border-none bg-transparent hover:bg-white/10"
-                />
-              </div>
+            )}
+            {onMarkWatched && (
               <button
-                className="flex min-h-[44px] min-w-[44px] items-center justify-center p-2 text-accent hover:scale-110 transition-transform cursor-pointer"
-                title="Request / Add to Library"
-                aria-label="Request or Add to Library"
+                type="button"
+                className={`flex min-h-[44px] min-w-[44px] items-center justify-center p-2 hover:scale-110 transition-transform cursor-pointer ${
+                  isWatched ? "text-red-500 hover:text-red-400" : "text-white hover:text-accent"
+                }`}
+                title={
+                  type === "tv"
+                    ? isWatched
+                      ? "Mark all episodes as unwatched"
+                      : "Mark all episodes as watched"
+                    : isWatched
+                      ? "Mark as unwatched"
+                      : "Mark as watched"
+                }
+                aria-label="Toggle watched status"
                 onClick={(e) => {
                   e.preventDefault()
                   e.stopPropagation()
-                  router.push(href)
+                  onMarkWatched(item, type)
                 }}
               >
-                <IconAdd className="size-5" />
+                {type === "tv" ? <CheckCheck className="size-5" /> : <Check className="size-5" />}
               </button>
-            </>
-          )}
-          {(onMarkWatched || onDelete) && (
-            <div className="ml-auto flex items-center gap-2">
-              {onMarkWatched && (
-                <button
-                  className={`flex min-h-[44px] min-w-[44px] items-center justify-center p-2 hover:scale-110 transition-transform cursor-pointer ${
-                    isWatched ? "text-red-500 hover:text-red-400" : "text-white hover:text-accent"
-                  }`}
-                  title={
-                    type === "tv"
-                      ? isWatched
-                        ? "Mark all episodes as unwatched"
-                        : "Mark all episodes as watched"
-                      : isWatched
-                        ? "Mark as unwatched"
-                        : "Mark as watched"
-                  }
-                  aria-label="Toggle watched status"
+            )}
+          </div>
+
+          {hasMenuItems && (
+            <div className="relative ml-auto" ref={menuRef}>
+              <button
+                type="button"
+                className="flex min-h-[44px] min-w-[44px] items-center justify-center p-2 text-gray-300 hover:text-white hover:scale-110 transition-transform cursor-pointer"
+                title="More options"
+                aria-label="More options"
+                onClick={(e) => {
+                  e.preventDefault()
+                  e.stopPropagation()
+                  setMenuOpen((prev) => !prev)
+                }}
+              >
+                <MoreVertical className="size-5" />
+              </button>
+
+              {menuOpen && (
+                <div
+                  className="absolute bottom-full right-0 mb-1 z-30 w-48 rounded-md bg-grey-900 border border-grey-700 shadow-xl p-1 flex flex-col gap-0.5"
                   onClick={(e) => {
                     e.preventDefault()
                     e.stopPropagation()
-                    onMarkWatched(item, type)
                   }}
                 >
-                  {type === "tv" ? <CheckCheck className="size-5" /> : <Check className="size-5" />}
-                </button>
-              )}
-              {onDelete && (
-                <button
-                  className="text-red-500 hover:text-red-400 hover:scale-110 transition-transform cursor-pointer"
-                  title="Delete from Jellyfin & Radarr/Sonarr"
-                  aria-label="Delete from Library"
-                  onClick={(e) => {
-                    e.preventDefault()
-                    e.stopPropagation()
-                    onDelete(item, type)
-                  }}
-                >
-                  <Trash2 className="size-5" />
-                </button>
+                  {!disabled && (
+                    <>
+                      <BookmarkButton
+                        itemId={availabilityState?.jellyfinItemId || String(item.id)}
+                        tmdbId={item.id}
+                        jellyfinId={availabilityState?.jellyfinItemId}
+                        mediaType={type}
+                        title={title}
+                        posterPath={item.poster_path}
+                        overview={item.overview}
+                        releaseYear={year}
+                        variant="menu-item"
+                      />
+                      <button
+                        type="button"
+                        className="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-medium text-gray-200 hover:text-white hover:bg-white/10 rounded transition-colors text-left cursor-pointer"
+                        onClick={(e) => {
+                          e.preventDefault()
+                          e.stopPropagation()
+                          setMenuOpen(false)
+                          router.push(href)
+                        }}
+                      >
+                        <IconAdd className="size-4 text-accent" />
+                        <span>Request / Add to Library</span>
+                      </button>
+                    </>
+                  )}
+                  {onDelete && (
+                    <button
+                      type="button"
+                      className="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-medium text-red-400 hover:text-red-300 hover:bg-red-500/10 rounded transition-colors text-left cursor-pointer"
+                      onClick={(e) => {
+                        e.preventDefault()
+                        e.stopPropagation()
+                        setMenuOpen(false)
+                        onDelete(item, type)
+                      }}
+                    >
+                      <Trash2 className="size-4 text-red-500" />
+                      <span>Delete from Library</span>
+                    </button>
+                  )}
+                </div>
               )}
             </div>
           )}
