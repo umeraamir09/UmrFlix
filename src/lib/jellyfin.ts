@@ -554,13 +554,67 @@ export async function getPlaybackInfo(itemId: string): Promise<JellyfinPlaybackI
     DirectPlayProfiles: [
       { Container: "mp4,m4v,mov", Type: "Video", VideoCodec: "h264,hevc,vp8,vp9,av1", AudioCodec: "aac,mp3,ac3,eac3,opus,flac,vorbis" },
       { Container: "webm", Type: "Video", VideoCodec: "vp8,vp9,av1", AudioCodec: "vorbis,opus" },
+      { Container: "mkv", Type: "Video", VideoCodec: "h264,hevc,vp8,vp9,av1", AudioCodec: "aac,mp3,ac3,eac3,opus,flac,vorbis" },
     ],
     TranscodingProfiles: [
-      { Container: "ts", Type: "Video", VideoCodec: "h264", AudioCodec: "aac,mp3", Protocol: "hls", BreakOnNonKeyFrames: true, MinSegments: 1, SegmentLength: 6 },
+      {
+        Container: "mp4",
+        Type: "Video",
+        VideoCodec: "h264,hevc",
+        AudioCodec: "aac,mp3,opus",
+        Protocol: "hls",
+        BreakOnNonKeyFrames: true,
+        MinSegments: 1,
+        SegmentLength: 6,
+        EnableMuxing: true,
+      },
+      {
+        Container: "ts",
+        Type: "Video",
+        VideoCodec: "h264",
+        AudioCodec: "aac,mp3",
+        Protocol: "hls",
+        BreakOnNonKeyFrames: true,
+        MinSegments: 1,
+        SegmentLength: 6,
+      },
     ],
-    ContainerProfiles: [],
-    CodecProfiles: [],
-    SubtitleProfiles: [{ Format: "vtt", Method: "External" }],
+    ContainerProfiles: [
+      {
+        Type: "Video",
+        Container: "mkv",
+        Conditions: [],
+      },
+    ],
+    CodecProfiles: [
+      {
+        Type: "Video",
+        Codec: "h264",
+        Conditions: [
+          { Condition: "EqualsAny", Property: "VideoProfile", Value: "high|main|baseline|constrained baseline" },
+          { Condition: "LessThanEqual", Property: "VideoLevel", Value: "52" },
+        ],
+      },
+      {
+        Type: "Video",
+        Codec: "hevc",
+        Conditions: [
+          { Condition: "EqualsAny", Property: "VideoProfile", Value: "main|main 10" },
+          { Condition: "LessThanEqual", Property: "VideoLevel", Value: "153" },
+        ],
+      },
+    ],
+    SubtitleProfiles: [
+      { Format: "vtt", Method: "External" },
+      { Format: "vtt", Method: "Embed" },
+      { Format: "srt", Method: "External" },
+      { Format: "srt", Method: "Embed" },
+      { Format: "ass", Method: "External" },
+      { Format: "ass", Method: "Embed" },
+      { Format: "ssa", Method: "Embed" },
+      { Format: "pgssub", Method: "Embed" },
+      { Format: "dvdsub", Method: "Embed" },
+    ],
   }
 
   const res = await jellyfinFetch(
@@ -660,13 +714,9 @@ export async function markItemUnplayed(itemId: string): Promise<void> {
  *  Returns a same-origin proxy URL — token is added server-side. */
 export function buildHlsStreamUrl(itemId: string, _token: string, opts: StreamOptions = {}): string {
   const params = new URLSearchParams()
-  params.set("videoCodec", opts.videoCodec ?? "h264")
-  // Only MSE-friendly audio codecs — if the source carries EAC3/DTS the
-  // server must transcode to AAC. Allowing AC3/EAC3 here makes Jellyfin
-  // *copy* the incompatible track into the TS segments, and Chrome's
-  // MediaSource stalls forever (video never starts, "buffering" spinner).
+  params.set("videoCodec", opts.videoCodec ?? "h264,hevc")
   params.set("audioCodec", opts.audioCodec ?? "aac,mp3")
-  params.set("segmentContainer", "ts")
+  params.set("segmentContainer", "mp4,ts")
   applyStreamParams(params, opts)
   return `/api/jellyfin/proxy/Videos/${itemId}/master.m3u8?${params}`
 }

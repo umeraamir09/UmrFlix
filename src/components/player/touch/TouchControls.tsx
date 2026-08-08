@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react"
 import Image from "next/image"
 import { ArrowLeft, Maximize, Minimize } from "lucide-react"
-import { formatTimecode } from "../PlayerOverlays"
+import { formatTimecode, useRemainingTimeToggle } from "../PlayerOverlays"
 import type {
   AudioTrack,
   ChapterInfo,
@@ -248,6 +248,7 @@ export function TouchControls({
   const [audioSubsOpen, setAudioSubsOpen] = useState(false)
   const [speedOpen, setSpeedOpen] = useState(false)
   const [isScrubbing, setIsScrubbing] = useState(false)
+  const [showRemaining, toggleRemainingTime] = useRemainingTimeToggle()
   const [brightness, setBrightnessState] = useState(loadBrightness)
   const [brightnessDragging, setBrightnessDragging] = useState(false)
 
@@ -445,9 +446,18 @@ export function TouchControls({
         {/* Bottom stack: seek bar + timecode (Figma single-row) → action row */}
         <div className={`relative z-30 ${pe} ${PAD_L} ${PAD_R} ${PAD_B} pt-2`}>
           <div className="flex items-center gap-2.5 sm:gap-3 w-full">
-            <span className="shrink-0 text-xs font-semibold tabular-nums text-white/90">
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation()
+                toggleRemainingTime()
+                onInteract()
+              }}
+              className="shrink-0 text-xs font-semibold tabular-nums text-white/90 active:text-accent transition-colors select-none cursor-pointer"
+              title={showRemaining ? "Tap to show total duration" : "Tap to show remaining time"}
+            >
               {formatTimecode(currentTime)}
-            </span>
+            </button>
             <div className="flex-1 min-w-0">
               <SeekBar
                 currentTime={currentTime}
@@ -463,9 +473,20 @@ export function TouchControls({
                 }}
               />
             </div>
-            <span className="shrink-0 text-xs font-semibold tabular-nums text-white/90">
-              {formatTimecode(duration)}
-            </span>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation()
+                toggleRemainingTime()
+                onInteract()
+              }}
+              className="shrink-0 text-xs font-semibold tabular-nums text-white/90 active:text-accent transition-colors select-none cursor-pointer"
+              title={showRemaining ? "Tap to show total duration" : "Tap to show remaining time"}
+            >
+              {showRemaining
+                ? `-${formatTimecode(Math.max(0, duration - currentTime))}`
+                : formatTimecode(duration)}
+            </button>
           </div>
 
           {/* Action row (Figma: Speed (1x) · Lock · Episodes · Audio & Subtitles) */}

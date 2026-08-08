@@ -23,8 +23,6 @@ export function applyStreamParams(params: URLSearchParams, opts: StreamOptions) 
   if (opts.maxStreamingBitrate) {
     const b = String(opts.maxStreamingBitrate)
     params.set("maxStreamingBitrate", b)
-    params.set("videoBitrate", b)
-    params.set("VideoBitrate", b)
   }
   if (opts.maxWidth) {
     const w = String(opts.maxWidth)

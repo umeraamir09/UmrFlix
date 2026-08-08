@@ -55,8 +55,10 @@ export type PlaybackPayload = {
   height?: number
   bitrate?: number
   supportsDirectPlay: boolean
+  supportsDirectStream?: boolean
   supportsTranscoding: boolean
   canDirectPlay: boolean
+  canDirectStream?: boolean
   directUrl: string
   hlsUrl: string
   runtimeTicks: number

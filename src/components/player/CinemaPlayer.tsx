@@ -354,7 +354,7 @@ export function CinemaPlayer({
     if (!payload.canDirectPlay) {
       return {
         supported: false,
-        reason: `server gate: canDirectPlay=false (container=${payload.container}, codec=${payload.videoCodec})`,
+        reason: `server gate: canDirectPlay=false (container .${payload.container} not native HTML5 container)`,
       }
     }
     return canBrowserPlayNatively(
@@ -368,13 +368,16 @@ export function CinemaPlayer({
     qualityId !== "auto" ||
     (audioIndex != null && payload != null && audioIndex !== payload.defaultAudioIndex) ||
     burnSelectedSubtitle
+
+  // HTML5 <video src="..."> direct play requires native container (MP4/WebM) + supported codecs + no overrides.
+  // All Direct Stream (remuxing MKV -> HLS) and Transcode sessions use the HLS engine via HLS.js.
   const engine: "direct" | "hls" =
     payload?.canDirectPlay && codecProbe.supported && !wantsTranscode ? "direct" : "hls"
 
   const engineReason = !payload
     ? "awaiting payload"
     : !payload.canDirectPlay
-      ? "direct play rejected by server profile"
+      ? `container .${payload?.container} not HTML5 native — using HLS engine (direct stream remux or transcode)`
       : !codecProbe.supported
         ? `direct play rejected by browser probe (${codecProbe.reason})`
         : wantsTranscode
@@ -395,15 +398,14 @@ export function CinemaPlayer({
   const streamUrl = useMemo((): string => {
     if (!payload) return ""
     const params = new URLSearchParams()
-    // When qualityId is "auto", use autoResolvedId if set, else default to "fhd" (1080p)
     const effectiveQuality =
       qualityId === "auto"
         ? (autoResolvedId
             ? QUALITY_PRESETS.find((q) => q.id === autoResolvedId)
-            : QUALITY_PRESETS.find((q) => q.id === "fhd")) ?? QUALITY_PRESETS[2]
+            : null)
         : quality
 
-    if (effectiveQuality.maxStreamingBitrate) {
+    if (effectiveQuality?.maxStreamingBitrate) {
       applyStreamParams(params, effectiveQuality)
     } else if (engine === "hls") {
       const sourceBitrate = payload.bitrate ?? 0
@@ -413,7 +415,7 @@ export function CinemaPlayer({
         maxStreamingBitrate:
           sourceBitrate > 0
             ? Math.min(Math.round(sourceBitrate * 1.2), 120_000_000)
-            : 40_000_000,
+            : 120_000_000,
         maxWidth: Math.min(sourceW, 3840),
         maxHeight: Math.min(sourceH, 2160),
       })
@@ -423,7 +425,7 @@ export function CinemaPlayer({
     if (engine === "hls") {
       // OVERRIDE playSessionId to force Jellyfin to launch a NEW transcode session
       // with the requested resolution whenever quality, audio, or burn sub tracks change!
-      const activeQualityKey = effectiveQuality.id !== "auto" ? effectiveQuality.id : "fhd"
+      const activeQualityKey = effectiveQuality ? effectiveQuality.id : "auto"
       const uniquePlaySessionId = `${payload.playSessionId}_q_${activeQualityKey}_a_${audioIndex ?? "def"}_s_${burnSelectedSubtitle ? selectedSubtitle?.index : "off"}`
 
       const [baseUrl, existingQs] = base.split("?")
@@ -554,6 +556,8 @@ export function CinemaPlayer({
         const hls = new HlsCtor({
           enableWorker: true,
           lowLatencyMode: false,
+          capLevelToPlayerSize: true,
+          abrEwmaDefaultEstimate: 25_000_000,
           backBufferLength: 60,
           maxBufferLength: 40,
           startPosition: startPos,
@@ -1172,7 +1176,7 @@ export function CinemaPlayer({
         ref={videoRef}
         poster={poster}
         playsInline
-        className="size-full pointer-events-none"
+        className="size-full object-contain pointer-events-none"
         onPlay={() => {
           setPlaying(true)
           setNeedsManualPlay(false)

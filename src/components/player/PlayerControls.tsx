@@ -9,7 +9,7 @@ import {
   Volume2,
   VolumeX,
 } from "lucide-react"
-import { formatTimecode } from "./PlayerOverlays"
+import { formatTimecode, useRemainingTimeToggle } from "./PlayerOverlays"
 import type {
   AudioTrack,
   ChapterInfo,
@@ -281,6 +281,7 @@ export function PlayerControls({
   const [audioSubsOpen, setAudioSubsOpen] = useState(false)
   const [speedOpen, setSpeedOpen] = useState(false)
   const [isScrubbing, setIsScrubbing] = useState(false)
+  const [showRemaining, toggleRemainingTime] = useRemainingTimeToggle()
   const audioSubsRef = useRef<HTMLDivElement>(null)
   const speedRef = useRef<HTMLDivElement>(null)
 
@@ -365,9 +366,32 @@ export function PlayerControls({
 
       {/* Bottom Bar */}
       <div className="relative z-30 pointer-events-auto px-6 sm:px-8 pb-6 pt-2">
-        {/* Total duration above seekbar on the right */}
-        <div className="mb-1.5 flex justify-end text-sm font-medium tabular-nums text-white">
-          {formatTimecode(duration)}
+        {/* Current time on the left, total duration / remaining time on the right above seekbar */}
+        <div className="mb-1.5 flex items-center justify-between text-xs sm:text-sm font-medium tabular-nums text-white">
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation()
+              toggleRemainingTime()
+            }}
+            className="cursor-pointer transition-colors hover:text-accent active:scale-95 select-none"
+            title={showRemaining ? "Click to show total duration" : "Click to show remaining time"}
+          >
+            {formatTimecode(currentTime)}
+          </button>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation()
+              toggleRemainingTime()
+            }}
+            className="cursor-pointer transition-colors hover:text-accent active:scale-95 select-none"
+            title={showRemaining ? "Click to show total duration" : "Click to show remaining time"}
+          >
+            {showRemaining
+              ? `-${formatTimecode(Math.max(0, duration - currentTime))}`
+              : formatTimecode(duration)}
+          </button>
         </div>
 
         {/* Seekbar */}
