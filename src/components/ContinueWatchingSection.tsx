@@ -450,7 +450,7 @@ function ContinueWatchingFlyout({
     }
   }, [open, onExited])
 
-  const { playHref, detailHref, backdropUrl, logoUrl, displayEpisodeInfo } = getContinueWatchingMedia(item)
+  const { playHref, detailHref, backdropUrl, displayEpisodeInfo } = getContinueWatchingMedia(item)
 
   // Expanded geometry: 12px beyond the base card on every side, clamped inside the viewport
   const EXPAND = 12

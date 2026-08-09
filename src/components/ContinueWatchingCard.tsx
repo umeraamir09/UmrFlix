@@ -64,7 +64,7 @@ export function ContinueWatchingCard({
   dimmed?: boolean
 }) {
   const cardRef = useRef<HTMLDivElement>(null)
-  const { playHref, backdropUrl, logoUrl } = getContinueWatchingMedia(item)
+  const { playHref, backdropUrl } = getContinueWatchingMedia(item)
 
   // Hover flyout only makes sense on devices with a real pointer
   const hoverCapable = () =>

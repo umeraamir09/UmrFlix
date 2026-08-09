@@ -295,7 +295,7 @@ export async function getResumeItems(
       limit: String(limit),
       recursive: "true",
       fields: "ProviderIds,Overview",
-      enableImageTypes: "Primary,Backdrop,Thumb",
+      enableImageTypes: "Primary,Backdrop,Thumb,Logo",
       imageTypeLimit: "1",
       mediaTypes: "Video",
     })
@@ -336,7 +336,7 @@ export async function getNextUpItems(
       userId,
       limit: String(limit),
       fields: "ProviderIds,Overview",
-      enableImageTypes: "Primary,Backdrop,Thumb",
+      enableImageTypes: "Primary,Backdrop,Thumb,Logo",
       imageTypeLimit: "1",
       enableResumable: "false",
       enableRewatching: "false",
@@ -371,22 +371,33 @@ export function buildJellyfinImageUrl(
   item: JellyfinResumeItem,
   type: "Primary" | "Backdrop" | "Thumb" | "Logo" = "Backdrop",
 ): string {
-  // For episodes/movies in Continue Watching, prefer the show/item "Thumb" (landscape artwork with title logo)
+  // For episodes/movies in Continue Watching, match Jellyfin web client's card image selection:
   if (type === "Backdrop" || type === "Thumb") {
-    // 1. If parent series has a landscape Thumb image tag
-    if (item.ParentThumbItemId && item.ParentThumbImageTag) {
-      return `/api/jellyfin/image/${item.ParentThumbItemId}?type=Thumb`
-    }
-    // 2. If parent backdrop item exists
-    if (item.ParentBackdropItemId && item.ParentBackdropImageTags && item.ParentBackdropImageTags.length > 0) {
-      return `/api/jellyfin/image/${item.ParentBackdropItemId}?type=Backdrop`
-    }
-    // 3. Fallback to SeriesId or Item Backdrop
-    if (item.SeriesId) {
-      return `/api/jellyfin/image/${item.SeriesId}?type=Thumb`
-    }
-    if (item.BackdropImageTags && item.BackdropImageTags.length > 0) {
-      return `/api/jellyfin/image/${item.Id}?type=Backdrop`
+    if (item.Type === "Episode") {
+      // TV Episodes: prefer parent series Thumb / Backdrop so the card shows series artwork instead of raw episode video frames
+      if (item.ParentThumbItemId && item.ParentThumbImageTag) {
+        return `/api/jellyfin/image/${item.ParentThumbItemId}?type=Thumb`
+      }
+      if (item.ParentBackdropItemId && item.ParentBackdropImageTags && item.ParentBackdropImageTags.length > 0) {
+        return `/api/jellyfin/image/${item.ParentBackdropItemId}?type=Backdrop`
+      }
+      if (item.SeriesId) {
+        return `/api/jellyfin/image/${item.SeriesId}?type=Thumb`
+      }
+      if (item.BackdropImageTags && item.BackdropImageTags.length > 0) {
+        return `/api/jellyfin/image/${item.Id}?type=Backdrop`
+      }
+    } else {
+      // For Movies, Series, etc.: prefer item's landscape Thumb (16:9 artwork with title logo baked in), then Backdrop
+      if (item.ImageTags?.Thumb) {
+        return `/api/jellyfin/image/${item.Id}?type=Thumb`
+      }
+      if (item.BackdropImageTags && item.BackdropImageTags.length > 0) {
+        return `/api/jellyfin/image/${item.Id}?type=Backdrop`
+      }
+      if (item.ImageTags?.Primary) {
+        return `/api/jellyfin/image/${item.Id}?type=Primary`
+      }
     }
   }
 
