@@ -6,7 +6,12 @@ import type { TrickplayInfo } from "./playback-types"
 import { applyStreamParams, type StreamOptions } from "./url-utils"
 
 const BASE = env("JELLYFIN_URL")
-const TIMEOUT = 8_000
+const TIMEOUT = 12_000
+
+const JELLYFIN_BREAKER_OPTIONS = {
+  failureThreshold: 5,
+  resetTimeoutMs: 15_000,
+}
 
 export type JellyfinAuth = {
   token: string
@@ -39,7 +44,10 @@ export class JellyfinAuthError extends Error {
 }
 
 async function jellyfinFetch(url: string, options?: RequestInit, breaker?: CircuitBreaker): Promise<Response> {
-  const circuit = breaker ?? getBreaker(breakerKey(serverUrlOf(url)))
+  const circuit = breaker ?? getBreaker(breakerKey(serverUrlOf(url)), {
+    name: `Jellyfin:${serverUrlOf(url)}`,
+    ...JELLYFIN_BREAKER_OPTIONS,
+  })
   if (!circuit.canExecute()) {
     throw new Error(`Jellyfin service is currently unavailable (circuit open).`)
   }
@@ -50,7 +58,7 @@ async function jellyfinFetch(url: string, options?: RequestInit, breaker?: Circu
     const res = await fetch(url, { ...options, signal: controller.signal })
     if (res.status === 401) {
       tokenCache.delete(serverUrlOf(url)) // re-auth next time
-      circuit.recordFailure()
+      // 401 is an authorization issue, not a service outage — do not trip breaker
       throw new JellyfinAuthError(`Jellyfin authentication failed (401): ${url}`)
     }
     if (res.ok || res.status < 500) {
@@ -60,7 +68,9 @@ async function jellyfinFetch(url: string, options?: RequestInit, breaker?: Circu
     }
     return res
   } catch (err) {
-    circuit.recordFailure()
+    if (!(err instanceof JellyfinAuthError)) {
+      circuit.recordFailure()
+    }
     throw err
   } finally {
     clearTimeout(id)
@@ -115,8 +125,7 @@ export async function authenticate(): Promise<JellyfinAuth> {
         serverUrl,
         breaker: getBreaker(breakerKey(serverUrl, session.userId), {
           name: `Jellyfin:${serverUrl}`,
-          failureThreshold: 3,
-          resetTimeoutMs: 30_000,
+          ...JELLYFIN_BREAKER_OPTIONS,
         }),
       }
     }
@@ -126,12 +135,12 @@ export async function authenticate(): Promise<JellyfinAuth> {
 
   const serverUrl = BASE || "http://localhost:8096"
   const cached = tokenCache.get(serverUrl)
-  if (cached) return { ...cached, breaker: getBreaker(breakerKey(serverUrl, cached.userId)) }
+  if (cached) return { ...cached, breaker: getBreaker(breakerKey(serverUrl, cached.userId), { name: `Jellyfin:${serverUrl}`, ...JELLYFIN_BREAKER_OPTIONS }) }
 
   const inFlight = authPromises.get(serverUrl)
   if (inFlight) {
     const resolved = await inFlight
-    return { ...resolved, breaker: getBreaker(breakerKey(serverUrl, resolved.userId)) }
+    return { ...resolved, breaker: getBreaker(breakerKey(serverUrl, resolved.userId), { name: `Jellyfin:${serverUrl}`, ...JELLYFIN_BREAKER_OPTIONS }) }
   }
 
   const promise = (async () => {
@@ -151,7 +160,7 @@ export async function authenticate(): Promise<JellyfinAuth> {
           }),
         },
         // No user identity exists yet — auth failures trip the server-scoped breaker
-        getBreaker(breakerKey(serverUrl), { name: `Jellyfin:${serverUrl}`, failureThreshold: 3, resetTimeoutMs: 30_000 }),
+        getBreaker(breakerKey(serverUrl), { name: `Jellyfin:${serverUrl}`, ...JELLYFIN_BREAKER_OPTIONS }),
       )
 
       if (!res.ok) {
@@ -175,7 +184,7 @@ export async function authenticate(): Promise<JellyfinAuth> {
 
   authPromises.set(serverUrl, promise)
   const resolved = await promise
-  return { ...resolved, breaker: getBreaker(breakerKey(serverUrl, resolved.userId)) }
+  return { ...resolved, breaker: getBreaker(breakerKey(serverUrl, resolved.userId), { name: `Jellyfin:${serverUrl}`, ...JELLYFIN_BREAKER_OPTIONS }) }
 }
 
 
@@ -607,13 +616,21 @@ export async function getPlaybackInfo(itemId: string): Promise<JellyfinPlaybackI
     SubtitleProfiles: [
       { Format: "vtt", Method: "External" },
       { Format: "vtt", Method: "Embed" },
+      { Format: "vtt", Method: "Encode" },
       { Format: "srt", Method: "External" },
       { Format: "srt", Method: "Embed" },
+      { Format: "srt", Method: "Encode" },
       { Format: "ass", Method: "External" },
       { Format: "ass", Method: "Embed" },
+      { Format: "ass", Method: "Encode" },
       { Format: "ssa", Method: "Embed" },
+      { Format: "ssa", Method: "Encode" },
       { Format: "pgssub", Method: "Embed" },
+      { Format: "pgssub", Method: "Encode" },
       { Format: "dvdsub", Method: "Embed" },
+      { Format: "dvdsub", Method: "Encode" },
+      { Format: "subrip", Method: "External" },
+      { Format: "subrip", Method: "Encode" },
     ],
   }
 

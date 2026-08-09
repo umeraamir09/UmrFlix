@@ -197,15 +197,26 @@ function autoCloseTags(html: string): string {
   return result
 }
 
+const FANSUB_WARNING_PATTERNS = [
+  /does not support the subtitle format/i,
+  /using a recent version of mpv/i,
+  /subtitles will likely not display as originally intended/i,
+  /make sure you(?:'re| are) using.*mpv/i,
+  /contact us on (?:our )?discord/i,
+  /mpv\.io/i,
+  /unsupported subtitle format/i,
+]
+
 /**
  * Sanitize and format cue text:
  * 1. Replace ASS \N and \n line break codes with newlines
  * 2. Strip ASS/SSA override tags like {\an8}, {\b1}, {\pos(x,y)}
- * 3. Convert <br> line break tags to newlines (\n)
+ * 3. Convert <br> / <br/> tags to newlines (\n)
  * 4. Strip WebVTT voice/class/ruby/rt/lang/timestamp tags like <v Speaker>, <c.yellow>
  * 5. Strip unauthorized HTML tags while keeping b, i, u, s, em, strong, font, span
  * 6. Filter out ASS vector drawing commands (e.g. "m 0 0 l 100 100...")
- * 7. Auto-close open tags
+ * 7. Filter out MPV / player format warning messages embedded in ASS tracks
+ * 8. Auto-close open tags
  */
 export function sanitizeCueText(text: string): string {
   if (!text) return ""
@@ -229,6 +240,9 @@ export function sanitizeCueText(text: string): string {
 
   // Filter out ASS vector drawing commands (e.g. "m 0 0 l 100 100...")
   if (/^[mslbcq]\s+[\d\s-]/i.test(cleaned.trim())) return ""
+
+  // Filter out fansub warning messages embedded in ASS tracks for non-MPV players
+  if (FANSUB_WARNING_PATTERNS.some((pattern) => pattern.test(cleaned))) return ""
 
   // Auto-close any unclosed formatting tags
   cleaned = autoCloseTags(cleaned)
@@ -261,7 +275,7 @@ export function parseVtt(vtt: string): VttCue[] {
     const lines = normalized.split("\n")
     for (const rawLine of lines) {
       const line = rawLine.trim()
-      if (!line.startsWith("Dialogue:") && !line.startsWith("Comment:")) continue
+      if (!line.startsWith("Dialogue:")) continue
       const prefixIdx = line.indexOf(":")
       if (prefixIdx === -1) continue
       const content = line.substring(prefixIdx + 1).trim()
@@ -280,9 +294,15 @@ export function parseVtt(vtt: string): VttCue[] {
 
       if (parts.length < 10) continue
 
+      const layer = parseInt(parts[0], 10)
+      const style = parts[3] || ""
       const startRaw = parts[1]
       const endRaw = parts[2]
       const rawText = parts[9]
+
+      // Ignore negative layers or warning/notice styles
+      if (Number.isFinite(layer) && layer < 0) continue
+      if (/^(warning|notice|banner-warning|mpv|offscreen)$/i.test(style.trim())) continue
 
       const start = parseTimestamp(startRaw)
       const end = parseTimestamp(endRaw)

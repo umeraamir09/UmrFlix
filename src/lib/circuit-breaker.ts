@@ -81,7 +81,7 @@ export const sonarrBreaker =
 
 export const jellyfinBreaker =
   globalForBreakers.jellyfinBreaker ??
-  (globalForBreakers.jellyfinBreaker = new CircuitBreaker({ name: "Jellyfin", failureThreshold: 3, resetTimeoutMs: 30_000 }))
+  (globalForBreakers.jellyfinBreaker = new CircuitBreaker({ name: "Jellyfin", failureThreshold: 5, resetTimeoutMs: 15_000 }))
 
 export const tmdbBreaker =
   globalForBreakers.tmdbBreaker ??
