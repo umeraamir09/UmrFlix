@@ -85,7 +85,11 @@ export class BandwidthEstimator {
 
   /** Estimated bandwidth in bits/second (reflects active connection capacity). */
   get estimatedBandwidth(): number {
-    return Math.max(this.ewmaFast, this.ewmaSlow)
+    // Conservative estimate (min of fast/slow EWMA): after a bandwidth drop,
+    // the slow EWMA (α=0.05) lags high for a long time — using the max would
+    // overstate capacity and delay bandwidth-based downgrades, forcing the
+    // buffer-emergency path to do the work (i.e. rebuffering).
+    return Math.min(this.ewmaFast, this.ewmaSlow)
   }
 
   /** Check Navigator.connection for supplementary info. */
@@ -291,8 +295,11 @@ export function attachHlsBandwidthMonitor(
     const stats = data?.frag?.stats ?? data?.stats
     if (!stats) return
 
-    // Ignore tiny fragments (< 150 KB) like init headers or playlists that skew bandwidth measurements
-    if (typeof stats.loaded === "number" && stats.loaded < 150_000) return
+    // Ignore tiny fragments (< 10 KB) like init segments and playlists that
+    // skew bandwidth measurements. Real low-bitrate fragments (~150 KB at
+    // ~600kbps/2s) must still count, or slow connections never gather enough
+    // samples for an ABR decision (MIN_SAMPLES_FOR_DECISION = 8).
+    if (typeof stats.loaded === "number" && stats.loaded < 10_000) return
 
     let bps = 0
     if (typeof stats.bwEstimate === "number" && stats.bwEstimate > 0) {

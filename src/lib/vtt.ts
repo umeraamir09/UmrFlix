@@ -300,9 +300,12 @@ export function parseVtt(vtt: string): VttCue[] {
       const endRaw = parts[2]
       const rawText = parts[9]
 
-      // Ignore negative layers or warning/notice styles
+      // Ignore negative layers (overlaid warning banners). Style-name
+      // filtering is limited to known-signaling styles — "offscreen" is
+      // deliberately NOT filtered: some release groups use it for off-screen
+      // speakers' actual dialogue, so removing it wholesale would drop lines.
       if (Number.isFinite(layer) && layer < 0) continue
-      if (/^(warning|notice|banner-warning|mpv|offscreen)$/i.test(style.trim())) continue
+      if (/^(warning|notice|banner-warning|mpv)$/i.test(style.trim())) continue
 
       const start = parseTimestamp(startRaw)
       const end = parseTimestamp(endRaw)

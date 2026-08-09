@@ -733,7 +733,10 @@ export function buildHlsStreamUrl(itemId: string, _token: string, opts: StreamOp
   const params = new URLSearchParams()
   params.set("videoCodec", opts.videoCodec ?? "h264,hevc")
   params.set("audioCodec", opts.audioCodec ?? "aac,mp3")
-  params.set("segmentContainer", "mp4,ts")
+  // HLS segment container must be a single value — Jellyfin matches the
+  // whole string against known containers, so "ts,fmp4" would match nothing
+  // and silently fall back to TS. fmp4 = fragmented MP4 segments.
+  params.set("segmentContainer", "fmp4")
   applyStreamParams(params, opts)
   return `/api/jellyfin/proxy/Videos/${itemId}/master.m3u8?${params}`
 }

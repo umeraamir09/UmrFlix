@@ -424,6 +424,18 @@ export function CinemaPlayer({
       })
     }
 
+    // HLS engine must not hand the decoder a codec it already rejected
+    // (e.g. HEVC source on a browser whose probe failed): pin the stream to
+    // H.264 so Jellyfin transcodes instead of remuxing undecodable segments.
+    const sourceCodec = (payload.videoCodec ?? "").toLowerCase()
+    if (
+      engine === "hls" &&
+      (sourceCodec === "hevc" || sourceCodec === "h265") &&
+      !codecProbe.supported
+    ) {
+      params.set("videoCodec", "h264")
+    }
+
     const base = engine === "direct" ? payload.directUrl : payload.hlsUrl
     if (engine === "hls") {
       // OVERRIDE playSessionId to force Jellyfin to launch a NEW transcode session
@@ -435,6 +447,10 @@ export function CinemaPlayer({
       const urlParams = new URLSearchParams(existingQs ?? "")
 
       urlParams.set("playSessionId", uniquePlaySessionId)
+      // Jellyfin binds params case-insensitively, but the base hlsUrl carries
+      // BOTH casing variants — overwrite them both so a request never carries
+      // two different session ids for the same semantic parameter.
+      urlParams.set("PlaySessionId", uniquePlaySessionId)
       params.forEach((val, key) => urlParams.set(key, val))
 
       if (audioIndex != null) {
@@ -452,7 +468,7 @@ export function CinemaPlayer({
 
     const qs = params.toString()
     return qs ? `${base}&${qs}` : base
-  }, [payload, engine, quality, qualityId, autoResolvedId, audioIndex, burnSelectedSubtitle, selectedSubtitle])
+  }, [payload, engine, quality, qualityId, autoResolvedId, audioIndex, burnSelectedSubtitle, selectedSubtitle, codecProbe])
 
   // ── Reporter (heartbeat → Jellyfin) ──
   const getReporterState = useCallback((): ReporterState | null => {
@@ -548,10 +564,13 @@ export function CinemaPlayer({
         return
       }
 
-      if (!payload?.supportsTranscoding) {
-        playerLog.error("stream", "direct play unavailable AND transcoding unavailable")
+      if (!payload?.supportsTranscoding && !payload?.canDirectStream) {
+        playerLog.error("stream", "direct play unavailable AND transcoding unavailable (direct stream not possible either)")
         fail("This file can't be played: direct play unsupported and transcoding unavailable.")
         return
+      }
+      if (!payload?.supportsTranscoding && payload?.canDirectStream) {
+        playerLog.info("stream", "transcoding unavailable — using Direct Stream remux via HLS")
       }
 
       playerLog.info("hls", "loading hls.js runtime…")
@@ -836,9 +855,6 @@ export function CinemaPlayer({
   }, [])
 
   const toggleFullscreen = useCallback(async () => {
-    if (isTouchDevice) {
-      void lockLandscape(containerRef.current)
-    }
     try {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       if (document.fullscreenElement || (document as any).webkitFullscreenElement) {
@@ -849,6 +865,11 @@ export function CinemaPlayer({
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           ;(document as any).webkitExitFullscreen()
         }
+      } else if (isTouchDevice) {
+        // lockLandscape requests fullscreen itself (then orientation.lock);
+        // requesting fullscreen again here would be the duplicate request
+        // and log a rejection on every toggle — so let it own the enter path.
+        await lockLandscape(containerRef.current)
       } else {
         if (containerRef.current?.requestFullscreen) {
           await containerRef.current.requestFullscreen()
@@ -898,7 +919,13 @@ export function CinemaPlayer({
     }
   }, [isTouchDevice, lockLandscape, party?.partyId, partySync])
 
-  // Release orientation lock and exit fullscreen on unmount
+  // Release orientation lock on unmount. Fullscreen is deliberately NOT
+  // exited here: CinemaPlayer is keyed by the resolved item id, so episode
+  // changes remount this component — bailing out of fullscreen on every
+  // transition would drop mobile viewers out (and the re-lock on the fresh
+  // mount is outside a user gesture). Fullscreen exits are handled by the
+  // toggle button (explicit exit) and by the browser when the fullscreen
+  // element is removed from the DOM on route teardown.
   useEffect(() => {
     return () => {
       void releaseOrientation()
@@ -1168,7 +1195,8 @@ export function CinemaPlayer({
     <div
       ref={containerRef}
       data-force-landscape={
-        orientationStatus === "unsupported" || (orientationStatus === "denied" && isTouchDevice)
+        isTouchDevice &&
+        (orientationStatus === "unsupported" || orientationStatus === "denied")
           ? "true"
           : undefined
       }
