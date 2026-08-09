@@ -207,6 +207,8 @@ export default async function TvShowCatalogPage({
               endpoint={`/api/tmdb/discover/tv?${buildGenreDiscoverQuery(selectedGenre, "tv", {
                 with_genres: selectedGenreIds ?? "",
                 sort_by: "popularity.desc",
+                "vote_count.gte": "10",
+                "popularity.gte": "1.5",
               })}`}
             />
 
@@ -218,7 +220,8 @@ export default async function TvShowCatalogPage({
               endpoint={`/api/tmdb/discover/tv?${buildGenreDiscoverQuery(selectedGenre, "tv", {
                 with_genres: selectedGenreIds ?? "",
                 sort_by: "vote_average.desc",
-                "vote_count.gte": "50",
+                "vote_count.gte": "150",
+                "popularity.gte": "3.0",
               })}`}
             />
 
@@ -233,6 +236,8 @@ export default async function TvShowCatalogPage({
               endpoint={`/api/tmdb/discover/tv?${buildGenreDiscoverQuery(selectedGenre, "tv", {
                 with_genres: selectedGenreIds ?? "",
                 sort_by: "first_air_date.desc",
+                "vote_count.gte": "3",
+                "popularity.gte": "2.0",
               })}`}
             />
           </>

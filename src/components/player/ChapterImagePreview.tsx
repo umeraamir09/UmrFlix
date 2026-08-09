@@ -4,7 +4,7 @@ import type { ChapterInfo } from "@/lib/playback-types"
 import { usePreloadedImage } from "./use-preloaded-image"
 
 /** Displayed preview width — matches trickplay for visual consistency. */
-export const CHAPTER_PREVIEW_WIDTH = 224
+export const CHAPTER_PREVIEW_WIDTH = 320
 /** Fixed aspect ratio (16:9) for chapter images. */
 const ASPECT = 9 / 16
 

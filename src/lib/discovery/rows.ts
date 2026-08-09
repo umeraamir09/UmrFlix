@@ -124,10 +124,19 @@ export async function buildTopPicksRow(
     mediaTypeFilter !== "tv" ? safeTrending("movie") : Promise.resolve([]),
     mediaTypeFilter !== "movie" ? safeTrending("tv") : Promise.resolve([]),
     mediaTypeFilter !== "tv" && profile.topGenreDims.length > 0
-      ? safeDiscover("movie", { with_genres: GENRE_DIM_TO_TMDB[profile.topGenreDims[0]]?.movie.join(",") ?? "" })
+      ? safeDiscover("movie", {
+          with_genres: GENRE_DIM_TO_TMDB[profile.topGenreDims[0]]?.movie.join(",") ?? "",
+          "vote_count.gte": "20",
+          "popularity.gte": "1.5",
+          "with_runtime.gte": "20",
+        })
       : Promise.resolve([]),
     mediaTypeFilter !== "movie" && profile.topGenreDims.length > 0
-      ? safeDiscover("tv", { with_genres: GENRE_DIM_TO_TMDB[profile.topGenreDims[0]]?.tv.join(",") ?? "" })
+      ? safeDiscover("tv", {
+          with_genres: GENRE_DIM_TO_TMDB[profile.topGenreDims[0]]?.tv.join(",") ?? "",
+          "vote_count.gte": "10",
+          "popularity.gte": "1.5",
+        })
       : Promise.resolve([]),
   ])
 
@@ -161,15 +170,21 @@ export async function buildMicroGenreRows(
     if (!ids) continue
     const range = profile.topDecadeBucket !== null ? decadeBucketToYearRange(profile.topDecadeBucket) : null
 
-    const baseParams: Record<string, string> = { sort_by: "popularity.desc" }
+    const targetType = mediaTypeFilter ?? "movie"
+    const baseParams: Record<string, string> = {
+      sort_by: "popularity.desc",
+      "vote_count.gte": targetType === "tv" ? "10" : "20",
+      "popularity.gte": "1.5",
+      ...(targetType === "movie" ? { "with_runtime.gte": "20" } : {}),
+    }
     if (range) {
       baseParams["primary_release_date.gte"] = `${range.gte}-01-01`
       baseParams["primary_release_date.lte"] = `${range.lte}-12-31`
     }
 
-    const results = await safeDiscover(mediaTypeFilter ?? "movie", {
+    const results = await safeDiscover(targetType, {
       ...baseParams,
-      with_genres: (mediaTypeFilter === "tv" ? ids.tv : ids.movie).join(","),
+      with_genres: (targetType === "tv" ? ids.tv : ids.movie).join(","),
     })
 
     let items = dedupeItems(results.map((r) => toScoredItem(r, mediaTypeFilter ?? "movie")!))
@@ -456,74 +471,74 @@ export const FACET_REGISTRY: Record<string, FacetSpec> = {
   // Movie facets
   "recently-released-movies": {
     mediaType: "movie",
-    params: { sort_by: "primary_release_date.desc", "vote_count.gte": "50" },
+    params: { sort_by: "primary_release_date.desc", "vote_count.gte": "5", "popularity.gte": "2.0", "with_runtime.gte": "20" },
     title: "Recently Released Movies",
   },
   "popular-movies": {
     mediaType: "movie",
-    params: { sort_by: "popularity.desc" },
+    params: { sort_by: "popularity.desc", "vote_count.gte": "50", "popularity.gte": "5.0", "with_runtime.gte": "20" },
     title: "Popular Movies",
   },
   "top-rated-movies": {
     mediaType: "movie",
-    params: { sort_by: "vote_average.desc", "vote_count.gte": "250" },
+    params: { sort_by: "vote_average.desc", "vote_count.gte": "300", "popularity.gte": "3.0", "with_runtime.gte": "30" },
     title: "Top Rated Classics & Masterpieces",
   },
   "action-adventure-movies": {
     mediaType: "movie",
-    params: { with_genres: "28,12", sort_by: "popularity.desc" },
+    params: { with_genres: "28,12", sort_by: "popularity.desc", "vote_count.gte": "20", "popularity.gte": "1.5", "with_runtime.gte": "20" },
     title: "Action & Adventure",
   },
   "sci-fi-fantasy-movies": {
     mediaType: "movie",
-    params: { with_genres: "878,14", sort_by: "popularity.desc" },
+    params: { with_genres: "878,14", sort_by: "popularity.desc", "vote_count.gte": "20", "popularity.gte": "1.5", "with_runtime.gte": "20" },
     title: "Sci-Fi & Fantasy",
   },
   "comedy-movies": {
     mediaType: "movie",
-    params: { with_genres: "35", sort_by: "popularity.desc" },
+    params: { with_genres: "35", sort_by: "popularity.desc", "vote_count.gte": "20", "popularity.gte": "1.5", "with_runtime.gte": "20" },
     title: "Comedy Hits",
   },
   "horror-thriller-movies": {
     mediaType: "movie",
-    params: { with_genres: "27,53", sort_by: "popularity.desc" },
+    params: { with_genres: "27,53", sort_by: "popularity.desc", "vote_count.gte": "20", "popularity.gte": "1.5", "with_runtime.gte": "20" },
     title: "Horror & Suspense Thrillers",
   },
 
   // TV facets
   "on-the-air-shows": {
     mediaType: "tv",
-    params: { sort_by: "popularity.desc" },
+    params: { sort_by: "popularity.desc", "vote_count.gte": "10", "popularity.gte": "2.0" },
     title: "Currently Airing & On The Air",
   },
   "popular-shows": {
     mediaType: "tv",
-    params: { sort_by: "popularity.desc" },
+    params: { sort_by: "popularity.desc", "vote_count.gte": "30", "popularity.gte": "5.0" },
     title: "Popular TV Shows",
   },
   "top-rated-shows": {
     mediaType: "tv",
-    params: { sort_by: "vote_average.desc", "vote_count.gte": "200" },
+    params: { sort_by: "vote_average.desc", "vote_count.gte": "150", "popularity.gte": "3.0" },
     title: "Top Rated & Legendary Series",
   },
   "sci-fi-fantasy-shows": {
     mediaType: "tv",
-    params: { with_genres: "10765", sort_by: "popularity.desc" },
+    params: { with_genres: "10765", sort_by: "popularity.desc", "vote_count.gte": "10", "popularity.gte": "1.5" },
     title: "Sci-Fi & Fantasy Series",
   },
   "crime-mystery-shows": {
     mediaType: "tv",
-    params: { with_genres: "80,9648", sort_by: "popularity.desc" },
+    params: { with_genres: "80,9648", sort_by: "popularity.desc", "vote_count.gte": "10", "popularity.gte": "1.5" },
     title: "Crime & Mystery Thrillers",
   },
   "comedy-shows": {
     mediaType: "tv",
-    params: { with_genres: "35", sort_by: "popularity.desc" },
+    params: { with_genres: "35", sort_by: "popularity.desc", "vote_count.gte": "10", "popularity.gte": "1.5" },
     title: "Bingeable Comedies",
   },
   "animation-shows": {
     mediaType: "tv",
-    params: { with_genres: "16", sort_by: "popularity.desc" },
+    params: { with_genres: "16", sort_by: "popularity.desc", "vote_count.gte": "10", "popularity.gte": "1.5" },
     title: "Animation & Anime Series",
   },
 }

@@ -62,6 +62,8 @@ const QUEUE_TTL = 15_000
 type DiscoverTemplate = {
   sortBy: "popularity" | "vote_average" | "release_date"
   voteCountGte?: { movie: number; tv: number }
+  popularityGte?: number
+  withRuntimeGte?: number
   dateRange?: { gte?: string; lte?: string }
   maxParentalRating?: string
 }
@@ -86,6 +88,12 @@ function buildDiscoverParams(
     params["vote_count.gte"] = String(
       mediaType === "movie" ? template.voteCountGte.movie : template.voteCountGte.tv
     )
+  }
+  if (template.popularityGte !== undefined) {
+    params["popularity.gte"] = String(template.popularityGte)
+  }
+  if (template.withRuntimeGte !== undefined && mediaType === "movie") {
+    params["with_runtime.gte"] = String(template.withRuntimeGte)
   }
   if (template.dateRange) {
     const key = mediaType === "movie" ? "primary_release_date" : "air_date"
@@ -416,13 +424,18 @@ export async function getGenrePageData(
         ? getCachedRow<RowItem[]>(key("top-picks"), () => getGenreTopPicks(uid, genre, ROW_LIMIT))
         : Promise.resolve([] as RowItem[]),
       getCachedRow<RowItem[]>(key("trending"), () =>
-        fetchMixedDiscover(genre, { sortBy: "popularity" })
+        fetchMixedDiscover(genre, {
+          sortBy: "popularity",
+          voteCountGte: { movie: 50, tv: 30 },
+          popularityGte: 5.0,
+          withRuntimeGte: 20,
+        })
       ),
       genre.slug === "anime"
         ? getCachedRow<RowItem[]>(key("world-leading"), () =>
             fetchMixedDiscover(
               genre,
-              { sortBy: "popularity", voteCountGte: { movie: 100, tv: 50 } },
+              { sortBy: "popularity", voteCountGte: { movie: 100, tv: 50 }, popularityGte: 5.0 },
               40
             )
           )
@@ -431,13 +444,21 @@ export async function getGenrePageData(
       getCachedRow<RowItem[]>(key("acclaimed"), () =>
         fetchMixedDiscover(genre, {
           sortBy: "vote_average",
-          voteCountGte: { movie: 100, tv: 50 },
+          voteCountGte: { movie: 300, tv: 150 },
+          popularityGte: 3.0,
+          withRuntimeGte: 30,
         })
       ),
       getCachedRow<RowItem[]>(key("new-recent"), () =>
         fetchMixedDiscover(
           genre,
-          { sortBy: "release_date", dateRange: { lte: today } },
+          {
+            sortBy: "release_date",
+            voteCountGte: { movie: 5, tv: 3 },
+            popularityGte: 2.0,
+            withRuntimeGte: 20,
+            dateRange: { lte: today },
+          },
           ROW_LIMIT,
           // "The latest releases" is meaningless if everything inside the
           // 30-day theatrical window is stripped out.
@@ -450,6 +471,8 @@ export async function getGenrePageData(
           {
             sortBy: "vote_average",
             voteCountGte: { movie: 30, tv: 15 },
+            popularityGte: 1.5,
+            withRuntimeGte: 20,
           },
           ROW_LIMIT,
           { includeCinemas: true }
@@ -467,6 +490,9 @@ export async function getGenrePageData(
               genre,
               {
                 sortBy: "release_date",
+                voteCountGte: { movie: 20, tv: 10 },
+                popularityGte: 1.5,
+                withRuntimeGte: 20,
                 dateRange: { gte: decade.gte, lte: decade.lte },
               },
               ROW_LIMIT,

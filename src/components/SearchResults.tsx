@@ -256,9 +256,9 @@ export function SearchResults() {
         getGenreDiscoverParams(genreDef!, mediaType as "movie" | "tv")
       ).toString()
       const extrasSuffix = extras ? `&${extras}` : ""
-      let url = `/api/tmdb/discover/${mediaType}?sort_by=popularity.desc&with_genres=${genreId}&primary_release_date.lte=${today}${extrasSuffix}`
+      let url = `/api/tmdb/discover/${mediaType}?sort_by=popularity.desc&vote_count.gte=20&popularity.gte=1.5&with_runtime.gte=20&with_genres=${genreId}&primary_release_date.lte=${today}${extrasSuffix}`
       if (mediaType === "tv") {
-        url = `/api/tmdb/discover/tv?sort_by=popularity.desc&with_genres=${genreId}&air_date.lte=${today}${extrasSuffix}`
+        url = `/api/tmdb/discover/tv?sort_by=popularity.desc&vote_count.gte=10&popularity.gte=1.5&with_genres=${genreId}&air_date.lte=${today}${extrasSuffix}`
       }
       return url
     }

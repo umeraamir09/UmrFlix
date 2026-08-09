@@ -187,7 +187,7 @@ export default async function HomePage() {
           title="Something New To You"
           subtitle="Freshly released movies available for home streaming"
           type="movie"
-          endpoint={`/api/tmdb/discover/movie?sort_by=primary_release_date.desc&primary_release_date.lte=${thirtyDaysAgo}&vote_count.gte=10`}
+          endpoint={`/api/tmdb/discover/movie?sort_by=primary_release_date.desc&primary_release_date.lte=${thirtyDaysAgo}&vote_count.gte=5&popularity.gte=2.0&with_runtime.gte=20`}
         />
 
         {/* 7. Critically Acclaimed */}
@@ -195,7 +195,7 @@ export default async function HomePage() {
           title="Critically Acclaimed"
           subtitle="Highest rated masterworks and critically acclaimed cinema"
           type="movie"
-          endpoint="/api/tmdb/discover/movie?sort_by=vote_average.desc&vote_count.gte=250"
+          endpoint="/api/tmdb/discover/movie?sort_by=vote_average.desc&vote_count.gte=300&popularity.gte=3.0&with_runtime.gte=30"
         />
 
         {/* 8. Global Hits */}

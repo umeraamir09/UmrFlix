@@ -163,6 +163,9 @@ export default async function MovieCatalogPage({
               endpoint={`/api/tmdb/discover/movie?${buildGenreDiscoverQuery(selectedGenre, "movie", {
                 with_genres: selectedGenreIds ?? "",
                 sort_by: "popularity.desc",
+                "vote_count.gte": "20",
+                "popularity.gte": "1.5",
+                "with_runtime.gte": "20",
               })}`}
             />
 
@@ -174,7 +177,9 @@ export default async function MovieCatalogPage({
               endpoint={`/api/tmdb/discover/movie?${buildGenreDiscoverQuery(selectedGenre, "movie", {
                 with_genres: selectedGenreIds ?? "",
                 sort_by: "vote_average.desc",
-                "vote_count.gte": "100",
+                "vote_count.gte": "300",
+                "popularity.gte": "3.0",
+                "with_runtime.gte": "30",
               })}`}
             />
 
@@ -189,6 +194,9 @@ export default async function MovieCatalogPage({
               endpoint={`/api/tmdb/discover/movie?${buildGenreDiscoverQuery(selectedGenre, "movie", {
                 with_genres: selectedGenreIds ?? "",
                 sort_by: "primary_release_date.desc",
+                "vote_count.gte": "5",
+                "popularity.gte": "2.0",
+                "with_runtime.gte": "20",
               })}`}
             />
           </>

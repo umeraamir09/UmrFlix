@@ -3,14 +3,14 @@
 import type { TrickplayInfo } from "@/lib/playback-types"
 import { usePreloadedImage } from "./use-preloaded-image"
 
-/** Displayed preview width (cap — never upscale, tiles are small JPEGs). */
-export const TRICKPLAY_PREVIEW_WIDTH = 224
+/** Displayed preview width. */
+export const TRICKPLAY_PREVIEW_WIDTH = 320
 
 export function trickplayPreviewDisplaySize(trickplay: TrickplayInfo): {
   width: number
   height: number
 } {
-  const scale = Math.min(1, TRICKPLAY_PREVIEW_WIDTH / trickplay.width)
+  const scale = TRICKPLAY_PREVIEW_WIDTH / trickplay.width
   return {
     width: Math.round(trickplay.width * scale),
     height: Math.round(trickplay.height * scale),
@@ -51,7 +51,7 @@ export function TrickplayPreview({
   const tileUrl = trickplayTileUrl(itemId, trickplay.width, tileIndex)
   const loaded = usePreloadedImage(tileUrl)
 
-  const scale = Math.min(1, TRICKPLAY_PREVIEW_WIDTH / trickplay.width)
+  const scale = TRICKPLAY_PREVIEW_WIDTH / trickplay.width
   const { width: displayW, height: displayH } = trickplayPreviewDisplaySize(trickplay)
 
   return (

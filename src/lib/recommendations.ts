@@ -1,5 +1,6 @@
 import { getResumeItems } from "./jellyfin"
 import { tmdbFetch, type TmdbMovie, type TmdbTvShow, type TmdbPaginated, discoverMovies, discoverTv } from "./tmdb"
+import { filterDisplayableContent } from "./catalog"
 
 
 /**
@@ -41,6 +42,8 @@ export type RowItem = {
   release_date?: string
   first_air_date?: string
   vote_average: number
+  vote_count?: number
+  popularity?: number
   media_type?: string
   availabilityStatus?: {
     status: string
@@ -65,6 +68,8 @@ export function toRowItem(
     release_date: "release_date" in item ? item.release_date : undefined,
     first_air_date: "first_air_date" in item ? item.first_air_date : undefined,
     vote_average: item.vote_average,
+    vote_count: "vote_count" in item ? (item.vote_count as number | undefined) : undefined,
+    popularity: "popularity" in item ? (item.popularity as number | undefined) : undefined,
     media_type: mediaType,
   }
 }
@@ -184,13 +189,16 @@ async function getGenreBasedRecommendations(
           with_genres: genreIds.join(","),
           page: String(page),
           sort_by: "vote_average.desc",
-          "vote_count.gte": "100",
+          "vote_count.gte": "15",
+          "popularity.gte": "1.0",
+          "with_runtime.gte": "20",
         })
       : await discoverTv({
           with_genres: genreIds.join(","),
           page: String(page),
           sort_by: "vote_average.desc",
-          "vote_count.gte": "100",
+          "vote_count.gte": "10",
+          "popularity.gte": "1.0",
         })
     
     if (!data.results) return []
@@ -326,13 +334,8 @@ export async function generateRecommendations(
 
     const sorted = scoredRecommendations.sort((a, b) => b.score - a.score)
     
-    // Filter released content only
-    const releasedItems = sorted.filter(rec => {
-      const today = new Date()
-      if (rec.release_date && new Date(rec.release_date) > today) return false
-      if (rec.first_air_date && new Date(rec.first_air_date) > today) return false
-      return rec.poster_path !== null
-    })
+    // Filter released & displayable quality content only
+    const releasedItems = filterDisplayableContent(sorted)
 
     // Update cache
     if (!includeWatched) {

@@ -223,7 +223,84 @@ export function filterReleasedContent<T extends CatalogItem>(
 }
 
 /**
- * Filter to only include items that are ready for display (excludes announced and cinema-only)
+ * Quality & relevance filter for catalog surfacing:
+ * - Excludes low-rated titles (vote_average < 3.5 when vote_count >= 5)
+ * - Excludes non-feature short clips (runtime < 15 mins when runtime is present)
+ * - Excludes obscure/unvoted items (voteCount < 10 AND popularity < 1.0) ONLY
+ *   when both fields are present and non-zero — items where these fields are
+ *   absent (e.g. RowItem from genre catalog) always pass through because quality
+ *   was already enforced upstream via TMDB discover params.
+ */
+export function isQualityContent(item: CatalogItem): boolean {
+  // If item is already available in user's library, keep it regardless
+  if ('availabilityStatus' in item && item.availabilityStatus) {
+    const avail = (item as { availabilityStatus: { status: string } }).availabilityStatus
+    if (avail && (avail.status === 'in_library' || avail.status === 'downloading')) {
+      return true
+    }
+  }
+
+  // Filter low ratings (vote_average < 3.5 when vote_count >= 5)
+  if ('vote_average' in item && typeof item.vote_average === 'number' && item.vote_average > 0) {
+    const voteCount = ('vote_count' in item && typeof item.vote_count === 'number') ? item.vote_count : 0
+    if (voteCount >= 5 && item.vote_average < 3.5) {
+      return false
+    }
+  }
+
+  // Runtime check for short clips/promos (runtime < 15 mins)
+  if ('runtime' in item && typeof item.runtime === 'number' && item.runtime > 0 && item.runtime < 15) {
+    return false
+  }
+
+  // Only apply the popularity/vote floor when we actually have meaningful data.
+  // vote_count and popularity are optional on RowItem — if they are absent or
+  // zero we cannot distinguish "genuinely obscure" from "metadata not shipped",
+  // so we pass the item through and rely on upstream TMDB discover filters.
+  const hasVoteCount = 'vote_count' in item && typeof item.vote_count === 'number' && (item.vote_count as number) > 0
+  const hasPopularity = 'popularity' in item && typeof item.popularity === 'number' && (item.popularity as number) > 0
+
+  if (!hasVoteCount && !hasPopularity) {
+    // No quality metadata present — pass through (upstream TMDB params already filtered)
+    return true
+  }
+
+  const voteCount = hasVoteCount ? (item as { vote_count: number }).vote_count : 0
+  const popularity = hasPopularity ? (item as { popularity: number }).popularity : 0
+
+  // Check release date age for obscure / unvoted items
+  const dateStr =
+    'release_date' in item && item.release_date
+      ? item.release_date
+      : 'first_air_date' in item && item.first_air_date
+        ? item.first_air_date
+        : undefined
+
+  if (dateStr) {
+    const releaseDate = new Date(dateStr)
+    const today = new Date()
+    const diffMs = today.getTime() - releaseDate.getTime()
+    const diffDays = diffMs / (1000 * 60 * 60 * 24)
+
+    // New release grace window: under 30 days old — allow with minimal popularity
+    if (diffDays >= 0 && diffDays <= 30) {
+      if (popularity < 1.5 && voteCount < 1) {
+        return false
+      }
+      return true
+    }
+  }
+
+  // Older releases: require popularity >= 1.0 OR vote_count >= 10
+  if (voteCount < 10 && popularity < 1.0) {
+    return false
+  }
+
+  return true
+}
+
+/**
+ * Filter to only include items that are ready for display (excludes announced, cinema-only, and obscure/low-rated)
  */
 export function filterDisplayableContent<T extends CatalogItem>(
   items: T[],
@@ -241,6 +318,10 @@ export function filterDisplayableContent<T extends CatalogItem>(
     } else {
       if (!isReleasedAndAvailable(item)) return false
     }
+
+    if (!isQualityContent(item)) return false
+
     return true
   })
 }
+
