@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 
 import { authenticate } from "@/lib/jellyfin"
+import { getSession } from "@/lib/auth"
 import { env } from "@/lib/env"
 
 const ALLOWED_TYPES = new Set(["Primary", "Backdrop", "Banner", "Thumb", "Logo"])
@@ -13,8 +14,16 @@ export async function GET(
 ) {
   try {
     const { id } = await params
-    if (!id || typeof id !== "string" || !/^[a-zA-Z0-9._-]+$/.test(id)) {
+    if (!id || typeof id !== "string" || !/^[a-zA-Z0-9]+$/.test(id)) {
       return new NextResponse("Invalid item ID", { status: 400 })
+    }
+
+    const allowPublic = process.env.ALLOW_PUBLIC_IMAGES === "1" || process.env.ALLOW_PUBLIC_IMAGES === "true"
+    if (!allowPublic) {
+      const session = await getSession()
+      if (!session) {
+        return new NextResponse("Unauthorized", { status: 401 })
+      }
     }
 
     const { searchParams } = new URL(req.url)

@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation"
 import Image from "next/image"
 import { Lock, User, Server, ChevronDown, ChevronUp, AlertCircle, CheckCircle2, Loader2 } from "lucide-react"
 
-import { LoginPosterWall } from "@/components/LoginPosterWall"
+import Scanner from "@/components/Scanner"
 import { sanitizeRedirectUrl } from "@/lib/url-sanitize"
 import { getOrCreateDeviceId } from "@/lib/device-id"
 
@@ -67,7 +67,7 @@ function LoginForm() {
   }
 
   return (
-    <div className="rounded-[4px] border border-grey-600 bg-grey-900/90 p-8 sm:p-10 shadow-2xl space-y-6 backdrop-blur-md">
+    <div className="rounded-[4px] border border-grey-600 bg-black/50 p-8 sm:p-10 shadow-2xl space-y-6 backdrop-blur-md">
       <div className="space-y-1.5 text-left border-b border-grey-750 pb-4">
         <h1 className="text-3xl font-bold tracking-tight text-white">Sign In</h1>
         <p className="text-xs text-grey-100">
@@ -175,9 +175,40 @@ function LoginForm() {
 
 export default function LoginPage() {
   return (
-    <div className="relative min-h-screen w-full bg-background text-foreground flex flex-col justify-between overflow-hidden">
-      {/* 3D Tilted Dynamic Poster Wall Background */}
-      <LoginPosterWall />
+    <div className="relative min-h-screen w-full bg-[#050507] text-white flex flex-col justify-between overflow-hidden">
+      {/* Full-Screen WebGL Scanner Shader Background */}
+      <div className="fixed inset-0 w-full h-full z-0 overflow-hidden bg-[#050507] pointer-events-none select-none">
+        <div style={{ width: '100%', height: '100%', position: 'relative' }}>
+          <Scanner
+            color1="#ff0000"
+            color2="#FF9FFC"
+            color3="#FFFFFF"
+            speed={0.5}
+            sweepSpeed={0.25}
+            sweepWidth={1.6}
+            sweepFalloff={6}
+            scale={1.5}
+            frequency={2}
+            ripple={0.22}
+            bandDensity={11}
+            lineSharpness={5.5}
+            glow={0.22}
+            scanDirection="vertical"
+            colorSpread={0.7}
+            brightness={1}
+            contrast={1.15}
+            softness={1.4}
+            vignette={0.45}
+            scanline
+            grain
+            grainIntensity={0.05}
+            opacity={1}
+            mouseInteraction
+            mouseRadius={0.5}
+            mouseStrength={0.5}
+          />
+        </div>
+      </div>
 
       {/* Header */}
       <header className="relative z-10 w-full max-w-[1600px] mx-auto px-4 sm:px-6 md:px-8 py-6 flex items-center justify-center border-b border-border-subtle">

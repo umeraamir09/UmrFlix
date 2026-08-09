@@ -7,7 +7,6 @@ import { sanitizeRedirectUrl } from "@/lib/url-sanitize"
 const PUBLIC_PATHS = [
   "/login",
   "/api/auth/login",
-  "/api/login-covers",
   "/api/health",
   "/favicon.ico",
   "/logo_header.png",
@@ -44,15 +43,16 @@ function isCsrfValid(request: NextRequest): boolean {
 export async function proxy(request: NextRequest) {
   const { pathname, search } = request.nextUrl
 
-  // Allow static files, Next.js internal assets, PWA manifests, icons, image proxies, and public routes
+  const allowPublicImages =
+    process.env.ALLOW_PUBLIC_IMAGES === "1" ||
+    process.env.ALLOW_PUBLIC_IMAGES === "true"
+
+  // Allow static files, Next.js internal assets, PWA manifests, icons, and public routes
   if (
     pathname.startsWith("/_next") ||
     pathname.startsWith("/api/auth/login") ||
-    pathname.startsWith("/api/jellyfin/image") ||
-    pathname.startsWith("/api/jellyfin/chapter-image") ||
-    pathname.startsWith("/api/jellyfin/trickplay") ||
-    pathname.startsWith("/api/radarr/MediaCover") ||
-    pathname.startsWith("/api/sonarr/MediaCover") ||
+    (allowPublicImages &&
+      (pathname === "/api/jellyfin/image" || pathname.startsWith("/api/jellyfin/image/"))) ||
     PUBLIC_PATHS.some((path) => pathname === path || pathname.startsWith("/public"))
   ) {
     // If authenticated user tries to access /login, redirect to their target path or home /

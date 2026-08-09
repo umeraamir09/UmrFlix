@@ -1,16 +1,35 @@
 import { NextRequest, NextResponse } from "next/server"
 import { env } from "@/lib/env"
+import { getSession } from "@/lib/auth"
 
 const SONARR_BASE = env("SONARR_URL")
 const SONARR_KEY = env("SONARR_API_KEY")
+const SEGMENT_REGEX = /^[a-zA-Z0-9_-]+(\.(jpg|jpeg|png|webp|gif|svg))?$/i
 
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ path: string[] }> }
 ) {
+  const session = await getSession()
+  if (!session) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+  }
+
   const { path } = await params
-  if (!path || path.length === 0) {
+  if (!path || path.length === 0 || path.length > 3) {
     return new NextResponse("Not Found", { status: 404 })
+  }
+
+  for (const segment of path) {
+    if (
+      !segment ||
+      segment.includes("..") ||
+      segment.includes("/") ||
+      segment.includes("\\") ||
+      !SEGMENT_REGEX.test(segment)
+    ) {
+      return new NextResponse("Invalid media cover path", { status: 400 })
+    }
   }
 
   const searchParams = request.nextUrl.searchParams.toString()

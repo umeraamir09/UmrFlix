@@ -3,6 +3,10 @@ import "./globals.css"
 import { LayoutShell } from "@/components/LayoutShell"
 import { ToastProvider } from "@/components/Toast"
 import { SWRProvider } from "@/components/SWRProvider"
+import { Geist } from "next/font/google";
+import { cn } from "@/lib/utils";
+
+const geist = Geist({subsets:['latin'],variable:'--font-sans'});
 
 export const metadata: Metadata = {
   title: "UmrFlix — Your Personal Media Client",
@@ -34,7 +38,7 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className="h-full antialiased font-sans"
+      className={cn("h-full antialiased font-sans", "font-sans", geist.variable)}
     >
       <head>
         <link rel="preconnect" href="https://cdn.fontshare.com" />
