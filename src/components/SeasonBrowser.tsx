@@ -3,7 +3,7 @@
 import Image from "next/image"
 import { useRouter } from "next/navigation"
 import { useMemo, useState, useEffect } from "react"
-import useSWR from "swr"
+import useSWR, { useSWRConfig } from "swr"
 import {
   Calendar,
   CheckCircle2,
@@ -353,6 +353,8 @@ export function SeasonBrowser({
     }
   }
 
+  const { mutate: globalMutate } = useSWRConfig()
+
   const handleDeleteEpisode = async (ep: EpisodeInfo) => {
     const confirmed = window.confirm(
       `Are you sure you want to delete Episode E${ep.episodeNumber} – "${ep.title}"?\n\nThis will permanently delete the file from Jellyfin and unmonitor it in Sonarr.`
@@ -372,6 +374,30 @@ export function SeasonBrowser({
       })
       if (res.ok) {
         toast(`Deleted Episode E${ep.episodeNumber} from Jellyfin & unmonitored in Sonarr`, "success")
+        // Optimistically update local episode data so UI reflects removal immediately
+        await mutateEpisodes(
+          (current) => {
+            if (!current) return current
+            return {
+              ...current,
+              episodes: current.episodes.filter(
+                (e) => !(e.seasonNumber === ep.seasonNumber && e.episodeNumber === ep.episodeNumber)
+              ),
+            }
+          },
+          { revalidate: false }
+        )
+        // Trigger global SWR mutation for library, availability & Jellyfin endpoints
+        await globalMutate(
+          (key) =>
+            typeof key === "string" &&
+            (key.includes("/api/jellyfin") ||
+              key.includes("/api/library") ||
+              key.includes("/api/availability") ||
+              key.includes("/api/tmdb/tv")),
+          undefined,
+          { revalidate: true }
+        )
         await mutateEpisodes()
       } else {
         const errData = await res.json().catch(() => ({}))
