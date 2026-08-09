@@ -35,6 +35,7 @@ import { PartyBar } from "@/components/party/PartyBar"
 import type { EpisodeInfo, SeasonInfo } from "@/components/SeasonBrowser"
 import { TouchControls } from "./touch/TouchControls"
 import { useTouchGestures } from "./touch/use-touch-gestures"
+import { useOrientationLock } from "@/hooks/use-orientation-lock"
 
 const TICKS_PER_SECOND = 10_000_000
 const CONTROLS_HIDE_DELAY = 3_500
@@ -89,6 +90,8 @@ export function CinemaPlayer({
   // ── Refs ──
   const containerRef = useRef<HTMLDivElement>(null)
   const videoRef = useRef<HTMLVideoElement>(null)
+  const { status: orientationStatus, lockLandscape, release: releaseOrientation } = useOrientationLock()
+
   const hlsRef = useRef<Hls | null>(null)
   const seekTargetRef = useRef<number>(0) // position to restore after stream rebuild
   const watchedReportedRef = useRef(false)
@@ -354,7 +357,7 @@ export function CinemaPlayer({
     if (!payload.canDirectPlay) {
       return {
         supported: false,
-        reason: `server gate: canDirectPlay=false (container=${payload.container}, codec=${payload.videoCodec})`,
+        reason: `server gate: canDirectPlay=false (container .${payload.container} not native HTML5 container)`,
       }
     }
     return canBrowserPlayNatively(
@@ -368,13 +371,16 @@ export function CinemaPlayer({
     qualityId !== "auto" ||
     (audioIndex != null && payload != null && audioIndex !== payload.defaultAudioIndex) ||
     burnSelectedSubtitle
+
+  // HTML5 <video src="..."> direct play requires native container (MP4/WebM) + supported codecs + no overrides.
+  // All Direct Stream (remuxing MKV -> HLS) and Transcode sessions use the HLS engine via HLS.js.
   const engine: "direct" | "hls" =
     payload?.canDirectPlay && codecProbe.supported && !wantsTranscode ? "direct" : "hls"
 
   const engineReason = !payload
     ? "awaiting payload"
     : !payload.canDirectPlay
-      ? "direct play rejected by server profile"
+      ? `container .${payload?.container} not HTML5 native — using HLS engine (direct stream remux or transcode)`
       : !codecProbe.supported
         ? `direct play rejected by browser probe (${codecProbe.reason})`
         : wantsTranscode
@@ -395,15 +401,14 @@ export function CinemaPlayer({
   const streamUrl = useMemo((): string => {
     if (!payload) return ""
     const params = new URLSearchParams()
-    // When qualityId is "auto", use autoResolvedId if set, else default to "fhd" (1080p)
     const effectiveQuality =
       qualityId === "auto"
         ? (autoResolvedId
             ? QUALITY_PRESETS.find((q) => q.id === autoResolvedId)
-            : QUALITY_PRESETS.find((q) => q.id === "fhd")) ?? QUALITY_PRESETS[2]
+            : null)
         : quality
 
-    if (effectiveQuality.maxStreamingBitrate) {
+    if (effectiveQuality?.maxStreamingBitrate) {
       applyStreamParams(params, effectiveQuality)
     } else if (engine === "hls") {
       const sourceBitrate = payload.bitrate ?? 0
@@ -413,36 +418,57 @@ export function CinemaPlayer({
         maxStreamingBitrate:
           sourceBitrate > 0
             ? Math.min(Math.round(sourceBitrate * 1.2), 120_000_000)
-            : 40_000_000,
+            : 120_000_000,
         maxWidth: Math.min(sourceW, 3840),
         maxHeight: Math.min(sourceH, 2160),
       })
+    }
+
+    // HLS engine must not hand the decoder a codec it already rejected
+    // (e.g. HEVC source on a browser whose probe failed): pin the stream to
+    // H.264 so Jellyfin transcodes instead of remuxing undecodable segments.
+    const sourceCodec = (payload.videoCodec ?? "").toLowerCase()
+    if (
+      engine === "hls" &&
+      (sourceCodec === "hevc" || sourceCodec === "h265") &&
+      !codecProbe.supported
+    ) {
+      params.set("videoCodec", "h264")
     }
 
     const base = engine === "direct" ? payload.directUrl : payload.hlsUrl
     if (engine === "hls") {
       // OVERRIDE playSessionId to force Jellyfin to launch a NEW transcode session
       // with the requested resolution whenever quality, audio, or burn sub tracks change!
-      const activeQualityKey = effectiveQuality.id !== "auto" ? effectiveQuality.id : "fhd"
+      const activeQualityKey = effectiveQuality ? effectiveQuality.id : "auto"
       const uniquePlaySessionId = `${payload.playSessionId}_q_${activeQualityKey}_a_${audioIndex ?? "def"}_s_${burnSelectedSubtitle ? selectedSubtitle?.index : "off"}`
 
       const [baseUrl, existingQs] = base.split("?")
       const urlParams = new URLSearchParams(existingQs ?? "")
 
       urlParams.set("playSessionId", uniquePlaySessionId)
+      // Jellyfin binds params case-insensitively, but the base hlsUrl carries
+      // BOTH casing variants — overwrite them both so a request never carries
+      // two different session ids for the same semantic parameter.
+      urlParams.set("PlaySessionId", uniquePlaySessionId)
       params.forEach((val, key) => urlParams.set(key, val))
 
-      if (audioIndex != null) urlParams.set("audioStreamIndex", String(audioIndex))
+      if (audioIndex != null) {
+        urlParams.set("audioStreamIndex", String(audioIndex))
+        urlParams.set("AudioStreamIndex", String(audioIndex))
+      }
       if (burnSelectedSubtitle) {
         urlParams.set("subtitleStreamIndex", String(selectedSubtitle.index))
+        urlParams.set("SubtitleStreamIndex", String(selectedSubtitle.index))
         urlParams.set("subtitleMethod", "Encode")
+        urlParams.set("SubtitleMethod", "Encode")
       }
       return `${baseUrl}?${urlParams.toString()}`
     }
 
     const qs = params.toString()
     return qs ? `${base}&${qs}` : base
-  }, [payload, engine, quality, qualityId, autoResolvedId, audioIndex, burnSelectedSubtitle, selectedSubtitle])
+  }, [payload, engine, quality, qualityId, autoResolvedId, audioIndex, burnSelectedSubtitle, selectedSubtitle, codecProbe])
 
   // ── Reporter (heartbeat → Jellyfin) ──
   const getReporterState = useCallback((): ReporterState | null => {
@@ -538,10 +564,13 @@ export function CinemaPlayer({
         return
       }
 
-      if (!payload?.supportsTranscoding) {
-        playerLog.error("stream", "direct play unavailable AND transcoding unavailable")
+      if (!payload?.supportsTranscoding && !payload?.canDirectStream) {
+        playerLog.error("stream", "direct play unavailable AND transcoding unavailable (direct stream not possible either)")
         fail("This file can't be played: direct play unsupported and transcoding unavailable.")
         return
+      }
+      if (!payload?.supportsTranscoding && payload?.canDirectStream) {
+        playerLog.info("stream", "transcoding unavailable — using Direct Stream remux via HLS")
       }
 
       playerLog.info("hls", "loading hls.js runtime…")
@@ -554,6 +583,8 @@ export function CinemaPlayer({
         const hls = new HlsCtor({
           enableWorker: true,
           lowLatencyMode: false,
+          capLevelToPlayerSize: false,
+          abrEwmaDefaultEstimate: 25_000_000,
           backBufferLength: 60,
           maxBufferLength: 40,
           startPosition: startPos,
@@ -834,6 +865,11 @@ export function CinemaPlayer({
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           ;(document as any).webkitExitFullscreen()
         }
+      } else if (isTouchDevice) {
+        // lockLandscape requests fullscreen itself (then orientation.lock);
+        // requesting fullscreen again here would be the duplicate request
+        // and log a rejection on every toggle — so let it own the enter path.
+        await lockLandscape(containerRef.current)
       } else {
         if (containerRef.current?.requestFullscreen) {
           await containerRef.current.requestFullscreen()
@@ -846,7 +882,7 @@ export function CinemaPlayer({
     } catch (err) {
       console.error("[CinemaPlayer] Fullscreen toggle error:", err)
     }
-  }, [])
+  }, [isTouchDevice, lockLandscape])
 
   const togglePip = useCallback(() => {
     const video = videoRef.current
@@ -860,6 +896,9 @@ export function CinemaPlayer({
 
   // ── Playback helpers ──
   const togglePlay = useCallback(() => {
+    if (isTouchDevice) {
+      void lockLandscape(containerRef.current)
+    }
     const video = videoRef.current
     // No stream attached yet (initial load): set play intent so playback starts as soon as stream attaches
     if (!video || !hadStreamRef.current) {
@@ -878,26 +917,26 @@ export function CinemaPlayer({
     } else {
       video.pause()
     }
-  }, [party?.partyId, partySync])
+  }, [isTouchDevice, lockLandscape, party?.partyId, partySync])
 
-  // Auto-landscape orientation lock when playing on mobile/touch devices —
-  // desktop browsers lack (or refuse) orientation.lock, so gate on coarse pointers.
+  // Release orientation lock on unmount. Fullscreen is deliberately NOT
+  // exited here: CinemaPlayer is keyed by the resolved item id, so episode
+  // changes remount this component — bailing out of fullscreen on every
+  // transition would drop mobile viewers out (and the re-lock on the fresh
+  // mount is outside a user gesture). Fullscreen exits are handled by the
+  // toggle button (explicit exit) and by the browser when the fullscreen
+  // element is removed from the DOM on route teardown.
+  useEffect(() => {
+    return () => {
+      void releaseOrientation()
+    }
+  }, [releaseOrientation])
+
+  // Re-attempt landscape lock when playback starts (e.g. triggered on touch / user gesture)
   useEffect(() => {
     if (!playing || !isTouchDevice) return
-    try {
-      if (typeof window !== "undefined" && screen.orientation && "lock" in screen.orientation) {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        ;(screen.orientation as any).lock("landscape").catch(() => {})
-      }
-    } catch {}
-    return () => {
-      try {
-        if (typeof window !== "undefined" && screen.orientation && "unlock" in screen.orientation) {
-          screen.orientation.unlock()
-        }
-      } catch {}
-    }
-  }, [playing, isTouchDevice])
+    void lockLandscape(containerRef.current)
+  }, [playing, isTouchDevice, lockLandscape])
 
   const handlePointerMove = useCallback(
     (e: React.PointerEvent) => {
@@ -1155,6 +1194,12 @@ export function CinemaPlayer({
   return (
     <div
       ref={containerRef}
+      data-force-landscape={
+        isTouchDevice &&
+        (orientationStatus === "unsupported" || orientationStatus === "denied")
+          ? "true"
+          : undefined
+      }
       tabIndex={0}
       onKeyDown={handleKeyDown}
       onPointerMove={handlePointerMove}
@@ -1172,7 +1217,7 @@ export function CinemaPlayer({
         ref={videoRef}
         poster={poster}
         playsInline
-        className="size-full pointer-events-none"
+        className="size-full object-contain pointer-events-none"
         onPlay={() => {
           setPlaying(true)
           setNeedsManualPlay(false)

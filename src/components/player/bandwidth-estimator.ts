@@ -33,13 +33,13 @@ type ConnectionInfo = {
   saveData?: boolean
 }
 
-const EWMA_FAST_ALPHA = 0.5   // responds quickly to drops
-const EWMA_SLOW_ALPHA = 0.1   // smooths out spikes
-const MIN_SAMPLES_FOR_DECISION = 3
+const EWMA_FAST_ALPHA = 0.3   // smoother, less volatile
+const EWMA_SLOW_ALPHA = 0.05  // smooths out spikes
+const MIN_SAMPLES_FOR_DECISION = 8
 const DOWNGRADE_BUFFER_THRESHOLD = 5  // seconds: buffer below this = danger
-const UPGRADE_BUFFER_THRESHOLD = 30   // seconds: buffer above this = safe to upgrade
-const SAFETY_FACTOR = 0.75            // use 75% of estimated bandwidth for quality selection
-const UPGRADE_COOLDOWN_MS = 30_000    // don't upgrade within 30s of a downgrade
+const UPGRADE_BUFFER_THRESHOLD = 25   // seconds: buffer above this = safe to upgrade
+const SAFETY_FACTOR = 0.85            // use 85% of estimated bandwidth
+const UPGRADE_COOLDOWN_MS = 20_000    // don't upgrade within 20s of a downgrade
 const DOWNGRADE_COOLDOWN_MS = 10_000  // don't downgrade more than once per 10s
 
 // Ordered by bitrate ascending for easy binary searching.
@@ -50,8 +50,8 @@ const SORTED_PRESETS = QUALITY_PRESETS
   .sort((a, b) => (a.maxStreamingBitrate ?? 0) - (b.maxStreamingBitrate ?? 0))
 
 export class BandwidthEstimator {
-  private ewmaFast = 25_000_000 // default 25 Mbps (healthy high-res default)
-  private ewmaSlow = 25_000_000
+  private ewmaFast = 50_000_000 // default 50 Mbps (healthy high-res default)
+  private ewmaSlow = 50_000_000
   private sampleCount = 0
   private lastDowngradeTime = 0
   private lastUpgradeTime = 0
@@ -83,8 +83,12 @@ export class BandwidthEstimator {
     if (this.bufferRingCount < 10) this.bufferRingCount++
   }
 
-  /** Estimated bandwidth in bits/second (conservative — uses the slower EWMA). */
+  /** Estimated bandwidth in bits/second (reflects active connection capacity). */
   get estimatedBandwidth(): number {
+    // Conservative estimate (min of fast/slow EWMA): after a bandwidth drop,
+    // the slow EWMA (α=0.05) lags high for a long time — using the max would
+    // overstate capacity and delay bandwidth-based downgrades, forcing the
+    // buffer-emergency path to do the work (i.e. rebuffering).
     return Math.min(this.ewmaFast, this.ewmaSlow)
   }
 
@@ -137,7 +141,7 @@ export class BandwidthEstimator {
       }
     }
 
-    // Not enough network samples gathered yet — hold current high quality
+    // Not enough network samples gathered yet — hold current quality
     if (this.sampleCount < MIN_SAMPLES_FOR_DECISION) {
       return { action: "hold", targetPresetId: currentPresetId, reason: "gathering data", estimatedBandwidth: bw }
     }
@@ -171,8 +175,17 @@ export class BandwidthEstimator {
     const currentPreset = SORTED_PRESETS.find(p => p.id === currentPresetId)
 
     // First resolution from "auto" (preset not found in SORTED_PRESETS):
-    // jump straight to the best preset without touching upgrade/downgrade cooldowns.
+    // If buffer is healthy (>= 5s), stay uncapped at highest preset rather than downgrading
     if (!currentPreset) {
+      if (bufferAheadSeconds >= 5) {
+        const topPreset = SORTED_PRESETS[SORTED_PRESETS.length - 1]
+        return {
+          action: "hold",
+          targetPresetId: topPreset.id,
+          reason: "initial auto resolution — healthy buffer",
+          estimatedBandwidth: bw,
+        }
+      }
       return {
         action: "resolve",
         targetPresetId: bestPreset.id,
@@ -281,6 +294,12 @@ export function attachHlsBandwidthMonitor(
   ) => {
     const stats = data?.frag?.stats ?? data?.stats
     if (!stats) return
+
+    // Ignore tiny fragments (< 10 KB) like init segments and playlists that
+    // skew bandwidth measurements. Real low-bitrate fragments (~150 KB at
+    // ~600kbps/2s) must still count, or slow connections never gather enough
+    // samples for an ABR decision (MIN_SAMPLES_FOR_DECISION = 8).
+    if (typeof stats.loaded === "number" && stats.loaded < 10_000) return
 
     let bps = 0
     if (typeof stats.bwEstimate === "number" && stats.bwEstimate > 0) {

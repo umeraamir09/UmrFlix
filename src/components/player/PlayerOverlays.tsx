@@ -1,5 +1,6 @@
 "use client"
 
+import { useState } from "react"
 import Image from "next/image"
 import { Loader2, Play, TriangleAlert, X } from "lucide-react"
 
@@ -11,6 +12,31 @@ export function formatTimecode(totalSeconds: number): string {
   const mm = h > 0 ? String(m).padStart(2, "0") : String(m)
   const ss = String(sec).padStart(2, "0")
   return h > 0 ? `${h}:${mm}:${ss}` : `${mm}:${ss}`
+}
+
+const REMAINING_TIME_KEY = "umrflix.showRemainingTime"
+
+export function useRemainingTimeToggle() {
+  const [showRemaining, setShowRemaining] = useState<boolean>(() => {
+    if (typeof window === "undefined") return false
+    try {
+      return window.localStorage.getItem(REMAINING_TIME_KEY) === "true"
+    } catch {
+      return false
+    }
+  })
+
+  const toggle = () => {
+    setShowRemaining((prev) => {
+      const next = !prev
+      try {
+        window.localStorage.setItem(REMAINING_TIME_KEY, String(next))
+      } catch {}
+      return next
+    })
+  }
+
+  return [showRemaining, toggle] as const
 }
 
 // ── Skip intro / recap floating button ──
@@ -47,7 +73,7 @@ export function SkipSegmentButton({
         alt=""
         width={18}
         height={18}
-        className="size-4.5 shrink-0"
+        className="size-4.5 shrink-0 invert"
       />
       <span>{SKIP_LABELS[type] ?? "Skip"}</span>
     </button>

@@ -188,12 +188,20 @@ export async function GET(
     const container = (mediaSource.Container ?? "").toLowerCase()
     const browserNativeContainers = new Set(["mp4", "m4v", "mov", "webm"])
     const videoCodec = (videoStream?.Codec ?? "").toLowerCase()
+    const isSupportedVideoCodec =
+      videoCodec !== "" &&
+      videoCodec !== "mpeg2video" &&
+      videoCodec !== "vc1" &&
+      videoCodec !== "wmv3"
+
     const canDirectPlay =
       mediaSource.SupportsDirectPlay &&
       browserNativeContainers.has(container) &&
-      videoCodec !== "" &&
-      videoCodec !== "mpeg2video" &&
-      videoCodec !== "vc1"
+      isSupportedVideoCodec
+
+    const canDirectStream =
+      (mediaSource.SupportsDirectStream || mediaSource.SupportsDirectPlay) &&
+      isSupportedVideoCodec
 
     const userData = detail?.UserData
     const runtimeTicks = detail?.RunTimeTicks ?? mediaSource.RunTimeTicks ?? 0
@@ -220,8 +228,10 @@ export async function GET(
       height: videoStream?.Height,
       bitrate: mediaSource.Bitrate,
       supportsDirectPlay: mediaSource.SupportsDirectPlay,
+      supportsDirectStream: mediaSource.SupportsDirectStream ?? mediaSource.SupportsDirectPlay,
       supportsTranscoding: mediaSource.SupportsTranscoding,
       canDirectPlay,
+      canDirectStream,
       directUrl: buildDirectStreamUrl(id, token, { mediaSourceId: mediaSource.Id }),
       hlsUrl: buildHlsStreamUrl(id, token, {
         mediaSourceId: mediaSource.Id,
