@@ -393,7 +393,7 @@ const candidatePoolCache = new Map<string, { items: CatalogLike[]; timestamp: nu
 export async function safeDiscoverPages(
   mediaType: "movie" | "tv",
   params: Record<string, string>,
-  pages = 3
+  pages = 2
 ): Promise<CatalogLike[]> {
   const paramKey = Object.entries(params)
     .sort(([a], [b]) => a.localeCompare(b))
@@ -424,14 +424,14 @@ export async function safeDiscoverPages(
 }
 
 async function safeTrending(mediaType: "movie" | "tv"): Promise<CatalogLike[]> {
-  return safeDiscoverPages(mediaType, { sort_by: "popularity.desc" }, 3)
+  return safeDiscoverPages(mediaType, { sort_by: "popularity.desc" }, 2)
 }
 
 async function safeDiscover(
   mediaType: "movie" | "tv",
   params: Record<string, string>
 ): Promise<CatalogLike[]> {
-  return safeDiscoverPages(mediaType, params, 3)
+  return safeDiscoverPages(mediaType, params, 2)
 }
 
 function dedupeItems(items: ScoredRowItem[]): ScoredRowItem[] {

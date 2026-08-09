@@ -5,6 +5,15 @@ import { recordServeLog, recordRowFatigueImpression } from "@/lib/discovery/stor
 
 export const dynamic = "force-dynamic"
 
+type CacheEntry = {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  rows: any[]
+  timestamp: number
+}
+
+const homeFeedCache = new Map<string, CacheEntry>()
+const CACHE_TTL_MS = 20_000 // 20-second per-user cache
+
 /**
  * Personalized home/genre feed rows for the current session user.
  * Client-fetched (SWR) so the ISR page shells stay cacheable across users.
@@ -21,7 +30,16 @@ export async function GET(req: Request) {
     const hourParam = searchParams.get("hour")
     const clientHour = hourParam ? Number.parseInt(hourParam, 10) : undefined
 
+    const cacheKey = `${userId}:${mediaType || "all"}:${clientHour || "default"}`
+    const now = Date.now()
+    const cached = homeFeedCache.get(cacheKey)
+
+    if (cached && now - cached.timestamp < CACHE_TTL_MS) {
+      return NextResponse.json({ rows: cached.rows })
+    }
+
     const rows = await getPersonalizedFeed(userId, "default", { mediaType, clientHour })
+    homeFeedCache.set(cacheKey, { rows, timestamp: now })
 
     if (rows.length > 0 && session?.userId) {
       const servedItemKeys = rows.flatMap((r) => r.items.map((i) => `${i.media_type ?? "movie"}:${i.id}`))
