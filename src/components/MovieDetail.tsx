@@ -32,9 +32,17 @@ function formatCurrency(amount?: number): string | null {
 export function MovieDetail({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params)
   const { data, error, isLoading } = useSWR<TmdbMovieDetail>(
-    id ? `/api/tmdb/movie/${id}?append_to_response=credits,videos,images,recommendations,similar&include_image_language=en,null` : null,
+    id ? `/api/tmdb/movie/${id}?append_to_response=credits,videos,images,recommendations,similar,external_ids&include_image_language=en,null` : null,
     fetcher
   )
+
+  const imdbId = data?.external_ids?.imdb_id || data?.imdb_id
+  const { data: omdbData } = useSWR<{ imdbRating?: string; imdbVotes?: string; Response?: string }>(
+    imdbId ? `/api/omdb?i=${imdbId}` : null,
+    fetcher
+  )
+
+  const hasOmdbRating = omdbData?.Response !== "False" && omdbData?.imdbRating && omdbData.imdbRating !== "N/A"
 
   const movieId = data?.id
   const { availability, refresh } = useAvailability(
@@ -140,7 +148,17 @@ export function MovieDetail({ params }: { params: Promise<{ id: string }> }) {
 
               {/* Metadata Badges */}
               <div className="flex flex-wrap items-center gap-3 text-xs font-semibold text-gray-300">
-                {movie.vote_average > 0 && (
+                {hasOmdbRating ? (
+                  <span className="flex items-center gap-1.5 bg-surface/90 border border-border px-2.5 py-1 text-white font-bold">
+                    <img src="/imdb.webp" alt="IMDb" className="h-4 w-auto object-contain" />
+                    <span>{omdbData.imdbRating}</span>
+                    {omdbData.imdbVotes && omdbData.imdbVotes !== "N/A" && (
+                      <span className="text-gray-400 font-normal text-[11px]">
+                        ({omdbData.imdbVotes})
+                      </span>
+                    )}
+                  </span>
+                ) : movie.vote_average > 0 ? (
                   <span className="flex items-center gap-1 bg-surface/90 border border-border px-2.5 py-1 text-white font-bold">
                     <Star className="size-4 fill-warning text-warning" />
                     {formatRating(movie.vote_average)}
@@ -150,7 +168,7 @@ export function MovieDetail({ params }: { params: Promise<{ id: string }> }) {
                       </span>
                     )}
                   </span>
-                )}
+                ) : null}
                 {movie.release_date && (
                   <span className="flex items-center gap-1.5 bg-surface/90 border border-border px-2.5 py-1">
                     <Calendar className="size-3.5 text-accent" />

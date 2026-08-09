@@ -3,6 +3,7 @@
 import Link from "next/link"
 import Image from "next/image"
 import { useRouter } from "next/navigation"
+import useSWR from "swr"
 import { getImageUrl, formatYear, formatRating } from "@/lib/utils"
 import { AvailabilityBadge } from "@/components/AvailabilityBadge"
 import { BookmarkButton } from "@/components/BookmarkButton"
@@ -10,6 +11,8 @@ import { useState, useRef, useEffect, type ElementType } from "react"
 import { Star, Trash2, Check, CheckCheck, MoreVertical } from "lucide-react"
 import { IconPlay, IconAdd } from "@/components/ui/icons"
 import type { AvailabilityResult } from "@/app/api/availability/route"
+
+const fetcher = (url: string) => fetch(url).then((r) => r.json())
 
 export type MovieCardItem = {
   id: number
@@ -91,10 +94,27 @@ export function MovieCard({
 
   const hasMenuItems = !disabled || Boolean(onDelete)
 
+  const [isHovered, setIsHovered] = useState(false)
+
+  // Fetch TMDB external_ids on hover if needed
+  const { data: tmdbData } = useSWR<{ external_ids?: { imdb_id: string | null } }>(
+    isHovered && item.id ? `/api/tmdb/${type}/${item.id}?append_to_response=external_ids` : null,
+    fetcher
+  )
+
+  const imdbId = tmdbData?.external_ids?.imdb_id
+  const { data: omdbData } = useSWR<{ imdbRating?: string; Response?: string }>(
+    isHovered && imdbId ? `/api/omdb?i=${imdbId}` : null,
+    fetcher
+  )
+
+  const hasOmdbRating = omdbData?.Response !== "False" && omdbData?.imdbRating && omdbData.imdbRating !== "N/A"
+
   return (
     <Wrapper
       href={href}
       className={`group relative block w-full flex-shrink-0${disabled ? " cursor-default" : ""}`}
+      onMouseEnter={() => setIsHovered(true)}
     >
       {/* Poster Image Container */}
       <div className="relative aspect-[2/3] w-full overflow-hidden rounded-[4px] bg-grey-850 shadow-md border border-grey-750">
@@ -150,7 +170,12 @@ export function MovieCard({
 
           {/* Rating & Metadata */}
           <div className="flex items-center gap-2 text-[15px] font-bold text-amber-400">
-            {item.vote_average ? (
+            {hasOmdbRating ? (
+              <div className="flex items-center gap-1.5 text-white">
+                <img src="/imdb.webp" alt="IMDb" className="h-3.5 w-auto object-contain" />
+                <span>{omdbData.imdbRating}</span>
+              </div>
+            ) : item.vote_average ? (
               <div className="flex items-center gap-1">
                 <span>{formatRating(item.vote_average)}</span>
                 <Star className="size-4 fill-amber-400 text-amber-400" />

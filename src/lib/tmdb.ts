@@ -86,6 +86,8 @@ export type TmdbMovieDetail = TmdbMovie & {
   tagline?: string
   budget?: number
   revenue?: number
+  external_ids?: { imdb_id: string | null; tvdb_id?: number | null }
+  imdb_id?: string | null
   spoken_languages?: { english_name: string; name: string }[]
   production_companies?: { id: number; name: string; logo_path: string | null }[]
 }
@@ -159,7 +161,7 @@ export function searchTv(query: string, page = 1) {
 
 export function movieDetail(id: number) {
   return tmdbFetch<TmdbMovieDetail>(`/movie/${id}`, {
-    append_to_response: "credits,videos,images,recommendations,similar",
+    append_to_response: "credits,videos,images,recommendations,similar,external_ids",
     include_image_language: "en,null",
   })
 }
