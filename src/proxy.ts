@@ -1,12 +1,14 @@
 import { NextResponse } from "next/server"
 import type { NextRequest } from "next/server"
-import { decryptSessionToken, COOKIE_NAME } from "@/lib/auth-crypto"
+import { COOKIE_NAME } from "@/lib/auth-crypto"
+import { getSessionBySid } from "@/lib/session-store"
 import { sanitizeRedirectUrl } from "@/lib/url-sanitize"
 
 const PUBLIC_PATHS = [
   "/login",
   "/api/auth/login",
   "/api/login-covers",
+  "/api/health",
   "/favicon.ico",
   "/logo_header.png",
   "/manifest.webmanifest",
@@ -17,6 +19,27 @@ const PUBLIC_PATHS = [
   "/icon-512.png",
   "/apple-touch-icon.png",
 ]
+
+function isCsrfValid(request: NextRequest): boolean {
+  if (process.env.CSRF_INSECURE_CLIENTS_ALLOWED === "1") return true
+
+  const origin = request.headers.get("origin")
+  const referer = request.headers.get("referer")
+  const rawHost = request.headers.get("x-forwarded-host") || request.headers.get("host")
+
+  if (!rawHost) return false
+  const expectedHost = rawHost.split(":")[0].toLowerCase()
+
+  const checkUrl = origin || referer
+  if (!checkUrl) return false
+
+  try {
+    const sourceHost = new URL(checkUrl).hostname.toLowerCase()
+    return sourceHost === expectedHost
+  } catch {
+    return false
+  }
+}
 
 export async function proxy(request: NextRequest) {
   const { pathname, search } = request.nextUrl
@@ -31,7 +54,7 @@ export async function proxy(request: NextRequest) {
     if (pathname === "/login") {
       const sessionCookie = request.cookies.get(COOKIE_NAME)?.value
       if (sessionCookie) {
-        const session = await decryptSessionToken(sessionCookie)
+        const session = await getSessionBySid(sessionCookie)
         if (session) {
           const redirectParam = request.nextUrl.searchParams.get("redirect")
           const targetPath = sanitizeRedirectUrl(redirectParam, "/")
@@ -43,9 +66,9 @@ export async function proxy(request: NextRequest) {
   }
 
   const sessionCookie = request.cookies.get(COOKIE_NAME)?.value
-  const session = sessionCookie ? await decryptSessionToken(sessionCookie) : null
+  const session = sessionCookie ? await getSessionBySid(sessionCookie) : null
 
-  // If user is unauthenticated or session decryption failed
+  // If user is unauthenticated or session lookup failed
   if (!session) {
     // For API requests, return 401 Unauthorized and clear the invalid cookie
     if (pathname.startsWith("/api/")) {
@@ -71,6 +94,17 @@ export async function proxy(request: NextRequest) {
       response.cookies.set(COOKIE_NAME, "", { path: "/", maxAge: 0 })
     }
     return response
+  }
+
+  // Enforce CSRF protection for non-safe API mutations
+  const method = request.method.toUpperCase()
+  if (pathname.startsWith("/api/") && !["GET", "HEAD", "OPTIONS"].includes(method)) {
+    if (!isCsrfValid(request)) {
+      return NextResponse.json(
+        { error: "CSRF check failed: invalid or missing Origin/Referer header", authenticated: true },
+        { status: 403 }
+      )
+    }
   }
 
   return NextResponse.next()

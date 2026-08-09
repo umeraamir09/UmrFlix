@@ -168,8 +168,6 @@ export function ContinueWatchingSection() {
         }))
 
         setItems(mapped)
-
-        setItems(mapped)
       } catch (err) {
         console.error("Failed to fetch continue watching:", err)
         setItems([])
@@ -178,7 +176,7 @@ export function ContinueWatchingSection() {
       }
     }
     load()
-  }, [username])
+  }, [])
 
   const markWatched = async (item: ContinueWatchingItem) => {
     if (!item.jellyfinItemId || markingId) return

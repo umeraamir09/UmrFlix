@@ -152,6 +152,18 @@ export default defineSchema({
     servesJson: v.string(), // { [itemKey]: { count: number, lastServedAt: number } }
     updatedAt: v.number(),
   }).index("by_user_profile", ["userId", "profileId"]),
+
+  sessions: defineTable({
+    sid: v.string(),
+    userId: v.string(),
+    sessionDataJson: v.string(),
+    expiresAt: v.number(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_sid", ["sid"])
+    .index("by_user", ["userId"])
+    .index("by_expiresAt", ["expiresAt"]),
 })
 
 

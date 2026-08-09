@@ -2,43 +2,50 @@
 
 import { SWRConfig } from "swr"
 import { ReactNode } from "react"
+import { apiFetcher, ApiClientError } from "@/lib/api-client"
 import { sanitizeRedirectUrl } from "@/lib/url-sanitize"
 
-const defaultFetcher = (url: string) =>
-  fetch(url).then(async (res) => {
-    const data = await res.json().catch(() => ({}))
-    if (!res.ok || data?.authenticated === false || data?.error === "Unauthorized") {
-      const error = new Error(data?.error || `HTTP Error ${res.status}: ${res.statusText}`)
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      ;(error as any).status = res.status === 200 ? 401 : res.status
-      throw error
-    }
-    return data
-  })
+let isRedirectingToLogin = false
 
 export function SWRProvider({ children }: { children: ReactNode }) {
   return (
     <SWRConfig
       value={{
-        fetcher: defaultFetcher,
+        fetcher: apiFetcher,
         dedupingInterval: 10_000, // Coalesce duplicate component fetches within 10s
         revalidateOnFocus: false, // Eliminate screen flickering and API storms on tab focus
         revalidateOnReconnect: true,
+        keepPreviousData: true,
         errorRetryCount: 3,
-        onError: (error) => {
+
+        onError: (error, key) => {
+          const isMeRoute = typeof key === "string" && key.includes("/api/auth/me")
+          const isSessionDead =
+            error instanceof ApiClientError
+              ? error.sessionExpired
+              : error?.status === 401
+
+          // Only redirect to /login if session is genuinely dead and key is /api/auth/me or sessionExpired
           if (
-            error?.status === 401 &&
+            isSessionDead &&
+            isMeRoute &&
+            !isRedirectingToLogin &&
             typeof window !== "undefined" &&
             window.location.pathname !== "/login"
           ) {
-            const currentPath = sanitizeRedirectUrl(window.location.pathname + window.location.search)
+            isRedirectingToLogin = true
+            const currentPath = sanitizeRedirectUrl(
+              window.location.pathname + window.location.search
+            )
             window.location.href = `/login?redirect=${encodeURIComponent(currentPath)}`
           }
         },
 
         onErrorRetry: (error, _key, _config, revalidate, { retryCount }) => {
-          // Never retry on 404 or 401
-          if (error?.status === 404 || error?.status === 401) return
+          // Never retry non-retryable errors (401, 403, 404)
+          if (error?.retryable === false || error?.status === 401 || error?.status === 403 || error?.status === 404) {
+            return
+          }
           if (retryCount >= 3) return
 
           // Exponential backoff retry with jitter
@@ -51,4 +58,3 @@ export function SWRProvider({ children }: { children: ReactNode }) {
     </SWRConfig>
   )
 }
-

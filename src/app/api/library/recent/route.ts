@@ -26,8 +26,8 @@ export async function GET() {
     if (!session) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
-    const { token } = await authenticate()
-    const items = await getAllItems(token, token)
+    const { token, userId } = await authenticate()
+    const items = await getAllItems(token, userId)
     
     // Sort by DateCreated desc, take top 20
     const sorted = (items as RecentJellyfinItem[])

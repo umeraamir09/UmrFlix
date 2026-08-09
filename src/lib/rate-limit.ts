@@ -8,6 +8,12 @@ type TokenBucket = {
   resetAt: number
 }
 
+/**
+ * In-memory sliding window rate limiter.
+ * PM2 deployment note (single-process mode): In-process Map counting is exact.
+ * Interface is structured with hit() and reset() adapters so a Redis/Upstash
+ * client can be swapped in if multi-instance scaling is introduced.
+ */
 const buckets = new Map<string, TokenBucket>()
 
 /**
@@ -31,6 +37,10 @@ export function checkRateLimit(key: string, options: RateLimitOptions): boolean 
 
   bucket.count++
   return true
+}
+
+export function resetRateLimit(key: string): void {
+  buckets.delete(key)
 }
 
 /** Pre-configured rate limiters for party actions */
