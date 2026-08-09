@@ -1,4 +1,8 @@
 @import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+@custom-variant dark (&:is(.dark *));
 
 /* Satoshi Direct @font-face (Fontshare) */
 @font-face {
@@ -332,3 +336,4 @@ body {
     z-index: 9999 !important;
   }
 }
+
