@@ -142,8 +142,11 @@ export function EpisodeBrowser({
     <>
       {/* Backdrop overlay for closing */}
       <div
-        className="fixed inset-0 bg-black/70 backdrop-blur-xs z-[65] animate-in fade-in duration-150"
-        onClick={onClose}
+        className="fixed inset-0 bg-black/70 backdrop-blur-xs z-[65] animate-in fade-in duration-150 pointer-events-auto"
+        onClick={(e) => {
+          e.stopPropagation()
+          onClose()
+        }}
       />
 
       <div
@@ -152,7 +155,8 @@ export function EpisodeBrowser({
         aria-modal="true"
         aria-label="Episode browser"
         tabIndex={-1}
-        className="fixed inset-x-0 bottom-0 sm:top-0 sm:right-0 sm:left-auto w-full sm:w-[480px] max-h-[85vh] sm:max-h-full rounded-t-2xl sm:rounded-none z-[70] flex flex-col bg-black/95 border-t sm:border-t-0 sm:border-l border-white/15 shadow-2xl backdrop-blur-xl pt-safe pb-safe animate-in fade-in slide-in-from-bottom-4 sm:slide-in-from-right-4 duration-200"
+        onClick={(e) => e.stopPropagation()}
+        className="fixed inset-x-0 bottom-0 sm:top-0 sm:right-0 sm:left-auto w-full sm:w-[480px] max-h-[85vh] sm:max-h-full rounded-t-2xl sm:rounded-none z-[70] flex flex-col bg-black/95 border-t sm:border-t-0 sm:border-l border-white/15 shadow-2xl backdrop-blur-xl pt-safe pb-safe animate-in fade-in slide-in-from-bottom-4 sm:slide-in-from-right-4 duration-200 pointer-events-auto"
       >
         {/* Mobile top grab handle indicator */}
         <div className="w-12 h-1 bg-white/25 rounded-full mx-auto mt-2.5 sm:hidden shrink-0" />
@@ -166,7 +170,10 @@ export function EpisodeBrowser({
           </p>
         </div>
         <button
-          onClick={onClose}
+          onClick={(e) => {
+            e.stopPropagation()
+            onClose()
+          }}
           className="flex min-h-[40px] min-w-[40px] items-center justify-center p-1 text-gray-300 transition-colors hover:text-white"
           aria-label="Close episode browser"
         >
