@@ -67,11 +67,17 @@ export function SearchResults() {
     return () => clearTimeout(timer)
   }, [])
 
+  const lastSyncedQueryRef = useRef(urlQuery)
+
   // Sync state when URL searchParams change externally (e.g., browser back/forward or clicking links)
   useEffect(() => {
     const q = searchParams.get("q") ?? ""
-    setInputValue(q)
-    setDebouncedQuery(q)
+    // Only overwrite local input state if URL change was NOT triggered by our own typing sync
+    if (q !== lastSyncedQueryRef.current) {
+      lastSyncedQueryRef.current = q
+      setInputValue(q)
+      setDebouncedQuery(q)
+    }
   }, [searchParams])
 
   // Real-time search content refresh while typing (debounced)
@@ -87,6 +93,7 @@ export function SearchResults() {
         } else {
           params.delete("q")
         }
+        lastSyncedQueryRef.current = trimmed
         const newUrl = params.toString() ? `/search?${params.toString()}` : "/search"
         router.replace(newUrl, { scroll: false })
       }
@@ -98,7 +105,7 @@ export function SearchResults() {
   // Save recent search
   const addRecentSearch = useCallback((term: string) => {
     const trimmed = term.trim()
-    if (!trimmed) return
+    if (!trimmed || trimmed.length < 2) return
     setRecentSearches((prev) => {
       const filtered = prev.filter((item) => item.toLowerCase() !== trimmed.toLowerCase())
       const updated = [trimmed.toUpperCase(), ...filtered].slice(0, MAX_RECENTS)
@@ -110,6 +117,13 @@ export function SearchResults() {
       return updated
     })
   }, [])
+
+  // Record active query when user selects a search result item
+  const handleResultClick = () => {
+    if (inputValue.trim()) {
+      addRecentSearch(inputValue)
+    }
+  }
 
   // Remove individual recent search
   const removeRecentSearch = (e: React.MouseEvent, termToRemove: string) => {
@@ -253,6 +267,18 @@ export function SearchResults() {
   }, [query, genreDef, type, filter, sort])
 
   const { data: searchData, error, isLoading } = useSWR(searchUrl, fetcher)
+
+  // Auto-record query when user pauses typing for 2.5s and results are ready
+  useEffect(() => {
+    const term = debouncedQuery.trim()
+    if (!term || term.length < 2 || isLoading) return
+
+    const idleTimer = setTimeout(() => {
+      addRecentSearch(term)
+    }, 2500)
+
+    return () => clearTimeout(idleTimer)
+  }, [debouncedQuery, isLoading, addRecentSearch])
 
   const rawResults: any[] = searchData?.results ?? []
 
@@ -500,6 +526,7 @@ export function SearchResults() {
                         <Link
                           key={item.id}
                           href={`/${isTv ? "tv" : "movie"}/${item.id}`}
+                          onClick={handleResultClick}
                           className="group block overflow-hidden rounded-none bg-transparent relative"
                         >
                           <div className="relative aspect-video w-full overflow-hidden bg-card border border-border group-hover:border-accent transition-colors">
@@ -558,6 +585,7 @@ export function SearchResults() {
                         <Link
                           key={item.id}
                           href={`/tv/${item.id}`}
+                          onClick={handleResultClick}
                           className="group flex items-start gap-3.5 p-2 rounded-none hover:bg-card border border-transparent hover:border-border transition-colors relative"
                         >
                           <div className="relative h-20 w-14 flex-shrink-0 overflow-hidden bg-card border border-border">
@@ -628,6 +656,7 @@ export function SearchResults() {
                         <Link
                           key={item.id}
                           href={`/movie/${item.id}`}
+                          onClick={handleResultClick}
                           className="group flex items-start gap-3.5 p-2 rounded-none hover:bg-card border border-transparent hover:border-border transition-colors relative"
                         >
                           <div className="relative h-20 w-14 flex-shrink-0 overflow-hidden bg-card border border-border">
