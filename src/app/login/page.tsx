@@ -7,6 +7,7 @@ import { Lock, User, Server, ChevronDown, ChevronUp, AlertCircle, CheckCircle2, 
 
 import { LoginPosterWall } from "@/components/LoginPosterWall"
 import { sanitizeRedirectUrl } from "@/lib/url-sanitize"
+import { getOrCreateDeviceId } from "@/lib/device-id"
 
 function LoginForm() {
   const router = useRouter()
@@ -35,7 +36,10 @@ function LoginForm() {
     try {
       const res = await fetch("/api/auth/login", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { 
+          "Content-Type": "application/json",
+          "X-Umrflix-DeviceId": getOrCreateDeviceId(),
+        },
         body: JSON.stringify({
           username,
           password,
