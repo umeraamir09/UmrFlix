@@ -13,8 +13,8 @@ export function useAvailability(item: ItemRef | null) {
     params ? `/api/availability?${params}` : null,
     fetcher,
     {
-      refreshInterval: 10_000,
-      revalidateOnFocus: true,
+      refreshInterval: 0,
+      revalidateOnFocus: false,
     }
   )
 
@@ -39,8 +39,8 @@ export function useBatchAvailability(items: ItemRef[]) {
       return res.json()
     },
     {
-      refreshInterval: 15_000,
-      revalidateOnFocus: true,
+      refreshInterval: 0,
+      revalidateOnFocus: false,
     }
   )
 

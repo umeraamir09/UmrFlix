@@ -32,7 +32,7 @@ export function MovieRow({
   const defaultEndpoint = `/api/tmdb/trending/${type}/week`
   const targetEndpoint = endpoint || defaultEndpoint
 
-  const { data, error, isLoading } = useSWR(
+  const { data, error, isLoading, mutate } = useSWR(
     customItems ? null : targetEndpoint,
     fetcher
   )
@@ -166,7 +166,17 @@ export function MovieRow({
                 <div key={i} className="space-y-2 animate-shimmer rounded-md aspect-[2/3] w-full" />
               ))
             : error
-            ? <p className="text-xs text-gray-500 py-4">Unable to load media catalog</p>
+            ? (
+                <div className="flex items-center gap-3 py-4 px-2">
+                  <p className="text-xs text-gray-400">Unable to load media catalog</p>
+                  <button
+                    onClick={() => mutate()}
+                    className="rounded border border-gray-700 bg-grey-800 px-2.5 py-1 text-xs font-medium text-white hover:bg-grey-700 active:scale-95 transition-all cursor-pointer"
+                  >
+                    Retry
+                  </button>
+                </div>
+              )
             : items.map((item) => {
                 const itemType = getItemType(item)
                 return (
