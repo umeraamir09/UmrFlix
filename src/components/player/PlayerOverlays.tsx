@@ -73,7 +73,7 @@ export function SkipSegmentButton({
         alt=""
         width={18}
         height={18}
-        className="size-4.5 shrink-0"
+        className="size-4.5 shrink-0 invert"
       />
       <span>{SKIP_LABELS[type] ?? "Skip"}</span>
     </button>
