@@ -35,6 +35,7 @@ import { PartyBar } from "@/components/party/PartyBar"
 import type { EpisodeInfo, SeasonInfo } from "@/components/SeasonBrowser"
 import { TouchControls } from "./touch/TouchControls"
 import { useTouchGestures } from "./touch/use-touch-gestures"
+import { useOrientationLock } from "@/hooks/use-orientation-lock"
 
 const TICKS_PER_SECOND = 10_000_000
 const CONTROLS_HIDE_DELAY = 3_500
@@ -89,6 +90,8 @@ export function CinemaPlayer({
   // ── Refs ──
   const containerRef = useRef<HTMLDivElement>(null)
   const videoRef = useRef<HTMLVideoElement>(null)
+  const { status: orientationStatus, lockLandscape, release: releaseOrientation } = useOrientationLock()
+
   const hlsRef = useRef<Hls | null>(null)
   const seekTargetRef = useRef<number>(0) // position to restore after stream rebuild
   const watchedReportedRef = useRef(false)
@@ -434,10 +437,15 @@ export function CinemaPlayer({
       urlParams.set("playSessionId", uniquePlaySessionId)
       params.forEach((val, key) => urlParams.set(key, val))
 
-      if (audioIndex != null) urlParams.set("audioStreamIndex", String(audioIndex))
+      if (audioIndex != null) {
+        urlParams.set("audioStreamIndex", String(audioIndex))
+        urlParams.set("AudioStreamIndex", String(audioIndex))
+      }
       if (burnSelectedSubtitle) {
         urlParams.set("subtitleStreamIndex", String(selectedSubtitle.index))
+        urlParams.set("SubtitleStreamIndex", String(selectedSubtitle.index))
         urlParams.set("subtitleMethod", "Encode")
+        urlParams.set("SubtitleMethod", "Encode")
       }
       return `${baseUrl}?${urlParams.toString()}`
     }
@@ -556,7 +564,7 @@ export function CinemaPlayer({
         const hls = new HlsCtor({
           enableWorker: true,
           lowLatencyMode: false,
-          capLevelToPlayerSize: true,
+          capLevelToPlayerSize: false,
           abrEwmaDefaultEstimate: 25_000_000,
           backBufferLength: 60,
           maxBufferLength: 40,
@@ -828,6 +836,9 @@ export function CinemaPlayer({
   }, [])
 
   const toggleFullscreen = useCallback(async () => {
+    if (isTouchDevice) {
+      void lockLandscape(containerRef.current)
+    }
     try {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       if (document.fullscreenElement || (document as any).webkitFullscreenElement) {
@@ -850,7 +861,7 @@ export function CinemaPlayer({
     } catch (err) {
       console.error("[CinemaPlayer] Fullscreen toggle error:", err)
     }
-  }, [])
+  }, [isTouchDevice, lockLandscape])
 
   const togglePip = useCallback(() => {
     const video = videoRef.current
@@ -864,6 +875,9 @@ export function CinemaPlayer({
 
   // ── Playback helpers ──
   const togglePlay = useCallback(() => {
+    if (isTouchDevice) {
+      void lockLandscape(containerRef.current)
+    }
     const video = videoRef.current
     // No stream attached yet (initial load): set play intent so playback starts as soon as stream attaches
     if (!video || !hadStreamRef.current) {
@@ -882,26 +896,20 @@ export function CinemaPlayer({
     } else {
       video.pause()
     }
-  }, [party?.partyId, partySync])
+  }, [isTouchDevice, lockLandscape, party?.partyId, partySync])
 
-  // Auto-landscape orientation lock when playing on mobile/touch devices —
-  // desktop browsers lack (or refuse) orientation.lock, so gate on coarse pointers.
+  // Release orientation lock and exit fullscreen on unmount
+  useEffect(() => {
+    return () => {
+      void releaseOrientation()
+    }
+  }, [releaseOrientation])
+
+  // Re-attempt landscape lock when playback starts (e.g. triggered on touch / user gesture)
   useEffect(() => {
     if (!playing || !isTouchDevice) return
-    try {
-      if (typeof window !== "undefined" && screen.orientation && "lock" in screen.orientation) {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        ;(screen.orientation as any).lock("landscape").catch(() => {})
-      }
-    } catch {}
-    return () => {
-      try {
-        if (typeof window !== "undefined" && screen.orientation && "unlock" in screen.orientation) {
-          screen.orientation.unlock()
-        }
-      } catch {}
-    }
-  }, [playing, isTouchDevice])
+    void lockLandscape(containerRef.current)
+  }, [playing, isTouchDevice, lockLandscape])
 
   const handlePointerMove = useCallback(
     (e: React.PointerEvent) => {
@@ -1159,6 +1167,11 @@ export function CinemaPlayer({
   return (
     <div
       ref={containerRef}
+      data-force-landscape={
+        orientationStatus === "unsupported" || (orientationStatus === "denied" && isTouchDevice)
+          ? "true"
+          : undefined
+      }
       tabIndex={0}
       onKeyDown={handleKeyDown}
       onPointerMove={handlePointerMove}
