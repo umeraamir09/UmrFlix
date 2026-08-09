@@ -158,10 +158,9 @@ export async function GET(request: NextRequest) {
     })
   } catch (err) {
     if (err instanceof JellyfinAuthError) {
-      await clearSessionCookie()
       return NextResponse.json(
-        { movies: [], series: [], total: 0, error: "Unauthorized", authenticated: false },
-        { status: 401 }
+        { movies: [], series: [], total: 0, error: "Jellyfin authentication expired", jellyfinAuth: "expired" },
+        { status: 403 }
       )
     }
     const message = err instanceof Error ? err.message : "Failed to fetch Jellyfin library"
