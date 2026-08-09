@@ -14,6 +14,7 @@ import type * as discovery from "../discovery.js";
 import type * as myList from "../myList.js";
 import type * as party from "../party.js";
 import type * as requests from "../requests.js";
+import type * as sessions from "../sessions.js";
 import type * as userProfiles from "../userProfiles.js";
 
 import type {
@@ -29,6 +30,7 @@ declare const fullApi: ApiFromModules<{
   myList: typeof myList;
   party: typeof party;
   requests: typeof requests;
+  sessions: typeof sessions;
   userProfiles: typeof userProfiles;
 }>;
 
