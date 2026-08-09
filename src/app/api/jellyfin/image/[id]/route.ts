@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server"
 
 import { authenticate } from "@/lib/jellyfin"
-import { getSession } from "@/lib/auth"
 import { env } from "@/lib/env"
 
 const ALLOWED_TYPES = new Set(["Primary", "Backdrop", "Banner", "Thumb", "Logo"])
@@ -17,13 +16,6 @@ export async function GET(
     if (!id || typeof id !== "string" || !/^[a-zA-Z0-9._-]+$/.test(id)) {
       return new NextResponse("Invalid item ID", { status: 400 })
     }
-
-    const session = await getSession()
-    // Require session in production unless running under server-side rendering proxy
-    if (!session && process.env.NODE_ENV === "production" && !process.env.ALLOW_PUBLIC_IMAGES) {
-      return new NextResponse("Unauthorized", { status: 401 })
-    }
-
 
     const { searchParams } = new URL(req.url)
     const rawType = searchParams.get("type") || "Primary"

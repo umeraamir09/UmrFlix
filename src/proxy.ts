@@ -44,10 +44,15 @@ function isCsrfValid(request: NextRequest): boolean {
 export async function proxy(request: NextRequest) {
   const { pathname, search } = request.nextUrl
 
-  // Allow static files, Next.js internal assets, PWA manifests, icons, and public routes
+  // Allow static files, Next.js internal assets, PWA manifests, icons, image proxies, and public routes
   if (
     pathname.startsWith("/_next") ||
     pathname.startsWith("/api/auth/login") ||
+    pathname.startsWith("/api/jellyfin/image") ||
+    pathname.startsWith("/api/jellyfin/chapter-image") ||
+    pathname.startsWith("/api/jellyfin/trickplay") ||
+    pathname.startsWith("/api/radarr/MediaCover") ||
+    pathname.startsWith("/api/sonarr/MediaCover") ||
     PUBLIC_PATHS.some((path) => pathname === path || pathname.startsWith("/public"))
   ) {
     // If authenticated user tries to access /login, redirect to their target path or home /
