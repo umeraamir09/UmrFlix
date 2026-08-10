@@ -54,13 +54,17 @@ export async function POST(req: Request) {
       )
     }
 
-    const deviceIdHeader = req.headers.get("x-umrflix-deviceid")?.trim()
-    const deviceId = deviceIdHeader || `umrflix-${crypto.randomUUID()}`
+    const rawDeviceId = req.headers.get("x-umrflix-deviceid")?.trim()
+    const deviceId = (rawDeviceId && /^[A-Za-z0-9_-]{1,64}$/.test(rawDeviceId))
+      ? rawDeviceId
+      : `umrflix-${crypto.randomUUID()}`
 
     const res = await fetch(`${serverUrl}/Users/AuthenticateByName`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
+        "Authorization":
+          `MediaBrowser Client="UmrFlix", Device="UmrFlix Web Client", DeviceId="${deviceId}", Version="1.0.0"`,
         "X-Emby-Authorization":
           `MediaBrowser Client="UmrFlix", Device="UmrFlix Web Client", DeviceId="${deviceId}", Version="1.0.0"`,
       },

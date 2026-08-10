@@ -11,6 +11,7 @@ export async function POST() {
       fetch(`${session.serverUrl}/Sessions/Logout`, {
         method: "POST",
         headers: {
+          "Authorization": `MediaBrowser Client="UmrFlix", Token="${session.accessToken}"`,
           "X-Emby-Token": session.accessToken,
         },
         signal: controller.signal,
