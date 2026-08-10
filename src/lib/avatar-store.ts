@@ -80,7 +80,15 @@ export async function getUserAvatar(userId: string, userToken?: string): Promise
   const convex = getConvexClient(userToken)
   if (convex) {
     try {
-      const avatarUrl = await convex.query(getUserAvatarRef, { userId })
+      let timerId: NodeJS.Timeout | undefined
+      const timeout = new Promise<null>((resolve) => {
+        timerId = setTimeout(() => resolve(null), 1500)
+      })
+      const avatarUrl = await Promise.race([
+        convex.query(getUserAvatarRef, { userId }),
+        timeout,
+      ])
+      if (timerId) clearTimeout(timerId)
       if (avatarUrl) return avatarUrl
     } catch (err) {
       console.error("[Convex Query Error] Failed to query user avatar:", err)

@@ -10,13 +10,22 @@ export async function GET() {
   }
 
   let avatarUrl = session.avatarUrl
+  let timerId: NodeJS.Timeout | undefined
   try {
-    const customAvatar = await getUserAvatar(session.userId)
+    const timeoutPromise = new Promise<null>((resolve) => {
+      timerId = setTimeout(() => resolve(null), 2000)
+    })
+    const customAvatar = await Promise.race([
+      getUserAvatar(session.userId),
+      timeoutPromise,
+    ])
     if (customAvatar) {
       avatarUrl = customAvatar
     }
   } catch (err) {
     console.error("Failed to load user custom avatar:", err)
+  } finally {
+    if (timerId) clearTimeout(timerId)
   }
 
   return NextResponse.json({

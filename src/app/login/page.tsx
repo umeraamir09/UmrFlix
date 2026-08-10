@@ -57,8 +57,7 @@ function LoginForm() {
 
       setSuccess(true)
       setTimeout(() => {
-        router.push(redirectTarget)
-        router.refresh()
+        window.location.href = redirectTarget
       }, 800)
     } catch {
       setError("Failed to connect to UmrFlix auth service.")
