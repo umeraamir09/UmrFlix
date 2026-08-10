@@ -8,7 +8,8 @@ branches:
 
 before_install:
   - eval "$(ssh-agent -s)"
-  - echo "$SSH_KEY" | tr -d '\r' | ssh-add -
+  # Decode Base64 key and add to SSH agent
+  - echo "$SSH_KEY_B64" | base64 --decode | ssh-add -
   - mkdir -p ~/.ssh
   - chmod 700 ~/.ssh
   - ssh-keyscan -p ${SSH_PORT:-22} -H $SSH_HOST >> ~/.ssh/known_hosts 2>/dev/null
