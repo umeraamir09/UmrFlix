@@ -47,6 +47,8 @@ export async function attemptJellyfinReauth(
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          "Authorization":
+            'MediaBrowser Client="UmrFlix", Device="UmrFlixServerReauth", DeviceId="umrflix-server-reauth", Version="1.0.0"',
           "X-Emby-Authorization":
             'MediaBrowser Client="UmrFlix", Device="UmrFlixServerReauth", DeviceId="umrflix-server-reauth", Version="1.0.0"',
         },

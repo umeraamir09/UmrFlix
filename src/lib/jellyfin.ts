@@ -113,6 +113,27 @@ export type JellyfinItemsResponse = {
 const tokenCache = new Map<string, { token: string; userId: string; serverUrl: string }>()
 const authPromises = new Map<string, Promise<{ token: string; userId: string; serverUrl: string }>>()
 
+/**
+ * Builds standard Jellyfin Authorization header value.
+ * Omits Token when not yet authenticated (login calls).
+ */
+export function jellyfinAuthHeader(opts: {
+  client?: string
+  device?: string
+  deviceId?: string
+  version?: string
+  token?: string
+}): string {
+  const parts = [
+    `Client="${opts.client ?? "UmrFlix"}"`,
+    `Device="${opts.device ?? "UmrFlix Server"}"`,
+    `DeviceId="${opts.deviceId ?? "umrflix-server-001"}"`,
+    `Version="${opts.version ?? "1.0.0"}"`,
+  ]
+  if (opts.token) parts.push(`Token="${opts.token}"`)
+  return `MediaBrowser ${parts.join(", ")}`
+}
+
 export async function authenticate(): Promise<JellyfinAuth> {
   // Check active user session first (server-side)
   try {
@@ -151,6 +172,7 @@ export async function authenticate(): Promise<JellyfinAuth> {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
+            "Authorization": jellyfinAuthHeader({ device: "UmrFlixServer", deviceId: "umrflix-server-001" }),
             "X-Emby-Authorization":
               'MediaBrowser Client="UmrFlix", Device="UmrFlixServer", DeviceId="umrflix-server-001", Version="1.0.0"',
           },
@@ -190,6 +212,7 @@ export async function authenticate(): Promise<JellyfinAuth> {
 
 export function getAuthHeaders(token: string): Record<string, string> {
   return {
+    "Authorization": jellyfinAuthHeader({ token }),
     "X-Emby-Token": token,
     "Content-Type": "application/json",
   }

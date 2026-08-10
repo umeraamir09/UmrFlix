@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server"
 import type { NextRequest } from "next/server"
 import { COOKIE_NAME } from "@/lib/auth-crypto"
-import { getSessionBySid } from "@/lib/session-store"
+import { getSessionWithStatus } from "@/lib/session-store"
 import { sanitizeRedirectUrl } from "@/lib/url-sanitize"
 
 const PUBLIC_PATHS = [
@@ -59,8 +59,8 @@ export async function proxy(request: NextRequest) {
     if (pathname === "/login") {
       const sessionCookie = request.cookies.get(COOKIE_NAME)?.value
       if (sessionCookie) {
-        const session = await getSessionBySid(sessionCookie)
-        if (session) {
+        const lookup = await getSessionWithStatus(sessionCookie)
+        if (lookup.status === "valid") {
           const redirectParam = request.nextUrl.searchParams.get("redirect")
           const targetPath = sanitizeRedirectUrl(redirectParam, "/")
           return NextResponse.redirect(new URL(targetPath, request.url))
@@ -71,11 +71,31 @@ export async function proxy(request: NextRequest) {
   }
 
   const sessionCookie = request.cookies.get(COOKIE_NAME)?.value
-  const session = sessionCookie ? await getSessionBySid(sessionCookie) : null
+  const lookup = sessionCookie
+    ? await getSessionWithStatus(sessionCookie)
+    : { status: "invalid" as const }
 
-  // If user is unauthenticated or session lookup failed
-  if (!session) {
-    // For API requests, return 401 Unauthorized and clear the invalid cookie
+  if (lookup.status === "valid") {
+    // Session is valid; continue to route or page
+    if (pathname === "/login") {
+      const redirectParam = request.nextUrl.searchParams.get("redirect")
+      const targetPath = sanitizeRedirectUrl(redirectParam, "/")
+      return NextResponse.redirect(new URL(targetPath, request.url))
+    }
+  } else if (lookup.status === "error") {
+    // Transient storage error or timeout while LRU cache was cold.
+    // For API requests, return 503 so client can retry.
+    if (pathname.startsWith("/api/")) {
+      return NextResponse.json(
+        { error: "Session verification temporarily unavailable", retryable: true },
+        { status: 503 }
+      )
+    }
+    // For page requests, allow request through to server component (which attempts getSession)
+    // without clearing the user's valid session cookie.
+    return NextResponse.next()
+  } else {
+    // lookup.status === "invalid": Definitive unauthenticated (expired, revoked, malformed SID)
     if (pathname.startsWith("/api/")) {
       const response = NextResponse.json(
         { error: "Unauthorized", authenticated: false },

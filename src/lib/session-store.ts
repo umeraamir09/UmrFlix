@@ -125,8 +125,17 @@ export async function createSession(session: UserSession): Promise<string> {
   return sid
 }
 
-export async function getSessionBySid(sid: string): Promise<UserSession | null> {
-  if (!sid) return null
+export function isValidSidFormat(sid: string): boolean {
+  return typeof sid === "string" && /^[A-Za-z0-9_-]{43}$/.test(sid)
+}
+
+export type SessionLookupResult =
+  | { status: "valid"; session: UserSession }
+  | { status: "invalid" }
+  | { status: "error" }
+
+export async function getSessionWithStatus(sid: string): Promise<SessionLookupResult> {
+  if (!isValidSidFormat(sid)) return { status: "invalid" }
   const now = Date.now()
 
   // 1. Hot path: Check in-memory LRU cache
@@ -134,7 +143,7 @@ export async function getSessionBySid(sid: string): Promise<UserSession | null> 
   if (cached) {
     if (cached.expiresAt <= now) {
       cache.delete(sid)
-      return null
+      return { status: "invalid" }
     }
 
     // Touch session if throttle window elapsed
@@ -149,21 +158,32 @@ export async function getSessionBySid(sid: string): Promise<UserSession | null> 
       }
     }
 
-    return cached.session
+    return { status: "valid", session: cached.session }
   }
 
   // 2. Miss path: Query Convex with 1.5s timeout for restart survival
   const convex = getConvexClient()
-  if (!convex) return null
+  if (!convex) return { status: "invalid" }
 
   try {
+    const TIMEOUT_SENTINEL = Symbol("TIMEOUT")
+    let timerId: NodeJS.Timeout | undefined
     const fetchPromise = convex.query(getSessionRef, { sid })
-    const timeoutPromise = new Promise<null>((resolve) =>
-      setTimeout(() => resolve(null), CONVEX_TIMEOUT_MS)
-    )
+    const timeoutPromise = new Promise<typeof TIMEOUT_SENTINEL>((resolve) => {
+      timerId = setTimeout(() => resolve(TIMEOUT_SENTINEL), CONVEX_TIMEOUT_MS)
+    })
 
     const result = await Promise.race([fetchPromise, timeoutPromise])
-    if (!result) return null
+    if (timerId) clearTimeout(timerId)
+
+    if (result === TIMEOUT_SENTINEL) {
+      console.warn("[session-store] Convex miss lookup timed out for SID")
+      return { status: "error" }
+    }
+
+    if (!result || result.expiresAt <= now) {
+      return { status: "invalid" }
+    }
 
     const sessionData = JSON.parse(result.sessionDataJson) as UserSession
 
@@ -174,11 +194,16 @@ export async function getSessionBySid(sid: string): Promise<UserSession | null> 
       lastTouched: now,
     })
 
-    return sessionData
+    return { status: "valid", session: sessionData }
   } catch (err) {
     console.error("[session-store] Convex miss lookup failed:", err)
-    return null
+    return { status: "error" }
   }
+}
+
+export async function getSessionBySid(sid: string): Promise<UserSession | null> {
+  const result = await getSessionWithStatus(sid)
+  return result.status === "valid" ? result.session : null
 }
 
 export async function revokeSession(sid: string): Promise<void> {

@@ -13,6 +13,8 @@ import {
   ShieldCheck,
 } from "lucide-react"
 
+import useSWR, { mutate } from "swr"
+
 export type UserProfile = {
   userId: string
   username: string
@@ -25,31 +27,15 @@ export type UserProfile = {
 
 export function UserProfileMenu() {
   const router = useRouter()
-  const [user, setUser] = useState<UserProfile | null>(null)
-  const [loading, setLoading] = useState(true)
   const [open, setOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
 
-  useEffect(() => {
-    async function fetchMe() {
-      try {
-        const res = await fetch("/api/auth/me")
-        if (res.ok) {
-          const data = await res.json()
-          if (data.authenticated && data.user) {
-            setUser(data.user)
-          } else {
-            setUser(null)
-          }
-        }
-      } catch {
-        setUser(null)
-      } finally {
-        setLoading(false)
-      }
-    }
-    fetchMe()
-  }, [])
+  const { data, isLoading: loading } = useSWR<{
+    authenticated?: boolean
+    user?: UserProfile
+  }>("/api/auth/me", { revalidateOnFocus: false })
+
+  const user = data?.authenticated ? data?.user ?? null : null
 
   // Close dropdown on click outside
   useEffect(() => {
@@ -66,10 +52,9 @@ export function UserProfileMenu() {
   async function handleLogout() {
     try {
       await fetch("/api/auth/logout", { method: "POST" })
-      setUser(null)
       setOpen(false)
-      router.push("/login")
-      router.refresh()
+      mutate("/api/auth/me", { authenticated: false, user: null }, false)
+      window.location.href = "/login"
     } catch {
       /* silent error */
     }
