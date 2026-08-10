@@ -1,43 +1,17 @@
 language: node_js
 node_js:
-  - "22.22.3" # Match the Node.js version installed on your VM
+  - "22.22.3"
 
 branches:
   only:
-    - main # Change to your default branch if different
+    - main
 
 before_install:
-  # Start SSH agent
   - eval "$(ssh-agent -s)"
-  # Format private key and add it to SSH agent
   - echo "$SSH_KEY" | tr -d '\r' | ssh-add -
-  # Create .ssh directory and add VM host key to known_hosts to prevent SSH prompt hangs
   - mkdir -p ~/.ssh
   - chmod 700 ~/.ssh
   - ssh-keyscan -p ${SSH_PORT:-22} -H $SSH_HOST >> ~/.ssh/known_hosts 2>/dev/null
 
 script:
-  # Connect to VM and execute deployment sequence
-  - ssh -p ${SSH_PORT:-22} $SSH_USER@$SSH_HOST "
-      set -e
-      
-      # Load NVM and node binaries in non-interactive shell
-      export NVM_DIR=\"\$HOME/.nvm\"
-      [ -s \"\$NVM_DIR/nvm.sh\" ] && \. \"\$NVM_DIR/nvm.sh\"
-      export PATH=\$PATH:\$(npm config get prefix)/bin
-      
-      # Navigate to project directory
-      cd /opt/umrflix
-      
-      # Fetch latest code and hard reset
-      git fetch origin main
-      git reset --hard origin/main
-      
-      # Install dependencies and build Next.js
-      npm ci
-      npm run build
-      
-      # Reload PM2 cluster gracefully
-      pm2 reload ecosystem.config.js --update-env
-      pm2 save
-    "
+  - ssh -p ${SSH_PORT:-22} $SSH_USER@$SSH_HOST 'bash -s' < ./deploy.sh
