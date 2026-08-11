@@ -7,13 +7,7 @@ import {
   type PlaybackPayload,
 } from "@/lib/playback-types"
 import { usePlayerSettings, savePlayerSettings } from "@/lib/player-settings"
-import { parseVtt, type VttCue } from "@/lib/vtt"
-import {
-  SubtitleOverlay,
-  loadSubtitleStyle,
-  saveSubtitleStyle,
-  type SubtitleStyle,
-} from "./SubtitleOverlay"
+import { SubtitleOverlay } from "./SubtitleOverlay"
 import { PlayerControls } from "./PlayerControls"
 import {
   CreditsNextEpisodePill,
@@ -36,11 +30,14 @@ import type { EpisodeInfo, SeasonInfo } from "@/components/SeasonBrowser"
 import { TouchControls } from "./touch/TouchControls"
 import { useTouchGestures } from "./touch/use-touch-gestures"
 import { useOrientationLock } from "@/hooks/use-orientation-lock"
+import { useVolumeManager } from "./hooks/useVolumeManager"
+import { useWatchedTracking } from "./hooks/useWatchedTracking"
+import { usePlayerControls } from "./hooks/usePlayerControls"
+import { useSubtitles } from "./hooks/useSubtitles"
+import { useAdaptiveBitrate } from "./hooks/useAdaptiveBitrate"
 
 const TICKS_PER_SECOND = 10_000_000
-const CONTROLS_HIDE_DELAY = 3_500
 const NEXT_EPISODE_COUNTDOWN = 10
-const WATCHED_THRESHOLD = 0.9
 
 export type CinemaPlayerProps = {
   itemId: string
@@ -95,7 +92,6 @@ export function CinemaPlayer({
   const hlsRef = useRef<Hls | null>(null)
   const seekTargetRef = useRef<number>(0) // position to restore after stream rebuild
   const watchedReportedRef = useRef(false)
-  const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const debugAutoOpenedRef = useRef(false)
   // Scrub seek coalescing: the seek bar fires onSeek on every pointermove
   // (60Hz+ during a drag). Without throttling, a single drag floods the
@@ -170,13 +166,22 @@ export function CinemaPlayer({
   const estimatorRef = useRef(new BandwidthEstimator())
   const [audioIndex, setAudioIndex] = useState<number | null>(null)
   const [subtitleIndex, setSubtitleIndex] = useState<number | null>(null)
-  // Keyed by subtitle URL — avoids clearing state synchronously on track change
-  const [cueState, setCueState] = useState<{ url: string; cues: VttCue[] } | null>(null)
-  const [subStyle, setSubStyle] = useState<SubtitleStyle>(() => loadSubtitleStyle())
+
+  // ── Subtitles Hook ──
+  const {
+    subStyle,
+    updateSubStyle,
+    selectedSubtitle,
+    burnSelectedSubtitle,
+    cues,
+  } = useSubtitles({
+    payload,
+    subtitleIndex,
+    burnSubtitles,
+  })
 
   // ── UI state ──
   const [endpointReady, setEndpointReady] = useState(false) // playback info settled
-  const [controlsVisible, setControlsVisible] = useState(true)
   const [episodeBrowserOpen, setEpisodeBrowserOpen] = useState(false)
 
   const [isFullscreen, setIsFullscreen] = useState(false)
@@ -184,15 +189,6 @@ export function CinemaPlayer({
   const [creditsPillDismissed, setCreditsPillDismissed] = useState(false)
   const [debugOpen, setDebugOpen] = useState(false)
   const [lastStreamUrl, setLastStreamUrl] = useState("")
-  const [volume, setVolume] = useState(() => {
-    if (typeof window === "undefined") return 1
-    try {
-      const v = window.localStorage.getItem("umrflix.volume")
-      if (v !== null) return Math.min(1, Math.max(0, Number(v)))
-    } catch {}
-    return 1
-  })
-  const [muted, setMuted] = useState(false)
   const [playbackRate, setPlaybackRate] = useState(1)
   const [reportToast, setReportToast] = useState(false)
   // 1.1 — shows "Switching to 720p…" (etc.) in the buffering overlay during a stream rebuild
@@ -200,6 +196,23 @@ export function CinemaPlayer({
   const [isTouchDevice, setIsTouchDevice] = useState(() => {
     if (typeof window === "undefined") return false
     return window.matchMedia("(pointer: coarse)").matches
+  })
+
+  // ── Volume Hook ──
+  const { volume, muted, updateVolume, toggleMute, setMuted } = useVolumeManager(videoRef)
+
+  // ── Controls Hook ──
+  const { controlsVisible, pokeControls } = usePlayerControls({
+    playing,
+    episodeBrowserOpen,
+  })
+
+  // ── Watched Tracking Hook ──
+  useWatchedTracking({
+    payload,
+    currentTime,
+    duration,
+    onWatched,
   })
 
   useEffect(() => {
@@ -241,31 +254,12 @@ export function CinemaPlayer({
     }
   }, [onReport])
 
-  const updateSubStyle = useCallback((style: SubtitleStyle) => {
-    setSubStyle(style)
-    saveSubtitleStyle(style)
-  }, [])
-
-  const updateVolume = useCallback((v: number) => {
-    const clamped = Math.min(1, Math.max(0, v))
-    setVolume(clamped)
-    setMuted(clamped === 0 ? true : false)
-    if (videoRef.current) {
-      videoRef.current.volume = clamped
-      if (clamped > 0) videoRef.current.muted = false
-    }
-    try {
-      window.localStorage.setItem("umrflix.volume", String(clamped))
-    } catch {}
-  }, [])
-
   // ── Fetch playback payload ──
   useEffect(() => {
     let cancelled = false
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setPayload(null)
     setLoadError(null)
-    setCueState(null)
     setAudioIndex(null)
     setSubtitleIndex(null)
     setEndpointReady(false)
@@ -318,37 +312,6 @@ export function CinemaPlayer({
       cancelled = true
     }
   }, [itemId, retryKey, autoPlay])
-
-  // ── Load subtitle cues when the selected track changes ──
-  const selectedSubtitle =
-    payload?.subtitles.find((s) => s.index === subtitleIndex) ?? null
-  // This track is delivered by the server transcoder (burned into the frames):
-  // image-based tracks are ALWAYS burned; text tracks only when the user has
-  // enabled the "burn subtitles" setting. Otherwise they're swapped in real
-  // time by the client-side overlay — no stream rebuild needed.
-  const burnSelectedSubtitle = selectedSubtitle != null && (selectedSubtitle.isImageBased || burnSubtitles)
-  const clientSideSubtitle = selectedSubtitle != null && !burnSelectedSubtitle
-  const cues =
-    clientSideSubtitle && selectedSubtitle && cueState?.url === selectedSubtitle.url
-      ? cueState.cues
-      : []
-
-  useEffect(() => {
-    if (!clientSideSubtitle || !selectedSubtitle.url) return
-    const url = selectedSubtitle.url
-    let cancelled = false
-    fetch(url)
-      .then((r) => (r.ok ? r.text() : Promise.reject(new Error(`HTTP ${r.status}`))))
-      .then((text) => {
-        if (!cancelled) setCueState({ url, cues: parseVtt(text) })
-      })
-      .catch(() => {
-        if (!cancelled) setCueState({ url, cues: [] })
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [clientSideSubtitle, selectedSubtitle])
 
   // ── Engine selection: direct play vs transcoded HLS ──
   const quality = QUALITY_PRESETS.find((q) => q.id === qualityId) ?? (() => {
@@ -463,7 +426,7 @@ export function CinemaPlayer({
         urlParams.set("audioStreamIndex", String(audioIndex))
         urlParams.set("AudioStreamIndex", String(audioIndex))
       }
-      if (burnSelectedSubtitle) {
+      if (burnSelectedSubtitle && selectedSubtitle) {
         urlParams.set("subtitleStreamIndex", String(selectedSubtitle.index))
         urlParams.set("SubtitleStreamIndex", String(selectedSubtitle.index))
         urlParams.set("subtitleMethod", "Encode")
@@ -806,77 +769,8 @@ export function CinemaPlayer({
     }
   }, [payload, endpointReady, engine, volume, muted])
 
-  // ── Auto-mark watched at 90% ──
-  useEffect(() => {
-    if (!payload || watchedReportedRef.current) return
-    const runtime = payload.runtimeTicks > 0 ? payload.runtimeTicks / TICKS_PER_SECOND : duration
-    if (runtime > 0 && currentTime / runtime >= WATCHED_THRESHOLD) {
-      watchedReportedRef.current = true
-      fetch(`/api/jellyfin/played/${payload.itemId}`, { method: "POST" }).catch(() => {})
-      onWatched?.()
-    }
-  }, [currentTime, duration, payload, onWatched])
 
-  // ── Auto-mark watched once the outro of an episode is reached ──
-  useEffect(() => {
-    if (!payload?.series || watchedReportedRef.current) return
-    const runtime = payload.runtimeTicks > 0 ? payload.runtimeTicks / TICKS_PER_SECOND : duration
-    const outro = payload.markers.find((m) => m.type === "outro")
-    // Only trust the marker when it sits genuinely near the end — the chapter
-    // fallback can match titles like "End of Part 1" well before the credits,
-    // which would otherwise mark an episode watched mid-way through.
-    if (outro && currentTime >= outro.start && runtime > 0 && outro.start >= runtime * 0.85) {
-      watchedReportedRef.current = true
-      fetch(`/api/jellyfin/played/${payload.itemId}`, { method: "POST" }).catch(() => {})
-      onWatched?.()
-    }
-  }, [currentTime, duration, payload, onWatched])
 
-  const controlsVisibleRef = useRef(controlsVisible)
-  useEffect(() => {
-    controlsVisibleRef.current = controlsVisible
-  }, [controlsVisible])
-
-  const resetHideTimer = useCallback(() => {
-    if (hideTimerRef.current) {
-      clearTimeout(hideTimerRef.current)
-      hideTimerRef.current = null
-    }
-    if (!episodeBrowserOpen && videoRef.current && !videoRef.current.paused) {
-      hideTimerRef.current = setTimeout(() => {
-        setControlsVisible(false)
-      }, CONTROLS_HIDE_DELAY)
-    }
-  }, [episodeBrowserOpen])
-
-  const showControls = useCallback(() => {
-    setControlsVisible(true)
-    resetHideTimer()
-  }, [resetHideTimer])
-
-  const hideControls = useCallback(() => {
-    if (hideTimerRef.current) {
-      clearTimeout(hideTimerRef.current)
-      hideTimerRef.current = null
-    }
-    setControlsVisible(false)
-  }, [])
-
-  const pokeControls = useCallback(() => {
-    showControls()
-  }, [showControls])
-
-  // ── Controls auto-hide (while playing) ──
-  useEffect(() => {
-    if (!playing || episodeBrowserOpen) return
-    resetHideTimer()
-    return () => {
-      if (hideTimerRef.current) {
-        clearTimeout(hideTimerRef.current)
-        hideTimerRef.current = null
-      }
-    }
-  }, [playing, episodeBrowserOpen, resetHideTimer])
 
   // Auto-open the diagnostics HUD for party hosts after prolonged buffering —
   // they need visibility into stuck streams, but we don't want to auto-show a
@@ -1049,12 +943,8 @@ export function CinemaPlayer({
 
   // ── Tap gestures (touch + mouse) on the player surface ──
   const handleSingleTap = useCallback(() => {
-    if (controlsVisibleRef.current) {
-      hideControls()
-    } else {
-      showControls()
-    }
-  }, [hideControls, showControls])
+    pokeControls()
+  }, [pokeControls])
 
   const handleSurfaceMouseClick = useCallback(() => {
     togglePlay()
@@ -1093,37 +983,19 @@ export function CinemaPlayer({
     apply()
   }, [])
 
-  // ── Adaptive quality check (runs every 5s while playing in "auto" mode) ──
-  useEffect(() => {
-    if (!playing || qualityId !== "auto" || engine !== "hls" || !payload) return
-
-    const id = setInterval(() => {
-      const video = videoRef.current
-      if (!video) return
-      const bufferAhead = video.buffered.length
-        ? video.buffered.end(video.buffered.length - 1) - video.currentTime
-        : 0
-
-      const suggestion = estimatorRef.current.suggest(
-        autoResolvedId ?? "auto",
-        bufferAhead,
-        payload.bitrate,
-      )
-
-      setEstimatedBw(suggestion.estimatedBandwidth)
-
-      if (suggestion.action !== "hold" && suggestion.targetPresetId !== autoResolvedId) {
-        playerLog.info(
-          "abr",
-          `${suggestion.action}: ${autoResolvedId ?? "auto"} → ${suggestion.targetPresetId} (${suggestion.reason})`,
-        )
-        const abrLabel = QUALITY_PRESETS.find((q) => q.id === suggestion.targetPresetId)?.label ?? suggestion.targetPresetId
-        rebuildAtPosition(() => setAutoResolvedId(suggestion.targetPresetId), abrLabel)
-      }
-    }, 5_000)
-
-    return () => clearInterval(id)
-  }, [playing, qualityId, engine, payload, autoResolvedId, rebuildAtPosition])
+  // ── Adaptive Bitrate Hook ──
+  useAdaptiveBitrate({
+    playing,
+    qualityId,
+    engine,
+    payload,
+    autoResolvedId,
+    videoRef,
+    estimatorRef,
+    rebuildAtPosition,
+    setAutoResolvedId,
+    setEstimatedBw,
+  })
 
   const handleQualityChange = useCallback(
     (id: string) => {
@@ -1487,12 +1359,7 @@ export function CinemaPlayer({
             onSeek={seekTo}
             onSkipBy={skipBy}
             onVolumeChange={updateVolume}
-            onToggleMute={() => {
-              const v = videoRef.current
-              const next = !muted
-              if (v) v.muted = next
-              setMuted(next)
-            }}
+            onToggleMute={toggleMute}
             onQualityChange={handleQualityChange}
             onAudioChange={handleAudioChange}
             onSubtitleChange={handleSubtitleChange}
