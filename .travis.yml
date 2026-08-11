@@ -2,6 +2,8 @@ language: node_js
 node_js:
   - "22.22.3"
 
+cache: npm
+
 branches:
   only:
     - main
@@ -14,5 +16,12 @@ before_install:
   - chmod 700 ~/.ssh
   - ssh-keyscan -p ${SSH_PORT:-22} -H $SSH_HOST >> ~/.ssh/known_hosts 2>/dev/null
 
+before_script:
+  - npm ci
+
 script:
+  - npm run lint
+  - npm run test:party
+  - npm run test:discovery
+  - npm run build
   - ssh -p ${SSH_PORT:-22} $SSH_USER@$SSH_HOST 'bash -s' < ./deploy.sh
