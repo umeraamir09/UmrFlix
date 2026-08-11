@@ -42,3 +42,6 @@ next-env.d.ts
 
 # local user data storage
 /data/
+
+# local only docs
+docs/FeatureSpecific
