@@ -39,7 +39,9 @@ const MIN_SAMPLES_FOR_DECISION = 8
 const DOWNGRADE_BUFFER_THRESHOLD = 5  // seconds: buffer below this = danger
 const UPGRADE_BUFFER_THRESHOLD = 25   // seconds: buffer above this = safe to upgrade
 const SAFETY_FACTOR = 0.85            // use 85% of estimated bandwidth
-const UPGRADE_COOLDOWN_MS = 20_000    // don't upgrade within 20s of a downgrade
+const UPGRADE_MARGIN = 1.35           // require 1.35x bandwidth headroom for upgrades
+const UPGRADE_STABILITY_REQUIRED = 2  // require 2 consecutive checks (10s) before upgrading
+const UPGRADE_COOLDOWN_MS = 20_000    // don't upgrade within 20s of a downgrade or upgrade
 const DOWNGRADE_COOLDOWN_MS = 10_000  // don't downgrade more than once per 10s
 
 // Ordered by bitrate ascending for easy binary searching.
@@ -55,6 +57,8 @@ export class BandwidthEstimator {
   private sampleCount = 0
   private lastDowngradeTime = 0
   private lastUpgradeTime = 0
+  private pendingUpgradeTargetPresetId: string | null = null
+  private pendingUpgradeCount = 0
   private bufferRing: number[] = new Array(10)
   private bufferRingIdx = 0
   private bufferRingCount = 0
@@ -198,6 +202,8 @@ export class BandwidthEstimator {
 
     // ── Emergency downgrade: buffer critically low ──
     if (bufferAheadSeconds < DOWNGRADE_BUFFER_THRESHOLD && this.isBufferDeclining()) {
+      this.pendingUpgradeTargetPresetId = null
+      this.pendingUpgradeCount = 0
       if (now - this.lastDowngradeTime < DOWNGRADE_COOLDOWN_MS) {
         return { action: "hold", targetPresetId: currentPresetId, reason: "downgrade cooldown", estimatedBandwidth: bw }
       }
@@ -217,6 +223,8 @@ export class BandwidthEstimator {
     // ── Bandwidth-based downgrade ──
     if (bestPreset.id !== currentPresetId &&
         (bestPreset.maxStreamingBitrate ?? 0) < currentBitrate) {
+      this.pendingUpgradeTargetPresetId = null
+      this.pendingUpgradeCount = 0
       if (now - this.lastDowngradeTime < DOWNGRADE_COOLDOWN_MS) {
         return { action: "hold", targetPresetId: currentPresetId, reason: "downgrade cooldown", estimatedBandwidth: bw }
       }
@@ -229,20 +237,45 @@ export class BandwidthEstimator {
       }
     }
 
-    // ── Upgrade: only when buffer is healthy and cooldown expired ──
+    // ── Upgrade: require 1.35x margin, healthy buffer, cooldowns, and 2 consecutive checks ──
+    const targetBitrate = bestPreset.maxStreamingBitrate ?? 0
+    const satisfiesUpgradeMargin = bw >= targetBitrate * UPGRADE_MARGIN
     if (bestPreset.id !== currentPresetId &&
-        (bestPreset.maxStreamingBitrate ?? 0) > currentBitrate &&
+        targetBitrate > currentBitrate &&
+        satisfiesUpgradeMargin &&
         bufferAheadSeconds > UPGRADE_BUFFER_THRESHOLD &&
         now - this.lastDowngradeTime > UPGRADE_COOLDOWN_MS &&
         now - this.lastUpgradeTime > UPGRADE_COOLDOWN_MS) {
-      this.lastUpgradeTime = now
-      return {
-        action: "upgrade",
-        targetPresetId: bestPreset.id,
-        reason: `bandwidth ${(bw / 1_000_000).toFixed(1)} Mbps supports higher quality, buffer healthy (${bufferAheadSeconds.toFixed(0)}s)`,
-        estimatedBandwidth: bw,
+      if (this.pendingUpgradeTargetPresetId === bestPreset.id) {
+        this.pendingUpgradeCount++
+      } else {
+        this.pendingUpgradeTargetPresetId = bestPreset.id
+        this.pendingUpgradeCount = 1
+      }
+
+      if (this.pendingUpgradeCount >= UPGRADE_STABILITY_REQUIRED) {
+        this.lastUpgradeTime = now
+        this.pendingUpgradeTargetPresetId = null
+        this.pendingUpgradeCount = 0
+        return {
+          action: "upgrade",
+          targetPresetId: bestPreset.id,
+          reason: `bandwidth ${(bw / 1_000_000).toFixed(1)} Mbps >= 1.35x target, buffer healthy (${bufferAheadSeconds.toFixed(0)}s), sustained over ${UPGRADE_STABILITY_REQUIRED} checks`,
+          estimatedBandwidth: bw,
+        }
+      } else {
+        return {
+          action: "hold",
+          targetPresetId: currentPresetId,
+          reason: `upgrade to ${bestPreset.id} pending stability (${this.pendingUpgradeCount}/${UPGRADE_STABILITY_REQUIRED})`,
+          estimatedBandwidth: bw,
+        }
       }
     }
+
+    // Upgrade condition not met or broken — reset stability counter
+    this.pendingUpgradeTargetPresetId = null
+    this.pendingUpgradeCount = 0
 
     return { action: "hold", targetPresetId: currentPresetId, reason: "stable", estimatedBandwidth: bw }
   }
@@ -256,6 +289,8 @@ export class BandwidthEstimator {
     this.sampleCount = 0
     this.lastDowngradeTime = 0
     this.lastUpgradeTime = 0
+    this.pendingUpgradeTargetPresetId = null
+    this.pendingUpgradeCount = 0
     this.bufferRing = new Array(10)
     this.bufferRingIdx = 0
     this.bufferRingCount = 0
