@@ -77,7 +77,11 @@ const globalForSessions = globalThis as unknown as {
 }
 
 const cache = globalForSessions.sessionCache ?? new LRUSessionMap()
-if (process.env.NODE_ENV !== "production") globalForSessions.sessionCache = cache
+// Always pin to globalThis so the LRU survives across requests in the same
+// Node process (production or dev). Without this, every module evaluation
+// creates a fresh empty map — sessions are never found in the hot path,
+// falling through to Convex on every /api/auth/me call.
+globalForSessions.sessionCache = cache
 
 function getConvexClient(): ConvexHttpClient | null {
   const url =
@@ -111,8 +115,11 @@ export async function createSession(session: UserSession): Promise<string> {
 
   const convex = getConvexClient()
   if (convex) {
-    // Write-through to Convex asynchronously (or non-blocking)
-    convex
+    // Await the write-through so the SID is durable in Convex before we
+    // return. A fire-and-forget write races with the browser's immediate
+    // /api/auth/me check on the next page load — if Convex hasn't committed
+    // yet, the session lookup returns invalid and kicks the user back to /login.
+    await convex
       .mutation(storeSessionRef, {
         sid,
         userId: session.userId,
