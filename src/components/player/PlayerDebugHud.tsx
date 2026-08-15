@@ -97,6 +97,16 @@ export function PlayerDebugHud({
 
   const bufferAhead = Math.max(0, stats.bufferedEnd - stats.time)
 
+  // Close on Escape (5.6) — the HUD is toggled by the "d" key, so Escape must
+  // close it too; window-level listener because focus often stays elsewhere.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose()
+    }
+    window.addEventListener("keydown", onKey)
+    return () => window.removeEventListener("keydown", onKey)
+  }, [onClose])
+
   const copyAll = async () => {
     const text = [
       `engine=${engine} quality=${qualityId}`,
@@ -121,7 +131,11 @@ export function PlayerDebugHud({
   }
 
   return (
-    <div className="absolute left-2 top-2 z-[60] w-[min(92%,520px)] rounded-lg border border-white/15 bg-black/85 font-mono text-[11px] leading-relaxed text-green-300 shadow-2xl backdrop-blur-md">
+    <div
+      role="dialog"
+      aria-label="Playback diagnostics"
+      className="absolute left-2 top-2 z-[60] w-[min(92%,520px)] rounded-lg border border-white/15 bg-black/85 font-mono text-[11px] leading-relaxed text-green-300 shadow-2xl backdrop-blur-md"
+    >
       <div className="flex items-center justify-between border-b border-white/10 px-3 py-1.5">
         <span className="font-bold tracking-wider text-white/90">PLAYER DEBUG</span>
         <div className="flex items-center gap-1">

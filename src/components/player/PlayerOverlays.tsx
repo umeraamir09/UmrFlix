@@ -1,8 +1,9 @@
 "use client"
 
-import { useState } from "react"
+import { useRef, useState } from "react"
 import Image from "next/image"
 import { Loader2, Play, TriangleAlert, X } from "lucide-react"
+import { useFocusTrap } from "@/hooks/useFocusTrap"
 
 export function formatTimecode(totalSeconds: number): string {
   const s = Math.max(0, Math.floor(totalSeconds))
@@ -100,8 +101,20 @@ export function NextEpisodeOverlay({
   onPlayNow: () => void
   onCancel: () => void
 }) {
+  const dialogRef = useRef<HTMLDivElement>(null)
+  // 5.5 — modal focus trap; Escape cancels the auto-play countdown.
+  // Focus is NOT restored on unmount: this overlay appears on its own (no
+  // trigger button) and the player remounts when the next episode starts.
+  useFocusTrap({ containerRef: dialogRef, onClose: onCancel, restoreFocus: false })
+
   return (
-    <div className="absolute inset-0 z-40 flex items-center justify-center bg-gradient-to-t from-black/95 via-black/60 to-black/40">
+    <div
+      ref={dialogRef}
+      role="dialog"
+      aria-modal="true"
+      aria-label="Up next"
+      className="absolute inset-0 z-40 flex items-center justify-center bg-gradient-to-t from-black/95 via-black/60 to-black/40"
+    >
       <div className="flex flex-col items-center gap-4 px-4 text-center">
         <span className="text-xs font-bold uppercase tracking-[0.3em] text-accent">
           Up Next
@@ -190,7 +203,10 @@ export function PlayerLoading({ message = "Loading stream…" }: { message?: str
     // pointer-events-none: this sits above the tap/gesture layer (z-10) and
     // would otherwise swallow every tap while loading/buffering, making it
     // impossible to bring up the controls.
-    <div className="pointer-events-none absolute inset-0 z-20 flex flex-col items-center justify-center gap-3 bg-black/60">
+    <div
+      role="status"
+      className="pointer-events-none absolute inset-0 z-20 flex flex-col items-center justify-center gap-3 bg-black/60"
+    >
       <Loader2 className="size-20 animate-spin text-white" />
       <p className="text-sm font-medium text-gray-300">{message}</p>
     </div>
@@ -205,7 +221,10 @@ export function PlayerError({
   onRetry: () => void
 }) {
   return (
-    <div className="absolute inset-0 z-30 flex flex-col items-center justify-center gap-4 bg-background p-6">
+    <div
+      role="alert"
+      className="absolute inset-0 z-30 flex flex-col items-center justify-center gap-4 bg-background p-6"
+    >
       <TriangleAlert className="size-10 text-accent" />
       <p className="max-w-md text-center text-sm text-gray-300">{message}</p>
       <button

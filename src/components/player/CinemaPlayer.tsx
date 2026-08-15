@@ -217,6 +217,65 @@ export function CinemaPlayer({
     episodeBrowserOpen,
   })
 
+  // ── A11y: visually-hidden live region + announcement helper (issue 5.2) ──
+  const liveRegionRef = useRef<HTMLDivElement>(null)
+  const announce = useCallback((message: string) => {
+    if (liveRegionRef.current) liveRegionRef.current.textContent = message
+  }, [])
+
+  // 5.3 — when the controls auto-hide while focus is on a disappearing button,
+  // redirect focus to the player surface (Netflix-style) instead of dropping
+  // it to <body> and breaking keyboard navigation.
+  useEffect(() => {
+    if (controlsVisible || !playing || episodeBrowserOpen) return
+    const el = containerRef.current
+    const active = document.activeElement
+    if (el && active instanceof Node && el.contains(active)) {
+      el.focus({ preventScroll: true })
+    }
+  }, [controlsVisible, playing, episodeBrowserOpen])
+
+  // 5.2 — announce playback-state transitions (playing/paused/buffering/error)
+  // on actual changes only, so the live region never re-announces steady state.
+  const prevA11yStateRef = useRef({ playing: false, buffering: false, error: null as string | null })
+  useEffect(() => {
+    const prev = prevA11yStateRef.current
+    prevA11yStateRef.current = { playing, buffering, error: loadError }
+    if (loadError !== prev.error) {
+      if (loadError) announce(`Playback error: ${loadError}`)
+      return
+    }
+    if (buffering && !prev.buffering) {
+      announce("Buffering")
+      return
+    }
+    if (playing && !prev.playing) {
+      announce("Playing")
+      return
+    }
+    if (prev.playing && !playing && !buffering && endpointReady) {
+      announce("Paused")
+    }
+  }, [playing, buffering, loadError, endpointReady, announce])
+
+  // 5.2 — announce volume/mute changes with a short trailing debounce so a
+  // slider drag collapses into a single announcement.
+  const volumeAnnounceInitRef = useRef(false)
+  const volumeAnnounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  useEffect(() => {
+    if (!volumeAnnounceInitRef.current) {
+      volumeAnnounceInitRef.current = true
+      return
+    }
+    if (volumeAnnounceTimerRef.current) clearTimeout(volumeAnnounceTimerRef.current)
+    volumeAnnounceTimerRef.current = setTimeout(() => {
+      announce(muted ? "Muted" : `Volume ${Math.round(volume * 100)}%`)
+    }, 300)
+    return () => {
+      if (volumeAnnounceTimerRef.current) clearTimeout(volumeAnnounceTimerRef.current)
+    }
+  }, [volume, muted, announce])
+
   // ── Watched Tracking Hook ──
   useWatchedTracking({
     payload,
@@ -1032,8 +1091,9 @@ export function CinemaPlayer({
       }
       const qLabel = QUALITY_PRESETS.find((q) => q.id === id)?.label ?? id
       rebuildAtPosition(() => setQualityId(id), qLabel)
+      announce(`Quality changed to ${qLabel}`)
     },
-    [rebuildAtPosition, playerSettings],
+    [rebuildAtPosition, playerSettings, announce],
   )
   const handleAudioChange = useCallback(
     (index: number) => {
@@ -1043,8 +1103,9 @@ export function CinemaPlayer({
         payload?.audio.find((a) => a.index === index)?.language ||
         `Audio Track ${index + 1}`
       rebuildAtPosition(() => setAudioIndex(index), audioLabel)
+      announce(`Audio track changed to ${audioLabel}`)
     },
-    [rebuildAtPosition, payload],
+    [rebuildAtPosition, payload, announce],
   )
   const handleSubtitleChange = useCallback(
     (index: number | null) => {
@@ -1174,6 +1235,8 @@ export function CinemaPlayer({
   return (
     <div
       ref={containerRef}
+      role="application"
+      aria-label={`Video player: ${title}`}
       data-force-landscape={
         isTouchDevice &&
         (orientationStatus === "unsupported" || orientationStatus === "denied")
@@ -1193,10 +1256,14 @@ export function CinemaPlayer({
         {...gestureHandlers}
       />
 
+      {/* A11y live region (issue 5.2) — announces playback state transitions */}
+      <div ref={liveRegionRef} aria-live="polite" aria-atomic="true" className="sr-only" />
+
       <video
         ref={videoRef}
         poster={poster}
         playsInline
+        aria-label={title}
         className="size-full object-contain pointer-events-none"
         onPlay={() => {
           setPlaying(true)

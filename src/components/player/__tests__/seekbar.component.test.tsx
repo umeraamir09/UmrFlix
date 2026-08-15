@@ -115,6 +115,94 @@ describe("SeekBar scrubbing (issue 4.3 — per-pixel seek spam)", () => {
   })
 })
 
+describe("SeekBar keyboard accessibility (issue 5.1 — slider semantics)", () => {
+  beforeEach(() => {
+    installPointerEvents()
+    stubBarGeometry(200, 20)
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+    vi.unstubAllGlobals()
+    cleanup()
+  })
+
+  function renderBar(onSeek = vi.fn()) {
+    const utils = render(
+      <SeekBar
+        currentTime={0}
+        duration={100}
+        buffered={50}
+        chapters={[]}
+        itemId="item-1"
+        trickplay={null}
+        onSeek={onSeek}
+      />,
+    )
+    const bar = utils.container.firstChild as HTMLElement
+    return { ...utils, bar, onSeek }
+  }
+
+  it("exposes slider ARIA attributes", () => {
+    const { bar } = renderBar()
+    expect(bar.getAttribute("role")).toBe("slider")
+    expect(bar.getAttribute("aria-label")).toBe("Seek bar")
+    expect(bar.getAttribute("aria-valuemin")).toBe("0")
+    expect(bar.getAttribute("aria-valuemax")).toBe("100")
+    expect(bar.getAttribute("aria-valuenow")).toBe("0")
+    expect(bar.getAttribute("aria-valuetext")).toBe("0:00")
+    expect(bar.tabIndex).toBe(0)
+  })
+
+  it("arrow keys seek ±10s and prevent the player surface shortcuts", () => {
+    const { bar, onSeek } = renderBar()
+    expect(fireEvent.keyDown(bar, { key: "ArrowRight" })).toBe(false) // defaultPrevented
+    expect(onSeek).toHaveBeenLastCalledWith(10)
+    fireEvent.keyDown(bar, { key: "ArrowLeft" })
+    expect(onSeek).toHaveBeenLastCalledWith(0)
+  })
+
+  it("Home/End jump to the start and end of the media", () => {
+    const { bar, onSeek } = renderBar()
+    fireEvent.keyDown(bar, { key: "End" })
+    expect(onSeek).toHaveBeenLastCalledWith(100)
+    fireEvent.keyDown(bar, { key: "Home" })
+    expect(onSeek).toHaveBeenLastCalledWith(0)
+  })
+
+  it("clamps keyboard seeks to the media bounds", () => {
+    const onSeekEnd = vi.fn()
+    const nearEnd = render(
+      <SeekBar
+        currentTime={95}
+        duration={100}
+        buffered={50}
+        chapters={[]}
+        itemId="item-1"
+        trickplay={null}
+        onSeek={onSeekEnd}
+      />,
+    )
+    fireEvent.keyDown(nearEnd.container.firstChild as HTMLElement, { key: "ArrowRight" })
+    expect(onSeekEnd).toHaveBeenLastCalledWith(100) // 95+10 clamped to duration
+
+    const onSeekStart = vi.fn()
+    const nearStart = render(
+      <SeekBar
+        currentTime={2}
+        duration={100}
+        buffered={50}
+        chapters={[]}
+        itemId="item-1"
+        trickplay={null}
+        onSeek={onSeekStart}
+      />,
+    )
+    fireEvent.keyDown(nearStart.container.firstChild as HTMLElement, { key: "ArrowLeft" })
+    expect(onSeekStart).toHaveBeenLastCalledWith(0) // 2-10 clamped to 0
+  })
+})
+
 describe("SeekBar trickplay preloading (issue 4.6)", () => {
   beforeEach(() => {
     installPointerEvents()

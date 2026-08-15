@@ -117,6 +117,45 @@ export function SeekBar({
   const playedPct = duration > 0 ? (shownTime / duration) * 100 : 0
   const bufferedPct = duration > 0 ? Math.min(100, (buffered / duration) * 100) : 0
 
+  // 5.1 — role="slider" needs keyboard support: arrows nudge by ±10s (±5s with
+  // Shift), Up/Down step 10% of the duration, Home/End jump to the edges.
+  // Keys stopPropagation so the player surface's shortcuts never double-handle.
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (duration <= 0) return
+    let next: number | null = null
+    switch (e.key) {
+      case "ArrowRight":
+        next = shownTime + (e.shiftKey ? 5 : 10)
+        break
+      case "ArrowLeft":
+        next = shownTime - (e.shiftKey ? 5 : 10)
+        break
+      case "ArrowUp":
+        next = shownTime + duration * 0.1
+        break
+      case "ArrowDown":
+        next = shownTime - duration * 0.1
+        break
+      case "Home":
+        next = 0
+        break
+      case "End":
+        next = duration
+        break
+      case "PageUp":
+        next = shownTime + Math.max(30, duration * 0.1)
+        break
+      case "PageDown":
+        next = shownTime - Math.max(30, duration * 0.1)
+        break
+      default:
+        return
+    }
+    e.preventDefault()
+    e.stopPropagation()
+    onSeek(Math.min(Math.max(0, next), duration))
+  }
+
   // Chapter images available as fallback when trickplay is absent?
   const hasChapterImages = !trickplay && chapters.some((c) => c.imageTag)
 
@@ -135,6 +174,15 @@ export function SeekBar({
   return (
     <div
       ref={barRef}
+      role="slider"
+      aria-label="Seek bar"
+      aria-valuemin={0}
+      aria-valuemax={Math.max(0, duration)}
+      aria-valuenow={shownTime}
+      aria-valuetext={formatTimecode(shownTime)}
+      aria-disabled={duration <= 0}
+      tabIndex={0}
+      onKeyDown={handleKeyDown}
       className="group/seek relative flex h-11 sm:h-6 cursor-pointer items-center touch-none select-none"
       onPointerEnter={preloadPreviews}
       onPointerDown={(e) => {
@@ -388,6 +436,7 @@ export function PlayerControls({
           onSubtitleChange={onSubtitleChange}
           subStyle={subStyle}
           onSubStyleChange={onSubStyleChange}
+          onClose={() => setAudioSubsOpen(false)}
         />
       )}
 
@@ -399,12 +448,13 @@ export function PlayerControls({
           onQualityChange={onQualityChange}
           playbackRate={playbackRate}
           onPlaybackRateChange={onPlaybackRateChange}
+          onClose={() => setSpeedOpen(false)}
         />
       )}
 
       <div
         className={`absolute inset-0 z-40 flex flex-col justify-between pointer-events-none transition-opacity duration-300 ${
-          visible || isAnyMenuOpen ? "opacity-100" : "opacity-0"
+          visible || isAnyMenuOpen ? "visible opacity-100" : "invisible opacity-0"
         }`}
       >
       {/* Background gradients */}
@@ -529,6 +579,7 @@ export function PlayerControls({
                   onChange={(e) => onVolumeChange(Number(e.target.value) / 100)}
                   className="w-0 opacity-0 transition-all duration-200 accent-accent h-2 group-hover/vol:ml-2.5 group-hover/vol:w-20 sm:group-hover/vol:w-24 group-hover/vol:opacity-100"
                   aria-label="Volume"
+                  aria-valuetext={`${Math.round(volume * 100)} percent`}
                 />
               )}
             </div>
@@ -579,6 +630,8 @@ export function PlayerControls({
                 }`}
                 aria-label="Browse episodes"
                 title="Episodes"
+                aria-haspopup="dialog"
+                aria-expanded={episodeBrowserOpen}
               >
                 <Image
                   src="/icons/ep-browser.svg"
@@ -601,6 +654,8 @@ export function PlayerControls({
                   audioSubsOpen ? "text-accent" : ""
                 }`}
                 aria-label="Audio and Subtitles"
+                aria-haspopup="menu"
+                aria-expanded={audioSubsOpen}
               >
                 <IconSubtitles className="size-5 sm:size-7" />
               </button>
@@ -617,6 +672,8 @@ export function PlayerControls({
                   speedOpen ? "text-accent" : ""
                 }`}
                 aria-label="Playback Speed and Quality"
+                aria-haspopup="menu"
+                aria-expanded={speedOpen}
               >
                 <IconSpeed className="size-5 sm:size-7" />
               </button>

@@ -118,6 +118,7 @@ export function SubtitleOverlay({
       {/* Standard bottom dialogue stack */}
       {bottomCues.length > 0 && (
         <div
+          aria-live="polite"
           className={`pointer-events-none absolute inset-x-0 flex flex-col items-center gap-1.5 px-8 text-center transition-[bottom] duration-300 ${
             controlsVisible ? (touchLayout ? "bottom-[128px]" : "bottom-[14cqh]") : "bottom-[5cqh]"
           }`}
