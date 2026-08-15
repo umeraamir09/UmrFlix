@@ -37,6 +37,9 @@ import { useWatchedTracking } from "./hooks/useWatchedTracking"
 import { usePlayerControls } from "./hooks/usePlayerControls"
 import { useSubtitles } from "./hooks/useSubtitles"
 import { useAdaptiveBitrate } from "./hooks/useAdaptiveBitrate"
+import { useMediaSession } from "./hooks/useMediaSession"
+import { useFrozenPlaybackDetector } from "./hooks/useFrozenPlaybackDetector"
+import { useNetworkStatus } from "./hooks/useNetworkStatus"
 
 const TICKS_PER_SECOND = 10_000_000
 const NEXT_EPISODE_COUNTDOWN = 10
@@ -1035,11 +1038,51 @@ export function CinemaPlayer({
     pokeControls()
   }, [togglePlay, pokeControls])
 
+  // 6.5 — Long-press 2x speed gesture handling on touch devices
+  const [is2xHolding, setIs2xHolding] = useState(false)
+  const speedBeforeHoldRef = useRef<number>(1)
+
+  const handle2xSpeedChange = useCallback((holding: boolean) => {
+    const video = videoRef.current
+    if (!video) return
+    if (holding) {
+      speedBeforeHoldRef.current = video.playbackRate || 1
+      video.playbackRate = 2.0
+      setIs2xHolding(true)
+    } else {
+      video.playbackRate = speedBeforeHoldRef.current || displayPlaybackRate || 1
+      setIs2xHolding(false)
+    }
+  }, [displayPlaybackRate])
+
   const { gestureHandlers, ripple: skipRipple } = useTouchGestures({
     enabled: !episodeBrowserOpen,
     onSingleTap: handleSingleTap,
     onSkip: skipBy,
     onMouseClick: handleSurfaceMouseClick,
+    on2xSpeedChange: handle2xSpeedChange,
+  })
+
+  // 6.3 — Network status and auto-recovery on reconnection
+  const { isOffline } = useNetworkStatus({
+    onOnline: () => {
+      playerLog.info("network", "connection restored — resuming stream load")
+      if (engine === "hls" && hlsRef.current) {
+        hlsRef.current.startLoad()
+      }
+    },
+  })
+
+  // 6.2 — Frozen playback detection and decoder stall recovery
+  useFrozenPlaybackDetector({
+    videoRef,
+    playing,
+    buffering,
+    engine,
+    hlsRef,
+    onFrozenDetected: () => {
+      setLoadError("Playback stalled due to decoder freeze. Please retry.")
+    },
   })
 
   // Flush a pending scrub seek when leaving the page: fire-and-forget the
@@ -1163,6 +1206,21 @@ export function CinemaPlayer({
     setNextPrompt(null)
     onNextEpisode?.()
   }, [onNextEpisode])
+
+  // 6.1 — Media Session API: lock screen, notification shade, and media keys
+  useMediaSession({
+    title,
+    subtitle,
+    poster: poster || payload?.backdropUrl,
+    playing,
+    currentTime,
+    duration: duration || (payload ? payload.runtimeTicks / TICKS_PER_SECOND : 0),
+    playbackRate: displayPlaybackRate,
+    onTogglePlay: togglePlay,
+    onSeekTo: seekTo,
+    onSkipBy: skipBy,
+    onNextTrack: nextEpisode && onNextEpisode ? beginNextEpisode : undefined,
+  })
 
   // ── Active skip marker ──
   const activeMarker =
@@ -1408,6 +1466,7 @@ export function CinemaPlayer({
             buffered={buffered}
             qualityId={qualityId}
             autoResolvedLabel={autoResolvedLabel}
+            sourceHeight={payload.height}
             audioTracks={payload.audio}
             audioIndex={audioIndex}
             subtitleTracks={payload.subtitles}
@@ -1453,6 +1512,7 @@ export function CinemaPlayer({
             muted={muted}
             qualityId={qualityId}
             autoResolvedLabel={autoResolvedLabel}
+            sourceHeight={payload.height}
             audioTracks={payload.audio}
             audioIndex={audioIndex}
             subtitleTracks={payload.subtitles}
@@ -1487,6 +1547,22 @@ export function CinemaPlayer({
             onReport={handleReport}
           />
         )
+      )}
+
+      {/* 6.3 — Offline indicator badge */}
+      {isOffline && (
+        <div className="pointer-events-none absolute top-4 left-1/2 z-50 -translate-x-1/2 flex items-center gap-2 rounded-full bg-red-600/90 px-4 py-1.5 text-xs font-semibold text-white shadow-lg backdrop-blur animate-in fade-in duration-200">
+          <span className="size-2 rounded-full bg-white animate-pulse" />
+          Network connection lost. Reconnecting…
+        </div>
+      )}
+
+      {/* 6.5 — 2x speed hold indicator badge */}
+      {is2xHolding && (
+        <div className="pointer-events-none absolute top-8 left-1/2 z-50 -translate-x-1/2 flex items-center gap-1.5 rounded-full bg-black/85 border border-white/20 px-4 py-1.5 text-sm font-bold text-white shadow-2xl backdrop-blur animate-in fade-in zoom-in-95 duration-100">
+          <span>2× Speed</span>
+          <span className="text-accent font-mono tracking-widest">&gt;&gt;</span>
+        </div>
       )}
 
       {/* Report Toast Notification */}

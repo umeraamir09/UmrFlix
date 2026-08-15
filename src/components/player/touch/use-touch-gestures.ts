@@ -6,9 +6,11 @@ export type SkipSide = "left" | "right"
 export type SkipRipple = { side: SkipSide; count: number } | null
 
 /** Window in which a second tap on the same side is treated as a double-tap skip. */
-const DOUBLE_TAP_MS = 300
+const DOUBLE_TAP_MS = 250
+/** Press and hold duration before 2x playback speed engages. */
+const LONG_PRESS_2X_MS = 450
 /** Movement beyond this between pointerdown/up cancels the tap (it was a drag). */
-const TAP_SLOP_PX = 12
+const TAP_SLOP_PX = 14
 /** Taps within the leftmost/rightmost 35% of the layer are skip zones. */
 const SIDE_ZONE = 0.35
 const SKIP_STEP_SEC = 10
@@ -24,24 +26,27 @@ const RIPPLE_LIFETIME_MS = 700
  *  - single tap (deferred by DOUBLE_TAP_MS) → toggle controls
  *  - double tap on the outer 35% zones      → ±10s skip; each further
  *    double-tap pair within the window accumulates the ripple counter
+ *  - long-press (>450ms) on touch           → 2x playback speed hold (Issue 6.5)
  *  - touch drags (slop) are ignored so scroll/seek gestures never fire taps
  *  - mouse primary click  → instant play/pause toggle (no double-tap delay)
- *  - while locked, taps merely ping `onLockedTap` so the UI can flash the
- *    lock affordance — no playback or visibility state changes
  */
 export function useTouchGestures({
   enabled,
   onSingleTap,
   onSkip,
   onMouseClick,
+  on2xSpeedChange,
 }: {
   /** Master switch — disable while a modal surface (episode browser) is up. */
   enabled: boolean
   onSingleTap: () => void
   onSkip: (deltaSec: number) => void
   onMouseClick: () => void
+  /** 6.5 — Called when 2x speed is engaged (held down) and disengaged (released). */
+  on2xSpeedChange?: (active: boolean) => void
 }) {
   const [ripple, setRipple] = useState<SkipRipple>(null)
+  const [is2xActive, setIs2xActive] = useState(false)
 
   const lastTapRef = useRef<{ time: number; side: SkipSide | "center" }>({
     time: 0,
@@ -50,12 +55,14 @@ export function useTouchGestures({
   const downPosRef = useRef<{ x: number; y: number } | null>(null)
   const singleTapTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const rippleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const is2xHoldingRef = useRef(false)
 
   // Latest-callback refs keep the gesture handlers referentially stable.
-  const callbacksRef = useRef({ onSingleTap, onSkip, onMouseClick })
+  const callbacksRef = useRef({ onSingleTap, onSkip, onMouseClick, on2xSpeedChange })
   useEffect(() => {
-    callbacksRef.current = { onSingleTap, onSkip, onMouseClick }
-  }, [onSingleTap, onSkip, onMouseClick])
+    callbacksRef.current = { onSingleTap, onSkip, onMouseClick, on2xSpeedChange }
+  }, [onSingleTap, onSkip, onMouseClick, on2xSpeedChange])
 
   const clearSingleTapTimer = () => {
     if (singleTapTimerRef.current !== null) {
@@ -64,21 +71,66 @@ export function useTouchGestures({
     }
   }
 
-  // Unmount cleanup: never let a deferred toggle or a stale ripple outlive the player.
+  const clearLongPressTimer = () => {
+    if (longPressTimerRef.current !== null) {
+      clearTimeout(longPressTimerRef.current)
+      longPressTimerRef.current = null
+    }
+  }
+
+  // Unmount cleanup: never let deferred timers or ripples outlive the player.
   useEffect(() => {
     return () => {
       clearSingleTapTimer()
+      clearLongPressTimer()
       if (rippleTimerRef.current !== null) clearTimeout(rippleTimerRef.current)
+      if (is2xHoldingRef.current) {
+        is2xHoldingRef.current = false
+        callbacksRef.current.on2xSpeedChange?.(false)
+      }
     }
   }, [])
 
   const onPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
     if (!enabled || e.pointerType !== "touch") return
     downPosRef.current = { x: e.clientX, y: e.clientY }
+
+    // 6.5 — Start long-press detection for 2x speed
+    clearLongPressTimer()
+    longPressTimerRef.current = setTimeout(() => {
+      longPressTimerRef.current = null
+      is2xHoldingRef.current = true
+      setIs2xActive(true)
+      clearSingleTapTimer()
+      lastTapRef.current = { time: 0, side: "center" }
+      callbacksRef.current.on2xSpeedChange?.(true)
+    }, LONG_PRESS_2X_MS)
+  }
+
+  const onPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!enabled || e.pointerType !== "touch") return
+    const down = downPosRef.current
+    if (!down) return
+
+    // If pointer moves past slop, cancel long-press
+    if (Math.hypot(e.clientX - down.x, e.clientY - down.y) > TAP_SLOP_PX) {
+      clearLongPressTimer()
+    }
   }
 
   const onPointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
     if (!enabled) return
+
+    clearLongPressTimer()
+
+    // 6.5 — Release 2x speed if it was holding
+    if (is2xHoldingRef.current) {
+      is2xHoldingRef.current = false
+      setIs2xActive(false)
+      downPosRef.current = null
+      callbacksRef.current.on2xSpeedChange?.(false)
+      return
+    }
 
     // Mouse path: instant primary-click action, no double-tap window.
     if (e.pointerType === "mouse") {
@@ -122,12 +174,19 @@ export function useTouchGestures({
   }
 
   const onPointerCancel = () => {
+    clearLongPressTimer()
+    if (is2xHoldingRef.current) {
+      is2xHoldingRef.current = false
+      setIs2xActive(false)
+      callbacksRef.current.on2xSpeedChange?.(false)
+    }
     downPosRef.current = null
     clearSingleTapTimer()
   }
 
   return {
-    gestureHandlers: { onPointerDown, onPointerUp, onPointerCancel },
+    gestureHandlers: { onPointerDown, onPointerMove, onPointerUp, onPointerCancel },
     ripple,
+    is2xActive,
   }
 }

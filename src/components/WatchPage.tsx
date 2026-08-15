@@ -197,8 +197,12 @@ export function WatchPage() {
   }, [payload, episodes, resolvedId])
 
   const goToNextEpisode = useCallback(() => {
-    if (nextEpisode) router.replace(`/watch?id=${nextEpisode.id}`)
-  }, [router, nextEpisode])
+    if (!nextEpisode) return
+    setResolvedId(nextEpisode.id)
+    if (typeof window !== "undefined" && window.history?.replaceState) {
+      window.history.replaceState(null, "", `/watch?id=${nextEpisode.id}`)
+    }
+  }, [nextEpisode])
 
   const handlePartyNextEpisode = useCallback(async () => {
     // Host advances the entire party to the next episode
@@ -212,6 +216,9 @@ export function WatchPage() {
       })
       // Update locally — SSE broadcast will handle guests via onPartyItemChange
       setResolvedId(nextEpisode.id)
+      if (typeof window !== "undefined" && window.history?.replaceState) {
+        window.history.replaceState(null, "", `/watch?party=${partyId}`)
+      }
     } catch (err) {
       console.error("[WatchPage] Party next episode error:", err)
     }
@@ -228,14 +235,20 @@ export function WatchPage() {
             body: JSON.stringify({ itemId: episodeId }),
           })
           setResolvedId(episodeId)
+          if (typeof window !== "undefined" && window.history?.replaceState) {
+            window.history.replaceState(null, "", `/watch?party=${partyInfo.partyId}`)
+          }
         } catch (err) {
           console.error("[WatchPage] Party episode select error:", err)
         }
         return
       }
-      router.replace(`/watch?id=${episodeId}`)
+      setResolvedId(episodeId)
+      if (typeof window !== "undefined" && window.history?.replaceState) {
+        window.history.replaceState(null, "", `/watch?id=${episodeId}`)
+      }
     },
-    [router, partyInfo],
+    [partyInfo],
   )
 
   const handleBack = useCallback(() => {
@@ -302,7 +315,6 @@ export function WatchPage() {
   const playerSubtitle = series?.name ? payload?.title : undefined
   return (
     <CinemaPlayer
-      key={resolvedId}
       fill
       itemId={resolvedId}
       title={playerTitle}

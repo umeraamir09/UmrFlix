@@ -170,6 +170,22 @@ export function SelectionList({
   )
 }
 
+// ── Audio Track Label Helper (Issue 6.8) ──
+export function formatAudioTrackLabel(
+  track: AudioTrack & { displayTitle?: string },
+  index?: number,
+): string {
+  if (track.title && track.title.trim().length > 0) return track.title.trim()
+  if (track.displayTitle && track.displayTitle.trim().length > 0) {
+    return track.displayTitle.trim()
+  }
+  if (track.language && track.language.trim().length > 0) {
+    const lang = track.language.trim()
+    return track.channels ? `${lang} (${track.channels}ch)` : lang
+  }
+  return index != null ? `Audio Track ${index + 1}` : `Track ${track.index}`
+}
+
 // ── Audio & Subtitles Popover Menu ──
 
 type AudioSubSection = "root" | "audio" | "subtitles" | "substyle"
@@ -214,7 +230,12 @@ export function AudioSubtitlesMenu({
     target?.focus()
   }, [section])
 
-  const audioLabel = audioTracks.find((a) => a.index === audioIndex)?.title ?? "Default"
+  const selectedTrack = audioTracks.find((a) => a.index === audioIndex)
+  const audioLabel = selectedTrack
+    ? formatAudioTrackLabel(selectedTrack, audioTracks.indexOf(selectedTrack))
+    : audioTracks.length > 0
+      ? formatAudioTrackLabel(audioTracks[0], 0)
+      : "Default"
   const subLabel =
     subtitleIndex === null
       ? "Off"
@@ -266,9 +287,9 @@ export function AudioSubtitlesMenu({
             <SelectionList
               id="audio"
               label="Audio track"
-              options={audioTracks.map((track) => ({
+              options={audioTracks.map((track, idx) => ({
                 key: String(track.index),
-                label: track.title,
+                label: formatAudioTrackLabel(track, idx),
                 value: track.channels ? `${track.channels}.ch` : undefined,
                 selected: audioIndex === track.index,
               }))}
@@ -416,9 +437,19 @@ const SPEED_OPTIONS = [
   { label: "2.0x", value: 2.0 },
 ]
 
+export function getAvailableQualityPresets(sourceHeight?: number) {
+  if (!sourceHeight || sourceHeight <= 0) return QUALITY_PRESETS
+  return QUALITY_PRESETS.filter((preset) => {
+    if (preset.id === "auto" || !preset.maxHeight) return true
+    // 6.4 — Avoid showing upscaling options above the media source resolution
+    return preset.maxHeight <= sourceHeight + 40
+  })
+}
+
 export function SpeedQualityMenu({
   qualityId,
   autoResolvedLabel,
+  sourceHeight,
   onQualityChange,
   playbackRate,
   onPlaybackRateChange,
@@ -427,6 +458,7 @@ export function SpeedQualityMenu({
 }: {
   qualityId: string
   autoResolvedLabel?: string
+  sourceHeight?: number
   onQualityChange: (id: string) => void
   playbackRate: number
   onPlaybackRateChange: (rate: number) => void
@@ -450,7 +482,12 @@ export function SpeedQualityMenu({
     target?.focus()
   }, [section])
 
-  const baseLabel = QUALITY_PRESETS.find((q) => q.id === qualityId)?.label ?? "Auto"
+  const availableQualities = useMemo(
+    () => getAvailableQualityPresets(sourceHeight),
+    [sourceHeight],
+  )
+
+  const baseLabel = availableQualities.find((q) => q.id === qualityId)?.label ?? "Auto"
   const qualityLabel =
     qualityId === "auto" && autoResolvedLabel
       ? `Auto (${autoResolvedLabel})`
@@ -507,13 +544,13 @@ export function SpeedQualityMenu({
           <SelectionList
             id="quality"
             label="Video quality"
-            options={QUALITY_PRESETS.map((q) => ({
+            options={availableQualities.map((q) => ({
               key: q.id,
               label: q.label,
               selected: qualityId === q.id,
             }))}
-            selectedIndex={Math.max(0, QUALITY_PRESETS.findIndex((q) => q.id === qualityId))}
-            onSelect={(idx) => onQualityChange(QUALITY_PRESETS[idx].id)}
+            selectedIndex={Math.max(0, availableQualities.findIndex((q) => q.id === qualityId))}
+            onSelect={(idx) => onQualityChange(availableQualities[idx].id)}
           />
           <p className="px-4 py-2.5 text-xs leading-relaxed text-gray-400">
             Qualities other than Auto are transcoded on demand.

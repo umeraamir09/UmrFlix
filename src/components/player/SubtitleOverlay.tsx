@@ -119,7 +119,7 @@ export function SubtitleOverlay({
       {bottomCues.length > 0 && (
         <div
           aria-live="polite"
-          className={`pointer-events-none absolute inset-x-0 flex flex-col items-center gap-1.5 px-8 text-center transition-[bottom] duration-300 ${
+          className={`pointer-events-none absolute inset-x-0 flex flex-col items-center gap-1.5 px-8 text-center transition-[bottom] duration-200 ease-out ${
             controlsVisible ? (touchLayout ? "bottom-[128px]" : "bottom-[14cqh]") : "bottom-[5cqh]"
           }`}
         >

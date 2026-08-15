@@ -313,6 +313,7 @@ export function PlayerControls({
   muted,
   qualityId,
   autoResolvedLabel,
+  sourceHeight,
   audioTracks,
   audioIndex,
   subtitleTracks,
@@ -358,6 +359,7 @@ export function PlayerControls({
   muted: boolean
   qualityId: string
   autoResolvedLabel?: string
+  sourceHeight?: number
   audioTracks: AudioTrack[]
   audioIndex: number | null
   subtitleTracks: SubtitleTrack[]
@@ -445,6 +447,7 @@ export function PlayerControls({
         <SpeedQualityMenu
           qualityId={qualityId}
           autoResolvedLabel={autoResolvedLabel}
+          sourceHeight={sourceHeight}
           onQualityChange={onQualityChange}
           playbackRate={playbackRate}
           onPlaybackRateChange={onPlaybackRateChange}

@@ -7,7 +7,7 @@ export type DebugEntry = {
   message: string
 }
 
-const MAX_ENTRIES = 120
+const MAX_ENTRIES = 200
 const entries: DebugEntry[] = []
 const listeners = new Set<() => void>()
 
@@ -51,4 +51,20 @@ export function getDebugEntries(): DebugEntry[] {
 export function subscribeDebugEntries(listener: () => void): () => void {
   listeners.add(listener)
   return () => listeners.delete(listener)
+}
+
+/** 6.10 — Export formatted diagnostic log lines from the ring buffer. */
+export function exportDebugLogs(): string {
+  return entries
+    .map(
+      (e) =>
+        `${new Date(e.t).toISOString()} [${e.level.toUpperCase().padEnd(5)}] [${e.tag}] ${e.message}`,
+    )
+    .join("\n")
+}
+
+/** Reset debug entries (e.g., during item transitions or unit testing). */
+export function clearDebugLogs(): void {
+  entries.length = 0
+  listeners.forEach((l) => l())
 }

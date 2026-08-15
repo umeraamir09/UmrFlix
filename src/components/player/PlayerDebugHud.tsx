@@ -108,19 +108,58 @@ export function PlayerDebugHud({
   }, [onClose])
 
   const copyAll = async () => {
+    const v = videoRef.current
+    let videoQualityStats = ""
+    if (
+      v &&
+      "getVideoPlaybackQuality" in v &&
+      typeof (v as HTMLVideoElement & {
+        getVideoPlaybackQuality?: () => {
+          totalVideoFrames?: number
+          droppedVideoFrames?: number
+          corruptedVideoFrames?: number
+        }
+      }).getVideoPlaybackQuality === "function"
+    ) {
+      try {
+        const q = (
+          v as HTMLVideoElement & {
+            getVideoPlaybackQuality: () => {
+              totalVideoFrames?: number
+              droppedVideoFrames?: number
+              corruptedVideoFrames?: number
+            }
+          }
+        ).getVideoPlaybackQuality()
+        videoQualityStats = `quality: totalFrames=${q.totalVideoFrames ?? "?"} droppedFrames=${q.droppedVideoFrames ?? "?"} corruptedFrames=${q.corruptedVideoFrames ?? "?"}`
+      } catch {
+        /* ignore */
+      }
+    }
+
     const text = [
-      `engine=${engine} quality=${qualityId}`,
+      `=== UmrFlix CinemaPlayer Diagnostics ===`,
+      `timestamp: ${new Date().toISOString()}`,
+      `engine=${engine} quality=${qualityId}${autoResolvedId ? ` (ABR → ${autoResolvedId})` : ""}`,
+      `bandwidth: ${estimatedBandwidth && estimatedBandwidth > 0 ? `${(estimatedBandwidth / 1_000_000).toFixed(2)} Mbps` : "unknown"}`,
       `probe: ${probeReason}`,
       `streamUrl: ${maskUrl(streamUrl)}`,
       payload
         ? `payload: container=${payload.container} vcodec=${payload.videoCodec} canDirectPlay=${payload.canDirectPlay} supportsTranscoding=${payload.supportsTranscoding} audio=${payload.audio.map((a) => `[${a.index}]${a.codec}`).join(",")} subs=${payload.subtitles.map((s) => `[${s.index}]${s.codec}${s.isImageBased ? "(img)" : ""}`).join(",")}`
         : "payload: (none)",
-      `video: readyState=${READY_STATE[stats.readyState] ?? stats.readyState} networkState=${NETWORK_STATE[stats.networkState] ?? stats.networkState} time=${stats.time.toFixed(2)} bufferedEnd=${stats.bufferedEnd.toFixed(2)} (${bufferAhead.toFixed(1)}s ahead) paused=${stats.paused}${stats.error ? ` error=${stats.error}` : ""}`,
-      "--- log ---",
+      `video: readyState=${READY_STATE[stats.readyState] ?? stats.readyState} networkState=${NETWORK_STATE[stats.networkState] ?? stats.networkState} time=${stats.time.toFixed(2)}s / ${stats.duration.toFixed(1)}s bufferedEnd=${stats.bufferedEnd.toFixed(2)}s (${bufferAhead.toFixed(1)}s ahead) paused=${stats.paused}${stats.error ? ` error=${stats.error}` : ""}`,
+      videoQualityStats ? videoQualityStats : null,
+      typeof window !== "undefined"
+        ? `client: viewport=${window.innerWidth}x${window.innerHeight} dpr=${window.devicePixelRatio} touch=${window.matchMedia("(pointer: coarse)").matches} ua=${navigator.userAgent}`
+        : null,
+      "--- Event Log ---",
       ...entries.map(
-        (e) => `${new Date(e.t).toISOString().slice(11, 23)} ${e.level.toUpperCase().padEnd(5)} [${e.tag}] ${maskUrl(e.message)}`,
+        (e) => `${new Date(e.t).toISOString()} ${e.level.toUpperCase().padEnd(5)} [${e.tag}] ${maskUrl(e.message)}`,
       ),
-    ].join("\n")
+    ]
+      .filter(Boolean)
+      .join("\n")
+
     try {
       await navigator.clipboard.writeText(text)
       setCopied(true)
@@ -141,10 +180,11 @@ export function PlayerDebugHud({
         <div className="flex items-center gap-1">
           <button
             onClick={copyAll}
+            aria-label="Copy debug info to clipboard"
             className="flex items-center gap-1 rounded bg-white/10 px-2 py-0.5 text-[10px] font-semibold text-white transition-colors hover:bg-white/20"
           >
             <ClipboardCopy className="size-3" />
-            {copied ? "Copied!" : "Copy"}
+            {copied ? "Copied!" : "Copy Debug Info"}
           </button>
           <button
             onClick={onClose}
