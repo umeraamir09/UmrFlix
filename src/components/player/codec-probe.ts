@@ -43,6 +43,12 @@ export function canBrowserPlayNatively(
   videoCodec: string | undefined,
   audioCodecs: (string | undefined)[],
 ): { supported: boolean; reason: string } {
+  // 3.1 — must run before ANY DOM access: the MKV probe below creates a
+  // video element, and during SSR `document` is undefined.
+  if (typeof document === "undefined") {
+    return { supported: true, reason: "no DOM (SSR) — assuming supported" }
+  }
+
   const containerKey = (container ?? "").toLowerCase()
   const mime = VIDEO_MIME_BY_CONTAINER[containerKey]
   if (!mime) {
@@ -65,10 +71,6 @@ export function canBrowserPlayNatively(
   for (const ac of audioCodecs) {
     const tag = CODEC_TAG[(ac ?? "").toLowerCase()]
     if (tag && !tags.includes(tag)) tags.push(tag)
-  }
-
-  if (typeof document === "undefined") {
-    return { supported: true, reason: "no DOM (SSR) — assuming supported" }
   }
 
   const key = `${mime}|${tags.join(",")}`

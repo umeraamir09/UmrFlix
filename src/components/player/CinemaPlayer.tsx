@@ -137,7 +137,9 @@ export function CinemaPlayer({
   }, [partySync])
 
   useEffect(() => {
-    if (typeof startAtSec === "number" && startAtSec > 0) {
+    // 3.5 — Number.isFinite excludes NaN (typeof NaN === "number" passes a
+    // bare typeof check) so a malformed startAtSec can never seed a NaN seek.
+    if (typeof startAtSec === "number" && Number.isFinite(startAtSec) && startAtSec > 0) {
       seekTargetRef.current = startAtSec
     }
   }, [startAtSec])
@@ -319,6 +321,20 @@ export function CinemaPlayer({
     return QUALITY_PRESETS[0]
   })()
 
+  // 3.9 — probe only the audio codec that will actually be played. Probing
+  // EVERY track rejects direct play for files with a DTS track + an AAC track
+  // (or any other unsupported secondary audio) even when the supported track
+  // is the one in use, forcing a pointless transcode. Non-default audio
+  // selections force the HLS engine via `wantsTranscode` anyway, so only the
+  // default/selected track's codec needs to pass for direct play.
+  const probeAudioCodecs = useMemo(() => {
+    if (!payload) return []
+    const idx = audioIndex ?? payload.defaultAudioIndex
+    const track = payload.audio.find((a) => a.index === idx)
+    const codec = track?.codec ?? payload.audio[0]?.codec
+    return codec ? [codec] : []
+  }, [payload, audioIndex])
+
   // Probe the real browser for container+codec support — the server can
   // only gate on the file, not on what this device can decode.
   const codecProbe = useMemo(() => {
@@ -332,9 +348,9 @@ export function CinemaPlayer({
     return canBrowserPlayNatively(
       payload.container,
       payload.videoCodec,
-      payload.audio.map((a) => a.codec),
+      probeAudioCodecs,
     )
-  }, [payload])
+  }, [payload, probeAudioCodecs])
 
   const wantsTranscode =
     qualityId !== "auto" ||
@@ -471,6 +487,11 @@ export function CinemaPlayer({
 
     let cancelled = false
     const url = streamUrl
+    // 3.11 — track the loadedmetadata listener so it can be removed on
+    // teardown: the <video> element survives stream rebuilds, so a listener
+    // left behind by a previous attach would fire when the NEXT stream's
+    // metadata loads and run tryPlay from a dead closure.
+    let loadedMetadataHandler: (() => void) | null = null
 
     // 1.1 — capture the last visible frame to a canvas overlay so there's no
     // black flash while the new stream loads. The canvas is removed once the
@@ -570,7 +591,8 @@ export function CinemaPlayer({
 
       if (engine === "direct") {
         el.src = url
-        el.addEventListener("loadedmetadata", tryPlay, { once: true })
+        loadedMetadataHandler = () => tryPlay()
+        el.addEventListener("loadedmetadata", loadedMetadataHandler, { once: true })
         return
       }
 
@@ -735,7 +757,8 @@ export function CinemaPlayer({
       } else if (el.canPlayType("application/vnd.apple.mpegurl")) {
         // Safari: native HLS
         el.src = url
-        el.addEventListener("loadedmetadata", tryPlay, { once: true })
+        loadedMetadataHandler = () => tryPlay()
+        el.addEventListener("loadedmetadata", loadedMetadataHandler, { once: true })
       } else if (!cancelled) {
         playerLog.error("hls", "neither MSE-hls.js nor native HLS available")
         fail("HLS playback is not supported in this browser.")
@@ -752,6 +775,12 @@ export function CinemaPlayer({
         seekTargetRef.current = video.currentTime
       }
       cancelled = true
+      // 3.11 — remove the stale loadedmetadata listener so a rebuild that
+      // happens before metadata loads can't leave a dead closure behind.
+      if (loadedMetadataHandler) {
+        video.removeEventListener("loadedmetadata", loadedMetadataHandler)
+        loadedMetadataHandler = null
+      }
       hlsRef.current?.destroy()
       hlsRef.current = null
       // 1.1 — clean up any stale frame-capture canvas if the effect was
@@ -1041,20 +1070,36 @@ export function CinemaPlayer({
   )
 
   // ── Next-episode auto-play countdown ──
+  // 3.4 — anchored to an absolute wall-clock end time, so background-tab
+  // timer throttling (Chrome drops hidden-tab timers to 1/min after 5 min)
+  // can never freeze the countdown: whenever a tick finally runs it computes
+  // the true remaining time, and the episode fires on schedule even if the
+  // tab was hidden the whole time.
+  const countdownEndRef = useRef(0)
   useEffect(() => {
-    if (!nextPrompt) return
-    if (nextPrompt.secondsLeft <= 0) {
-      const id = setTimeout(() => {
+    if (!nextPrompt) {
+      countdownEndRef.current = 0
+      return
+    }
+    // Anchor the deadline once per countdown (not per re-render/tick).
+    if (countdownEndRef.current === 0) {
+      countdownEndRef.current = Date.now() + nextPrompt.secondsLeft * 1000
+    }
+    const tick = () => {
+      const remaining = Math.ceil((countdownEndRef.current - Date.now()) / 1000)
+      if (remaining <= 0) {
+        countdownEndRef.current = 0
         setNextPrompt(null)
         onNextEpisode?.()
-      }, 0)
-      return () => clearTimeout(id)
+        return
+      }
+      // Keep the same object reference when the displayed value is unchanged
+      // so the 250ms interval doesn't force a re-render (and effect restart)
+      // four times per second.
+      setNextPrompt((p) => (p && p.secondsLeft === remaining ? p : { secondsLeft: remaining }))
     }
-    const id = setTimeout(
-      () => setNextPrompt((p) => (p ? { secondsLeft: p.secondsLeft - 1 } : p)),
-      1_000,
-    )
-    return () => clearTimeout(id)
+    const id = setInterval(tick, 250)
+    return () => clearInterval(id)
   }, [nextPrompt, onNextEpisode])
 
   const beginNextEpisode = useCallback(() => {

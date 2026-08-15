@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "eslint",
     "test:party": "tsx --test \"src/lib/party/__tests__/*.test.ts\"",
-    "test:discovery": "tsx --test \"src/lib/discovery/__tests__/*.test.ts\""
+    "test:discovery": "tsx --test \"src/lib/discovery/__tests__/*.test.ts\"",
+    "test:lib": "tsx --test \"src/lib/__tests__/*.test.ts\" \"src/components/player/__tests__/*.test.ts\""
   },
   "dependencies": {
     "@base-ui/react": "^1.7.0",

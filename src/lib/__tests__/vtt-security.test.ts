@@ -105,4 +105,27 @@ describe("VTT / Subtitle Security & Sanitization", () => {
     assert.strictEqual(cues.length, 1)
     assert.strictEqual(cues[0].text, "<b>Hello</b> world!")
   })
+
+  it("parses short timestamps (MM:SS.mmm, hours optional) without dropping cues", () => {
+    const vtt = `WEBVTT
+
+00:05.000 --> 00:08.500
+Short timestamp cue
+
+00:01:05.000 --> 00:01:08.000
+Full timestamp cue
+
+0:30.000 --> 0:31.250
+Single-digit minute cue`
+
+    const cues = parseVtt(vtt)
+    assert.strictEqual(cues.length, 3)
+    assert.strictEqual(cues[0].start, 5)
+    assert.strictEqual(cues[0].end, 8.5)
+    assert.strictEqual(cues[0].text, "Short timestamp cue")
+    assert.strictEqual(cues[1].start, 30)
+    assert.strictEqual(cues[1].end, 31.25)
+    assert.strictEqual(cues[2].start, 65)
+    assert.strictEqual(cues[2].end, 68)
+  })
 })
