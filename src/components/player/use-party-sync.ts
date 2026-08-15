@@ -4,7 +4,9 @@ import { useCallback, useEffect, useRef, useState } from "react"
 import { useToast } from "@/components/Toast"
 import { acquireSharedEventSource } from "@/lib/use-event-stream"
 import {
+  computeRecoveryBufferAheadSec,
   DRIFT_THRESHOLDS,
+  getSyncQuality,
   PARTY_BUFFERING,
   PartyCommand,
   PartyCommandType,
@@ -12,6 +14,7 @@ import {
   PartyRoomSnapshot,
   PartyState,
   predictedPosition,
+  SyncQuality,
 } from "@/lib/party/protocol"
 
 export type UsePartySyncOptions = {
@@ -22,6 +25,7 @@ export type UsePartySyncOptions = {
   togglePlay?: () => void
   onItemChange?: (itemId: string) => void
   onPartyEnded?: () => void
+  segmentDurationSec?: number | (() => number)
 }
 
 export type UsePartySyncReturn = {
@@ -36,6 +40,8 @@ export type UsePartySyncReturn = {
   serverOffset: number
   isBuffering: boolean
   bufferingUsers: string[]
+  syncQuality: SyncQuality
+  syncDriftMs: number
 }
 
 export function usePartySync({
@@ -45,12 +51,15 @@ export function usePartySync({
   seekTo,
   onItemChange,
   onPartyEnded,
+  segmentDurationSec,
 }: UsePartySyncOptions): UsePartySyncReturn {
   const { toast } = useToast()
   const [partyState, setPartyState] = useState<PartyState | null>(null)
   const [members, setMembers] = useState<PartyMember[]>([])
   const [isOwner, setIsOwner] = useState<boolean>(false)
   const [serverOffset, setServerOffset] = useState<number>(0) // serverTime - localTime
+  const [syncQuality, setSyncQuality] = useState<SyncQuality>("paused")
+  const [syncDriftMs, setSyncDriftMs] = useState<number>(0)
 
   const versionRef = useRef<number>(0)
   const partyStateRef = useRef<PartyState | null>(null)
@@ -337,6 +346,10 @@ export function usePartySync({
     if (!partyId) return
 
     const { es: eventSource, release } = acquireSharedEventSource(() => {
+      // 8.3 — SSE (re)connected: clear stale buffering flags in local member state
+      // so disconnects don't keep the client UI or room locked in a stale buffer-hold
+      setMembers((prev) => prev.map((m) => ({ ...m, buffering: false })))
+      bufferingReportedRef.current = false
       // SSE (re)connected: re-sync the clock against the warm connection, then refresh
       void syncServerClock()
       void refreshSnapshot()
@@ -586,10 +599,15 @@ export function usePartySync({
         const bufferAhead = v.buffered.length
           ? v.buffered.end(v.buffered.length - 1) - v.currentTime
           : 0
+        const segDuration =
+          typeof segmentDurationSec === "function"
+            ? segmentDurationSec()
+            : segmentDurationSec
+        const requiredBufferSec = computeRecoveryBufferAheadSec(segDuration)
         const playable =
           !v.paused ||
           (Date.now() - startedAt >= PARTY_BUFFERING.RECOVERY_GRACE_MS &&
-            bufferAhead >= PARTY_BUFFERING.RECOVERY_BUFFER_AHEAD_SEC)
+            bufferAhead >= requiredBufferSec)
         if (playable) {
           finishRecovery()
           return
@@ -664,11 +682,16 @@ export function usePartySync({
         video.pause()
       }
 
+      const bufferingUsersList = members.filter((m) => m.buffering).map((m) => m.username)
+      const isBufferingNow = bufferingUsersList.length > 0
+
       // When the room is paused (incl. buffer-holds) the target is static and
       // members were already aligned on state application — no corrections here.
       if (!state.playing) {
         const roomRate = state.playbackRate || 1.0
         if (video.playbackRate !== roomRate) video.playbackRate = roomRate
+        setSyncQuality(getSyncQuality(0, isBufferingNow, false))
+        setSyncDriftMs(0)
         return
       }
 
@@ -684,6 +707,10 @@ export function usePartySync({
       const currentPos = video.currentTime
       const drift = currentPos - targetPos
       const absDrift = Math.abs(drift)
+
+      // 8.4 — Update live drift metrics and sync quality status
+      setSyncQuality(getSyncQuality(drift, isBufferingNow, !video.paused))
+      setSyncDriftMs(Math.round(drift * 1000))
 
       // Drift Correction Logic
       if (absDrift < DRIFT_THRESHOLDS.MICRO_LOWER) {
@@ -716,7 +743,7 @@ export function usePartySync({
     }, 500)
 
     return () => clearInterval(interval)
-  }, [partyId, seekTo, videoRef])
+  }, [partyId, seekTo, videoRef, members])
 
   const bufferingUsers = members.filter((m) => m.buffering).map((m) => m.username)
   const isBuffering = bufferingUsers.length > 0
@@ -729,5 +756,7 @@ export function usePartySync({
     serverOffset,
     isBuffering,
     bufferingUsers,
+    syncQuality,
+    syncDriftMs,
   }
 }

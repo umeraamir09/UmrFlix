@@ -106,11 +106,51 @@ export const DRIFT_THRESHOLDS = {
 // while someone is still buffering.
 export const PARTY_BUFFERING = {
   STALL_DEBOUNCE_MS: 400, // stall → server report latency
-  RECOVERY_BUFFER_AHEAD_SEC: 8, // buffered ahead required to release the room pause
+  RECOVERY_BUFFER_AHEAD_SEC: 8, // default buffered ahead required to release the room pause
+  RECOVERY_BUFFER_AHEAD_MIN_SEC: 3, // min bound (e.g. mobile 3G/4G or short segments)
+  RECOVERY_BUFFER_AHEAD_MAX_SEC: 8, // max bound
   RECOVERY_GRACE_MS: 2000, // sustained playable state before reporting recovery
   RECOVERY_POLL_MS: 500, // recovery check cadence
   SCRUB_IGNORE_MS: 2500, // after a seek begins, suppress stall reports/repositions
 }
 
+/**
+ * 8.2 — Adaptive buffer-ahead requirement based on stream segment duration.
+ * Scales: max(3, min(8, segmentDuration * 2)) so mobile streams recover rapidly
+ * without keeping the room locked in prolonged buffer-holds.
+ */
+export function computeRecoveryBufferAheadSec(segmentDurationSec?: number): number {
+  if (
+    typeof segmentDurationSec === "number" &&
+    Number.isFinite(segmentDurationSec) &&
+    segmentDurationSec > 0
+  ) {
+    return Math.max(
+      PARTY_BUFFERING.RECOVERY_BUFFER_AHEAD_MIN_SEC,
+      Math.min(PARTY_BUFFERING.RECOVERY_BUFFER_AHEAD_MAX_SEC, segmentDurationSec * 2)
+    )
+  }
+  return PARTY_BUFFERING.RECOVERY_BUFFER_AHEAD_SEC
+}
+
+export type SyncQuality = "synced" | "syncing" | "resyncing" | "buffering" | "paused"
+
+/**
+ * 8.4 — Computes user-facing sync quality based on current drift in seconds and playback state.
+ */
+export function getSyncQuality(
+  driftSec: number,
+  isBuffering: boolean,
+  isPlaying: boolean
+): SyncQuality {
+  if (isBuffering) return "buffering"
+  if (!isPlaying) return "paused"
+  const absDrift = Math.abs(driftSec)
+  if (absDrift <= DRIFT_THRESHOLDS.MICRO_UPPER) return "synced"
+  if (absDrift <= DRIFT_THRESHOLDS.MID_UPPER) return "syncing"
+  return "resyncing"
+}
+
 // Server-space clock used by sentAt / latency compensation
 export const MAX_COMMAND_TRANSPORT_MS = 2000
+

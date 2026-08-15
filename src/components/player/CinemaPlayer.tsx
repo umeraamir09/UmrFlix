@@ -136,6 +136,13 @@ export function CinemaPlayer({
     seekTo: seekToFn,
     onItemChange: onPartyItemChange,
     onPartyEnded,
+    // 8.2 — Adaptive buffer recovery calculation based on HLS segment duration
+    segmentDurationSec: () => {
+      const hls = hlsRef.current
+      if (!hls) return 6
+      const lvl = hls.currentLevel >= 0 ? hls.levels?.[hls.currentLevel] : hls.levels?.[0]
+      return lvl?.details?.targetduration || 6
+    },
   })
 
   // Stable handle for unmount-time fire-and-forget commands; the usePartySync
@@ -1441,6 +1448,8 @@ export function CinemaPlayer({
           isOwner={partySync.isOwner}
           members={partySync.members}
           bufferingUsers={partySync.bufferingUsers}
+          syncQuality={partySync.syncQuality}
+          syncDriftMs={partySync.syncDriftMs}
         />
       )}
 

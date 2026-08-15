@@ -6,6 +6,9 @@ import {
   sanitizePartyCommand,
   isValidPositionSec,
   isValidPlaybackRate,
+  computeRecoveryBufferAheadSec,
+  getSyncQuality,
+  PARTY_BUFFERING,
   type PartyState,
 } from "../protocol"
 
@@ -145,4 +148,48 @@ describe("Party Sync Protocol Math", () => {
       null
     )
   })
+
+  test("8.2 — computeRecoveryBufferAheadSec scales dynamically and respects bounds", () => {
+    // Default fallback when segment duration is undefined or invalid
+    assert.strictEqual(computeRecoveryBufferAheadSec(undefined), PARTY_BUFFERING.RECOVERY_BUFFER_AHEAD_SEC)
+    assert.strictEqual(computeRecoveryBufferAheadSec(NaN), PARTY_BUFFERING.RECOVERY_BUFFER_AHEAD_SEC)
+    assert.strictEqual(computeRecoveryBufferAheadSec(0), PARTY_BUFFERING.RECOVERY_BUFFER_AHEAD_SEC)
+    assert.strictEqual(computeRecoveryBufferAheadSec(-2), PARTY_BUFFERING.RECOVERY_BUFFER_AHEAD_SEC)
+
+    // Clamps to min 3s for very short segments (e.g. 1s segment * 2 = 2s -> clamped to 3s)
+    assert.strictEqual(computeRecoveryBufferAheadSec(1.0), 3)
+
+    // Scales segmentDuration * 2 within [3, 8]
+    assert.strictEqual(computeRecoveryBufferAheadSec(2.0), 4)
+    assert.strictEqual(computeRecoveryBufferAheadSec(3.0), 6)
+    assert.strictEqual(computeRecoveryBufferAheadSec(3.5), 7)
+
+    // Clamps to max 8s for long segments (e.g. 6s segment * 2 = 12s -> clamped to 8s)
+    assert.strictEqual(computeRecoveryBufferAheadSec(6.0), 8)
+  })
+
+  test("8.4 — getSyncQuality accurately reports sync status and drift categories", () => {
+    // Buffering overrides playback drift
+    assert.strictEqual(getSyncQuality(0.05, true, true), "buffering")
+    assert.strictEqual(getSyncQuality(0.05, true, false), "buffering")
+
+    // Paused state
+    assert.strictEqual(getSyncQuality(0.05, false, false), "paused")
+
+    // Synced: drift <= 0.3s (MICRO_UPPER)
+    assert.strictEqual(getSyncQuality(0.0, false, true), "synced")
+    assert.strictEqual(getSyncQuality(0.1, false, true), "synced")
+    assert.strictEqual(getSyncQuality(-0.25, false, true), "synced")
+    assert.strictEqual(getSyncQuality(0.3, false, true), "synced")
+
+    // Syncing: 0.3s < drift <= 1.0s (MID_UPPER)
+    assert.strictEqual(getSyncQuality(0.4, false, true), "syncing")
+    assert.strictEqual(getSyncQuality(-0.8, false, true), "syncing")
+    assert.strictEqual(getSyncQuality(1.0, false, true), "syncing")
+
+    // Resyncing: drift > 1.0s
+    assert.strictEqual(getSyncQuality(1.5, false, true), "resyncing")
+    assert.strictEqual(getSyncQuality(-2.0, false, true), "resyncing")
+  })
 })
+
