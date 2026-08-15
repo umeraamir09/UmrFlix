@@ -85,12 +85,14 @@ export function usePartySync({
   const initialApplyRef = useRef<boolean>(false)
   const bestRttRef = useRef<number>(Infinity)
   const lastHardSeekAtRef = useRef<number>(0)
+  const segmentDurationSecRef = useRef(segmentDurationSec)
 
   // Keep refs synchronized
   useEffect(() => {
     partyStateRef.current = partyState
     serverOffsetRef.current = serverOffset
-  }, [partyState, serverOffset])
+    segmentDurationSecRef.current = segmentDurationSec
+  }, [partyState, serverOffset, segmentDurationSec])
 
   useEffect(() => {
     segmentDurationRef.current = segmentDurationSec
@@ -681,6 +683,7 @@ export function usePartySync({
         const bufferAhead = v.buffered.length
           ? v.buffered.end(v.buffered.length - 1) - v.currentTime
           : 0
+        const currentSegDuration = segmentDurationSecRef.current
         const segDuration =
           typeof segmentDurationRef.current === "function"
             ? segmentDurationRef.current()

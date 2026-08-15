@@ -7,7 +7,7 @@ import {
   parsePlaybackPayload,
   type PlaybackPayload,
 } from "@/lib/playback-types"
-import { usePlayerSettings, savePlayerSettings } from "@/lib/player-settings"
+import { usePlayerSettings, updatePlayerSettings } from "@/lib/player-settings"
 import { SubtitleOverlay } from "./SubtitleOverlay"
 import { PlayerControls } from "./PlayerControls"
 import {
@@ -214,6 +214,12 @@ export function CinemaPlayer({
   const [lastStreamUrl, setLastStreamUrl] = useState("")
   const [playbackRate, setPlaybackRate] = useState(1)
   const [reportToast, setReportToast] = useState(false)
+  const reportToastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  useEffect(() => {
+    return () => {
+      if (reportToastTimerRef.current) clearTimeout(reportToastTimerRef.current)
+    }
+  }, [])
   // 1.1 — shows "Switching to 720p…" (etc.) in the buffering overlay during a stream rebuild
   const [qualitySwitchToast, setQualitySwitchToast] = useState<string | null>(null)
   const [isTouchDevice, setIsTouchDevice] = useState(() => {
@@ -222,7 +228,7 @@ export function CinemaPlayer({
   })
 
   // ── Volume Hook ──
-  const { volume, muted, updateVolume, toggleMute, setMuted } = useVolumeManager(videoRef)
+  const { volume, muted, updateVolume, toggleMute } = useVolumeManager(videoRef)
 
   // ── Controls Hook ──
   const { controlsVisible, pokeControls } = usePlayerControls({
@@ -331,8 +337,9 @@ export function CinemaPlayer({
     if (onReport) {
       onReport()
     } else {
+      if (reportToastTimerRef.current) clearTimeout(reportToastTimerRef.current)
       setReportToast(true)
-      setTimeout(() => setReportToast(false), 3000)
+      reportToastTimerRef.current = setTimeout(() => setReportToast(false), 3000)
     }
   }, [onReport])
 
@@ -460,8 +467,7 @@ export function CinemaPlayer({
   useEffect(() => {
     if (!payload) return
     playerLog.info("engine", `decision: ${engine.toUpperCase()} — ${engineReason}`)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [payload, engine])
+  }, [payload, engine, engineReason])
 
   // Single source of truth for the stream URL — ANY change to quality,
   // audio track, burned-in subtitle track or subtitle mode produces a new
@@ -560,8 +566,7 @@ export function CinemaPlayer({
   // Stop reporting when leaving this item
   useEffect(() => {
     return () => reporter.stop()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [itemId])
+  }, [itemId, reporter])
 
   // ── Stream setup — rebuilds whenever the resolved stream URL changes
   // (quality preset, audio track, burned-in subtitle track, subtitle mode) ──
@@ -853,8 +858,16 @@ export function CinemaPlayer({
       // cancelled before FRAG_BUFFERED fired (fast consecutive rebuilds).
       removeFrameCanvas()
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [payload, streamUrl, endpointReady])
+  }, [
+    payload,
+    streamUrl,
+    endpointReady,
+    engine,
+    qualityId,
+    autoResolvedId,
+    quality,
+    isTouchDevice,
+  ])
 
   // Preserve volume across stream rebuilds
   useEffect(() => {
@@ -872,7 +885,7 @@ export function CinemaPlayer({
   // diagnostics surface to regular viewers. Closes itself once playback resumes.
   useEffect(() => {
     if (!party?.partyId || !partySync.isOwner) return
-    if (buffering) {
+      if (buffering) {
       const id = setTimeout(() => {
         debugAutoOpenedRef.current = true
         setDebugOpen(true)
@@ -888,8 +901,8 @@ export function CinemaPlayer({
   // ── Fullscreen ──
   useEffect(() => {
     const onChange = () => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const isNative = !!document.fullscreenElement || !!(document as any).webkitFullscreenElement
+      const doc = document as unknown as { webkitFullscreenElement?: Element }
+      const isNative = !!document.fullscreenElement || !!doc.webkitFullscreenElement
       setIsNativeFullscreen(isNative)
       if (isNative) {
         setIsPseudoFullscreen(false)
@@ -905,15 +918,19 @@ export function CinemaPlayer({
 
   const toggleFullscreen = useCallback(async () => {
     try {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const doc = document as any
+      const doc = document as unknown as {
+        fullscreenElement?: Element
+        webkitFullscreenElement?: Element
+        exitFullscreen?: () => Promise<void>
+        webkitExitFullscreen?: () => Promise<void>
+      }
       const isNative = !!(doc.fullscreenElement || doc.webkitFullscreenElement)
 
       if (isNative) {
         if (document.exitFullscreen) {
           await document.exitFullscreen()
         } else if (doc.webkitExitFullscreen) {
-          doc.webkitExitFullscreen()
+          await doc.webkitExitFullscreen()
         }
       } else if (isPseudoFullscreen) {
         setIsPseudoFullscreen(false)
@@ -927,12 +944,13 @@ export function CinemaPlayer({
           setIsPseudoFullscreen(true)
         }
       } else {
-        if (containerRef.current?.requestFullscreen) {
-          await containerRef.current.requestFullscreen()
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        } else if ((containerRef.current as any)?.webkitRequestFullscreen) {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          ;(containerRef.current as any).webkitRequestFullscreen()
+        const container = containerRef.current as (HTMLDivElement & {
+          webkitRequestFullscreen?: () => Promise<void>
+        }) | null
+        if (container?.requestFullscreen) {
+          await container.requestFullscreen()
+        } else if (container?.webkitRequestFullscreen) {
+          container.webkitRequestFullscreen()
         } else {
           // 7.1: Avoid webkitEnterFullscreen on iOS video element (which destroys custom UI).
           // Fallback to CSS pseudo-fullscreen instead.
@@ -1169,7 +1187,7 @@ export function CinemaPlayer({
   const handleQualityChange = useCallback(
     (id: string) => {
       playerLog.info("user", `quality change → ${id}`)
-      savePlayerSettings({ ...playerSettings, qualityPreference: id })
+      updatePlayerSettings({ qualityPreference: id })
       if (id === "auto") {
         estimatorRef.current.reset()
         setAutoResolvedId(null)
@@ -1178,7 +1196,7 @@ export function CinemaPlayer({
       rebuildAtPosition(() => setQualityId(id), qLabel)
       announce(`Quality changed to ${qLabel}`)
     },
-    [rebuildAtPosition, playerSettings, announce],
+    [rebuildAtPosition, announce],
   )
   const handleAudioChange = useCallback(
     (index: number) => {
@@ -1274,63 +1292,77 @@ export function CinemaPlayer({
     !nextPrompt
 
   // ── Keyboard shortcuts ──
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    // The episode browser is a full-screen modal with its own focusable
-    // content — let its keys (arrows, Space, Tab) operate the list, not the
-    // player. It also handles Escape itself.
-    if (episodeBrowserOpen) return
-    const target = e.target as HTMLElement
-    if (target.tagName === "INPUT" || target.tagName === "TEXTAREA") return
-    const video = videoRef.current
-    if (!video) return
-    switch (e.key) {
-      case " ":
-      case "k":
-        e.preventDefault()
-        togglePlay()
-        break
-      case "ArrowRight":
-      case "l":
-        e.preventDefault()
-        seekTo(Math.min(duration || video.duration, video.currentTime + 10))
-        break
-      case "ArrowLeft":
-      case "j":
-        e.preventDefault()
-        seekTo(Math.max(0, video.currentTime - 10))
-        break
-      case "ArrowUp":
-        e.preventDefault()
-        updateVolume(volume + 0.1)
-        break
-      case "ArrowDown":
-        e.preventDefault()
-        updateVolume(volume - 0.1)
-        break
-      case "m": {
-        const next = !muted
-        video.muted = next
-        setMuted(next)
-        break
-      }
-      case "f":
-        toggleFullscreen()
-        break
-      case "Escape":
-        if (isPseudoFullscreen) {
+  const handleKeyDown = useCallback(
+    (e: React.KeyboardEvent) => {
+      // The episode browser is a full-screen modal with its own focusable
+      // content — let its keys (arrows, Space, Tab) operate the list, not the
+      // player. It also handles Escape itself.
+      if (episodeBrowserOpen) return
+      const target = e.target as HTMLElement
+      if (target.tagName === "INPUT" || target.tagName === "TEXTAREA") return
+      const video = videoRef.current
+      if (!video) return
+      switch (e.key) {
+        case " ":
+        case "k":
           e.preventDefault()
-          setIsPseudoFullscreen(false)
-          if (isTouchDevice) {
-            void releaseOrientation()
-          }
+          togglePlay()
+          break
+        case "ArrowRight":
+        case "l":
+          e.preventDefault()
+          seekTo(Math.min(duration || video.duration, video.currentTime + 10))
+          break
+        case "ArrowLeft":
+        case "j":
+          e.preventDefault()
+          seekTo(Math.max(0, video.currentTime - 10))
+          break
+        case "ArrowUp":
+          e.preventDefault()
+          updateVolume(volume + 0.1)
+          break
+        case "ArrowDown":
+          e.preventDefault()
+          updateVolume(volume - 0.1)
+          break
+        case "m": {
+          toggleMute()
+          break
         }
-        break
-      case "d":
-        setDebugOpen((o) => !o)
-        break
-    }
-    pokeControls()
-  }
+        case "f":
+          toggleFullscreen()
+          break
+        case "Escape":
+          if (isPseudoFullscreen) {
+            e.preventDefault()
+            setIsPseudoFullscreen(false)
+            if (isTouchDevice) {
+              void releaseOrientation()
+            }
+          }
+          break
+        case "d":
+          setDebugOpen((o) => !o)
+          break
+      }
+      pokeControls()
+    },
+    [
+      episodeBrowserOpen,
+      togglePlay,
+      duration,
+      seekTo,
+      updateVolume,
+      volume,
+      toggleMute,
+      toggleFullscreen,
+      isPseudoFullscreen,
+      isTouchDevice,
+      releaseOrientation,
+      pokeControls,
+    ],
+  )
 
   const startedOrWaiting = endpointReady && !loadError
   const autoResolvedLabel = autoResolvedId
