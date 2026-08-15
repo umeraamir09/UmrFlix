@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import type Hls from "hls.js"
 import {
   QUALITY_PRESETS,
+  parsePlaybackPayload,
   type PlaybackPayload,
 } from "@/lib/playback-types"
 import { usePlayerSettings, savePlayerSettings } from "@/lib/player-settings"
@@ -364,9 +365,11 @@ export function CinemaPlayer({
 
     fetch(`/api/jellyfin/playback/${itemId}`)
       .then(async (r) => {
-        const data = (await r.json()) as PlaybackPayload
-        if (!r.ok || data.error) throw new Error(data.error ?? "Failed to load stream")
-        return data
+        const raw = await r.json()
+        if (!r.ok || (raw && typeof raw === "object" && raw.error && !raw.itemId)) {
+          throw new Error(raw?.error ?? "Failed to load stream")
+        }
+        return parsePlaybackPayload(raw)
       })
       .then((data) => {
         if (cancelled) return

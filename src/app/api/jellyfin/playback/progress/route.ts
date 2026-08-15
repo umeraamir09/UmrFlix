@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server"
 import { reportPlaybackState, type PlaybackReport } from "@/lib/jellyfin"
 import { getSession } from "@/lib/auth"
+import { checkRateLimit, PLAYBACK_RATE_LIMITS } from "@/lib/rate-limit"
+import { getClientIp } from "@/lib/audit"
 import { ingestPlaybackStopped } from "@/lib/discovery/ingest"
 
 export const dynamic = "force-dynamic"
@@ -14,6 +16,18 @@ export const dynamic = "force-dynamic"
  * ingestion latency never affects playback teardown.
  */
 export async function POST(request: Request) {
+  const session = await getSession()
+  const rateLimitKey = session?.userId
+    ? `progress:${session.userId}`
+    : `progress:${getClientIp(request)}`
+
+  if (!checkRateLimit(rateLimitKey, PLAYBACK_RATE_LIMITS.PROGRESS)) {
+    return NextResponse.json(
+      { error: "Too many progress reports. Please wait a moment." },
+      { status: 429 },
+    )
+  }
+
   let body: PlaybackReport
   try {
     body = await request.json()
@@ -32,6 +46,7 @@ export async function POST(request: Request) {
   }
 
   await reportPlaybackState(body)
+
 
   if (body.event === "stopped") {
     const session = await getSession()

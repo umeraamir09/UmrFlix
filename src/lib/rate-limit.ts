@@ -88,3 +88,11 @@ export const PARTY_RATE_LIMITS = {
   LEAVE_ROOM: { windowMs: 60_000, maxRequests: 20 }, // 20 per min
   END_ROOM: { windowMs: 60_000, maxRequests: 10 }, // 10 per min
 }
+
+/** Pre-configured rate limiters for playback and media actions */
+export const PLAYBACK_RATE_LIMITS = {
+  PLAYBACK_INFO: { windowMs: 10_000, maxRequests: 20 }, // 20 per 10s
+  PLAYED: { windowMs: 10_000, maxRequests: 20 }, // 20 per 10s
+  PROGRESS: { windowMs: 10_000, maxRequests: 30 }, // 30 per 10s
+}
+

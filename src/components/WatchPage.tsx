@@ -6,7 +6,7 @@ import { useRouter, useSearchParams } from "next/navigation"
 import { Loader2, TriangleAlert } from "lucide-react"
 import { CinemaPlayer } from "@/components/player/CinemaPlayer"
 import type { NextEpisodeInfo } from "@/components/player/PlayerOverlays"
-import type { PlaybackPayload } from "@/lib/playback-types"
+import { parsePlaybackPayload, type PlaybackPayload } from "@/lib/playback-types"
 import type { AvailabilityResult } from "@/app/api/availability/route"
 import type { EpisodeInfo, SeasonInfo } from "@/components/SeasonBrowser"
 import { PartyRoomSnapshot, predictedPosition } from "@/lib/party/protocol"
@@ -149,9 +149,11 @@ export function WatchPage() {
     let cancelled = false
     fetch(`/api/jellyfin/playback/${resolvedId}`)
       .then(async (r) => {
-        const data = (await r.json()) as PlaybackPayload
-        if (!r.ok || data.error) throw new Error(data.error ?? "Failed to load stream info")
-        return data
+        const raw = await r.json()
+        if (!r.ok || (raw && typeof raw === "object" && raw.error && !raw.itemId)) {
+          throw new Error(raw?.error ?? "Failed to load stream info")
+        }
+        return parsePlaybackPayload(raw)
       })
       .then((p) => {
         if (cancelled) return

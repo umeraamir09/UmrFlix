@@ -1,5 +1,9 @@
 import { NextResponse } from "next/server"
 import { isValidItemId } from "@/lib/validation"
+import { getSession } from "@/lib/auth"
+import { checkRateLimit, PLAYBACK_RATE_LIMITS } from "@/lib/rate-limit"
+import { getClientIp } from "@/lib/audit"
+import { parsePlaybackPayload, type PlaybackPayload } from "@/lib/playback-types"
 import {
   authenticate,
   getPlaybackInfo,
@@ -19,6 +23,31 @@ export const dynamic = "force-dynamic"
 
 export type MarkerType = "intro" | "recap" | "outro" | "preview"
 export type SegmentMarker = { type: MarkerType; start: number; end: number } // seconds
+
+type CacheEntry = {
+  payload: PlaybackPayload
+  timestamp: number
+}
+
+const playbackCache = new Map<string, CacheEntry>()
+const PLAYBACK_CACHE_TTL_MS = 30_000 // 30-second TTL
+const MAX_CACHE_ENTRIES = 100
+
+/**
+ * Invalidates cached playback info entries.
+ * When itemId is provided, removes entries for that specific item; otherwise clears all.
+ */
+export function invalidatePlaybackCache(itemId?: string): void {
+  if (!itemId) {
+    playbackCache.clear()
+    return
+  }
+  for (const key of Array.from(playbackCache.keys())) {
+    if (key.endsWith(`:${itemId}`) || key === itemId) {
+      playbackCache.delete(key)
+    }
+  }
+}
 
 const IMAGE_BASED_SUB_CODECS = new Set(["pgssub", "dvdsub", "dvbsub", "xsub"])
 
@@ -93,7 +122,7 @@ function pickMediaSource(sources: JellyfinMediaSource[]): JellyfinMediaSource | 
 }
 
 export async function GET(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
@@ -101,6 +130,39 @@ export async function GET(
     if (!isValidItemId(id)) {
       return NextResponse.json({ error: "Invalid item ID" }, { status: 400 })
     }
+
+    const session = await getSession()
+    const rateLimitKey = session?.userId
+      ? `playback:${session.userId}`
+      : `playback:${getClientIp(request)}`
+
+    if (!checkRateLimit(rateLimitKey, PLAYBACK_RATE_LIMITS.PLAYBACK_INFO)) {
+      return NextResponse.json(
+        { error: "Too many playback requests. Please wait a moment." },
+        { status: 429 },
+      )
+    }
+
+    const url = new URL(request.url)
+    const refresh = url.searchParams.get("refresh") === "true"
+    const cacheControl = request.headers.get("cache-control") || ""
+    const noCache =
+      refresh ||
+      cacheControl.includes("no-cache") ||
+      cacheControl.includes("no-store") ||
+      cacheControl.includes("max-age=0")
+
+    const cacheKey = `${session?.userId ?? "anon"}:${id}`
+    const now = Date.now()
+    if (!noCache) {
+      const cached = playbackCache.get(cacheKey)
+      if (cached && now - cached.timestamp < PLAYBACK_CACHE_TTL_MS) {
+        return NextResponse.json(cached.payload, {
+          headers: { "Cache-Control": "private, max-age=30" },
+        })
+      }
+    }
+
     const { token } = await authenticate()
 
     const [playbackInfo, detail] = await Promise.all([
@@ -112,6 +174,7 @@ export async function GET(
     if (!mediaSource) {
       return NextResponse.json({ error: "No playable media source found" }, { status: 404 })
     }
+
 
     const streams = mediaSource.MediaStreams ?? []
     const videoStream = streams.find((s) => s.Type === "Video")
@@ -222,7 +285,7 @@ export async function GET(
         ? buildItemImageUrl(detail.ParentBackdropItemId, token, "Backdrop")
         : undefined
 
-    return NextResponse.json({
+    const payload = parsePlaybackPayload({
       itemId: id,
       playSessionId: playbackInfo.PlaySessionId,
       mediaSourceId: mediaSource.Id,
@@ -265,6 +328,16 @@ export async function GET(
           }
         : null,
       backdropUrl,
+    })
+
+    if (playbackCache.size >= MAX_CACHE_ENTRIES) {
+      const oldestKey = playbackCache.keys().next().value
+      if (oldestKey) playbackCache.delete(oldestKey)
+    }
+    playbackCache.set(cacheKey, { payload, timestamp: Date.now() })
+
+    return NextResponse.json(payload, {
+      headers: { "Cache-Control": "private, max-age=30" },
     })
   } catch (e) {
     const message = e instanceof Error ? e.message : "Failed to load playback info"
