@@ -75,13 +75,13 @@ export function WatchPage() {
       play(target.id)
     }
 
-    setResolvedId(null)
-    setPayload(null)
-    setEpisodes(null)
-    setSeasons([])
-    setError(null)
+    void (async () => {
+      setResolvedId(null)
+      setPayload(null)
+      setEpisodes(null)
+      setSeasons([])
+      setError(null)
 
-    async function resolve() {
       try {
         if (partyParam) {
           const partyRes = await fetch(`/api/party/${partyParam}`)
@@ -136,9 +136,8 @@ export function WatchPage() {
       } catch (e) {
         fail({ message: e instanceof Error ? e.message : "Failed to resolve the title to play." })
       }
-    }
+    })()
 
-    void resolve()
     return () => {
       cancelled = true
     }

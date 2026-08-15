@@ -37,11 +37,10 @@ export function MovieRow({
     fetcher
   )
 
-  const rawItems: MovieCardItem[] = customItems || (data?.results ?? [])
-  const items: MovieCardItem[] = useMemo(
-    () => filterDisplayableContent(rawItems),
-    [rawItems]
-  )
+  const items: MovieCardItem[] = useMemo(() => {
+    const rawItems: MovieCardItem[] = customItems || (data?.results ?? [])
+    return filterDisplayableContent(rawItems)
+  }, [customItems, data])
 
   const getItemType = (item: MovieCardItem): "movie" | "tv" =>
     item.media_type === "tv" || item.media_type === "movie" ? item.media_type : type

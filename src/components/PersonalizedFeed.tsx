@@ -26,15 +26,10 @@ export function PersonalizedFeed({
 } = {}) {
   const [hour, setHour] = useState<number | null>(null)
 
-  const { data: authData } = useSWR<{ authenticated?: boolean; user?: { username?: string } }>(
-    "/api/auth/me",
-    fetcher,
-    { revalidateOnFocus: false }
-  )
-  const username = authData?.user?.username
-
   useEffect(() => {
-    setHour(new Date().getHours())
+    void (async () => {
+      setHour(new Date().getHours())
+    })()
   }, [])
 
   const queryParams = new URLSearchParams()

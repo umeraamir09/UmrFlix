@@ -1,6 +1,6 @@
+import Image from "next/image"
 import { HeroBillboard, BillboardItem } from "@/components/HeroBillboard"
 import { MovieRow } from "@/components/MovieRow"
-import { ContinueWatchingSection } from "@/components/ContinueWatchingSection"
 import { SpotlightBanner, SpotlightItem } from "@/components/SpotlightBanner"
 import { PersonalizedFeed } from "@/components/PersonalizedFeed"
 import { getTrending, getItemLogo } from "@/lib/tmdb"
@@ -43,6 +43,28 @@ function seededShuffle<T>(arr: T[], seed: number): T[] {
   return shuffled
 }
 
+// Structural view over the trending movie/tv union so hero and spotlight
+// building can read either shape without `any`.
+type TrendingMedia = {
+  id: number
+  title?: string
+  name?: string
+  overview: string
+  backdrop_path: string | null
+  poster_path: string | null
+  vote_average: number
+  release_date?: string
+  first_air_date?: string
+}
+
+function getTimeSeed(): number {
+  return Math.floor(Date.now() / (1000 * 60 * 60))
+}
+
+function getThirtyDaysAgo(): string {
+  return new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split("T")[0]
+}
+
 export default async function HomePage() {
   let heroItems: BillboardItem[] = []
   let spotlightItem1: SpotlightItem | null = null
@@ -50,8 +72,8 @@ export default async function HomePage() {
   let recentlyAddedItems: JellyfinApiItem[] = []
   const airingMap: Record<number, string> = {} // TMDB ID -> airing label
 
-  const timeSeed = Math.floor(Date.now() / (1000 * 60 * 60)) // Rotates every hour
-  const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split("T")[0]
+  const timeSeed = getTimeSeed() // Rotates every hour
+  const thirtyDaysAgo = getThirtyDaysAgo()
 
   try {
     // 1. Fetch trending with release filtering
@@ -116,7 +138,7 @@ export default async function HomePage() {
     const shuffledHeroCandidates = seededShuffle(rawHeroCandidates, timeSeed).slice(0, 5)
 
     heroItems = await Promise.all(
-      shuffledHeroCandidates.map(async (item: any) => {
+      shuffledHeroCandidates.map(async (item: TrendingMedia) => {
         const type: "movie" | "tv" = item.title ? "movie" : "tv"
         const logo_path = await getItemLogo(type, item.id)
         return {
@@ -137,7 +159,7 @@ export default async function HomePage() {
     // 6. Dynamic Spotlight items (Rotated using timeSeed)
     if (tvResults.length > 2) {
       const spIndex = (timeSeed % (tvResults.length - 2)) + 2
-      const sp = tvResults[spIndex] as any
+      const sp: TrendingMedia = tvResults[spIndex]
       spotlightItem1 = {
         id: sp.id,
         title: sp.name || sp.title || "",
@@ -149,7 +171,7 @@ export default async function HomePage() {
 
     if (movieResults.length > 2) {
       const sp2Index = ((timeSeed + 1) % (movieResults.length - 2)) + 2
-      const sp2 = movieResults[sp2Index] as any
+      const sp2: TrendingMedia = movieResults[sp2Index]
       spotlightItem2 = {
         id: sp2.id,
         title: sp2.title || sp2.name || "",
@@ -224,16 +246,14 @@ export default async function HomePage() {
                     href={tmdbId ? `/${mediaType}/${tmdbId}` : "#"}
                     className="block group"
                   >
-                    <div className="aspect-[2/3] w-full bg-card rounded-none flex items-center justify-center overflow-hidden border border-border group-hover:border-accent transition-colors">
-                      {item.ProviderIds?.Tmdb ? (
-                        <img
-                          src={`https://image.tmdb.org/t/p/w342/poster_path${item.ProviderIds.Tmdb}.jpg`}
-                          alt={item.Name}
-                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                        />
-                      ) : (
-                        <span className="text-gray-500 text-xs text-center px-2">No Poster</span>
-                      )}
+                    <div className="relative aspect-[2/3] w-full bg-card rounded-none flex items-center justify-center overflow-hidden border border-border group-hover:border-accent transition-colors">
+                      <Image
+                        src={`/api/jellyfin/image/${item.Id}?type=Primary`}
+                        alt={item.Name}
+                        fill
+                        unoptimized
+                        className="object-cover group-hover:scale-105 transition-transform duration-300"
+                      />
                     </div>
                     <h3 className="text-xs font-bold text-white mt-1 truncate group-hover:text-accent transition-colors">{item.Name}</h3>
                   </a>

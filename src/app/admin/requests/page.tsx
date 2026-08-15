@@ -47,7 +47,9 @@ export default function AdminRequestsPage() {
   }
 
   useEffect(() => {
-    fetchAdminRequests()
+    void (async () => {
+      await fetchAdminRequests()
+    })()
   }, [])
 
   const handleApprove = async (id: string) => {

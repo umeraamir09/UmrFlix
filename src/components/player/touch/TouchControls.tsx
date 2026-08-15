@@ -195,7 +195,6 @@ export function TouchControls({
   onSubtitleChange,
   onPlaybackRateChange,
   onBack,
-  onReport: _onReport,
   onInteract,
   isFullscreen = false,
   onToggleFullscreen,

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { authenticate, getAllItems, JellyfinItem, JellyfinAuthError } from "@/lib/jellyfin"
 import { setJellyfinIndex } from "@/lib/cache"
 import { tmdbProxyFetch } from "@/lib/tmdb-proxy"
-import { getSession, clearSessionCookie } from "@/lib/auth"
+import { getSession } from "@/lib/auth"
 
 import { checkRateLimit } from "@/lib/rate-limit"
 import { SingleFlight } from "@/lib/circuit-breaker"

@@ -1,7 +1,7 @@
 "use client"
 
 import type { AvailabilityResult } from "@/app/api/availability/route"
-import { Check, Download, BookmarkPlus, Bookmark, Clock } from "lucide-react"
+import { Download, BookmarkPlus, Bookmark, Clock } from "lucide-react"
 
 export function AvailabilityBadge({ state }: { state?: AvailabilityResult }) {
   if (!state) return null

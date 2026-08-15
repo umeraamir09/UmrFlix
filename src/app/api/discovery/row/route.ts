@@ -3,7 +3,6 @@ import { getSession } from "@/lib/auth"
 import { getUserDiscoveryProfile } from "@/lib/discovery/profile"
 import { getFacetScoredItems } from "@/lib/discovery/rows"
 import { scoreItem, serveDemotion } from "@/lib/discovery/ranking"
-import { cosineSimilarity } from "@/lib/discovery/vector"
 import { getServeLog, recordServeLog } from "@/lib/discovery/store"
 
 export const dynamic = "force-dynamic"
@@ -26,7 +25,7 @@ export async function GET(req: Request) {
       return NextResponse.json({ results: [] })
     }
 
-    const { spec, items } = facetData
+    const { items } = facetData
     const session = await getSession()
     const userId = session?.userId ?? "default-user"
 
@@ -41,7 +40,6 @@ export async function GET(req: Request) {
     const scored = items
       .filter((item) => !profile.completedKeys.has(item.key) && !profile.interactedKeys.has(item.key))
       .map((item) => {
-        const sim = cosineSimilarity(profile.vector, item.vector)
         let score = scoreItem({
           userVector: profile.vector,
           itemVector: item.vector,

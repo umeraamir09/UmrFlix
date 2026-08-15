@@ -7,7 +7,6 @@ export const dynamic = "force-dynamic"
 
 const BASE = () => env("JELLYFIN_URL")
 
-const MIN_TILE_INDEX = 0
 const MAX_TILE_INDEX = 10_000
 const MIN_WIDTH = 32
 const MAX_WIDTH = 1920

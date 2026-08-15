@@ -1,6 +1,7 @@
 "use client"
 
 import type { ChapterInfo } from "@/lib/playback-types"
+import Image from "next/image"
 import { usePreloadedImage } from "./use-preloaded-image"
 
 /** Displayed preview width — matches trickplay for visual consistency. */
@@ -109,11 +110,13 @@ export function ChapterImagePreview({
       style={{ width: displayW, height: displayH }}
     >
       {loaded && url && (
-        <img
+        <Image
           src={url}
           alt={chapter.name || "Chapter preview"}
-          className="absolute inset-0 h-full w-full object-cover"
+          fill
+          unoptimized
           draggable={false}
+          className="object-cover"
         />
       )}
     </div>

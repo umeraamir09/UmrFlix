@@ -9,16 +9,11 @@ import {
   HardDrive,
   Tv,
   CheckCircle2,
-  XCircle,
   Pause,
   Play,
   Trash2,
   Loader2,
   RefreshCw,
-  Film,
-  Users,
-  AlertCircle,
-  ExternalLink,
 } from "lucide-react"
 
 import useSWR from "swr"
@@ -70,7 +65,6 @@ export default function AdminDashboardPage() {
   const [torrents, setTorrents] = useState<TorrentItem[]>([])
   const [sessions, setSessions] = useState<JellyfinSessionItem[]>([])
   const [storage, setStorage] = useState<StorageData | null>(null)
-  const [loading, setLoading] = useState(true)
   const [actionLoading, setActionLoading] = useState<string | null>(null)
 
   // Fetch profiles for quality profile and tag resolution
@@ -92,15 +86,15 @@ export default function AdminDashboardPage() {
       setStorage(storeRes)
     } catch {
       /* silent */
-    } finally {
-      setLoading(false)
     }
   }
 
   useEventStream()
 
   useEffect(() => {
-    fetchData()
+    void (async () => {
+      await fetchData()
+    })()
     const unsub = onReFetch(fetchData)
     return () => unsub()
   }, [])

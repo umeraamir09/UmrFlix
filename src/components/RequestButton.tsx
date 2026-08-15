@@ -44,7 +44,6 @@ export function RequestButton({
   const { toast } = useToast()
   const [showModal, setShowModal] = useState(false)
   const [showPartyModal, setShowPartyModal] = useState(false)
-  const [loading, setLoading] = useState(false)
 
   const handleSuccess = () => {
     setShowModal(false)

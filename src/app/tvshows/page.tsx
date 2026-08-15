@@ -3,7 +3,7 @@ import { HeroBillboard, BillboardItem } from "@/components/HeroBillboard"
 import { MovieRow } from "@/components/MovieRow"
 import { SpotlightBanner, SpotlightItem } from "@/components/SpotlightBanner"
 import { GenreFilterBar } from "@/components/GenreFilterBar"
-import { getTrending, getItemLogo, discoverTv } from "@/lib/tmdb"
+import { getTrending, getItemLogo, discoverTv, type TmdbTvShow, type TmdbPaginated } from "@/lib/tmdb"
 import { filterReleasedContent } from "@/lib/catalog"
 import { PersonalizedFeed } from "@/components/PersonalizedFeed"
 import { getNextEpisode, getAiringLabel, lookupShowByTvdbId } from "@/lib/tvmaze"
@@ -52,17 +52,17 @@ export default async function TvShowCatalogPage({
 
       const rawHero = tvResults.slice(0, 5)
       heroItems = await Promise.all(
-        rawHero.map(async (item: any) => {
+        rawHero.map(async (item: TmdbTvShow) => {
           const logo_path = await getItemLogo("tv", item.id)
           return {
             id: item.id,
-            title: item.name || item.title || "Untitled Series",
+            title: item.name || "Untitled Series",
             overview: item.overview || "",
             backdrop_path: item.backdrop_path,
             poster_path: item.poster_path,
             media_type: "tv" as const,
             vote_average: item.vote_average,
-            release_date: item.first_air_date || item.release_date,
+            release_date: item.first_air_date,
             logo_path: logo_path,
             airingLabel: airingMap[item.id],
           }
@@ -70,10 +70,10 @@ export default async function TvShowCatalogPage({
       )
 
       if (tvResults.length > 5) {
-        const sp1 = tvResults[5] as any
+        const sp1 = tvResults[5]
         spotlightItem1 = {
           id: sp1.id,
-          title: sp1.name || sp1.title || "",
+          title: sp1.name || "",
           overview: sp1.overview || "",
           backdrop_path: sp1.backdrop_path,
           media_type: "tv",
@@ -81,7 +81,7 @@ export default async function TvShowCatalogPage({
       }
     } else {
       // 1. Fetch trending TV shows
-      const trendingTvData = await getTrending("tv", "week")
+      const trendingTvData = (await getTrending("tv", "week")) as TmdbPaginated<TmdbTvShow>
       const tvResults = filterReleasedContent(trendingTvData?.results || [])
 
       // 2. Fetch Jellyfin series for TVMaze airing schedule badges
@@ -118,17 +118,17 @@ export default async function TvShowCatalogPage({
       // 4. Build hero billboard items
       const rawHero = tvResults.slice(0, 5)
       heroItems = await Promise.all(
-        rawHero.map(async (item: any) => {
+        rawHero.map(async (item: TmdbTvShow) => {
           const logo_path = await getItemLogo("tv", item.id)
           return {
             id: item.id,
-            title: item.name || item.title || "Untitled Series",
+            title: item.name || "Untitled Series",
             overview: item.overview || "",
             backdrop_path: item.backdrop_path,
             poster_path: item.poster_path,
             media_type: "tv" as const,
             vote_average: item.vote_average,
-            release_date: item.first_air_date || item.release_date,
+            release_date: item.first_air_date,
             logo_path: logo_path,
             airingLabel: airingMap[item.id],
           }
@@ -137,10 +137,10 @@ export default async function TvShowCatalogPage({
 
       // 5. Build spotlight banners
       if (tvResults.length > 5) {
-        const sp1 = tvResults[5] as any
+        const sp1 = tvResults[5]
         spotlightItem1 = {
           id: sp1.id,
-          title: sp1.name || sp1.title || "",
+          title: sp1.name || "",
           overview: sp1.overview || "",
           backdrop_path: sp1.backdrop_path,
           media_type: "tv",
@@ -148,10 +148,10 @@ export default async function TvShowCatalogPage({
       }
 
       if (tvResults.length > 8) {
-        const sp2 = tvResults[8] as any
+        const sp2 = tvResults[8]
         spotlightItem2 = {
           id: sp2.id,
-          title: sp2.name || sp2.title || "",
+          title: sp2.name || "",
           overview: sp2.overview || "",
           backdrop_path: sp2.backdrop_path,
           media_type: "tv",
