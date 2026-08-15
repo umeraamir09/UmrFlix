@@ -1,12 +1,13 @@
 "use client"
 
-import { useCallback, useState } from "react"
+import { useCallback, useRef, useState } from "react"
 
 export type LockStatus = "idle" | "locked" | "unsupported" | "denied"
 
 /** screen.orientation.lock() isn't declared in every TS lib.dom version; type it locally. */
 type LockableScreenOrientation = ScreenOrientation & {
   lock?: (orientation: string) => Promise<void>
+  unlock?: () => void
   angle: number
 }
 
@@ -23,6 +24,7 @@ export function useOrientationLock() {
   const [status, setStatus] = useState<LockStatus>(() =>
     isLockableOrientation() ? "idle" : "unsupported",
   )
+  const isLockedRef = useRef(false)
 
   const lockLandscape = useCallback(
     async (target?: HTMLElement | null) => {
@@ -32,7 +34,10 @@ export function useOrientationLock() {
         return
       }
       const orientation = window.screen?.orientation as LockableScreenOrientation | undefined
-      if (!orientation) return
+      if (!orientation || typeof orientation.lock !== "function") {
+        setStatus("unsupported")
+        return
+      }
 
       try {
         const el = target ?? document.documentElement
@@ -42,11 +47,16 @@ export function useOrientationLock() {
           } else {
             const webkit = (el as unknown as { webkitRequestFullscreen?: () => void })
               .webkitRequestFullscreen
-            if (webkit) webkit.call(el)
+            if (webkit) {
+              try {
+                webkit.call(el)
+              } catch {}
+            }
           }
         }
 
-        await orientation.lock?.("landscape")
+        await orientation.lock("landscape")
+        isLockedRef.current = true
         setStatus("locked")
       } catch (err) {
         // Duplicate/reflexive lock requests (device already rotated, or a
@@ -54,6 +64,7 @@ export function useOrientationLock() {
         // "locked" state into "denied".
         const or = window.screen?.orientation as LockableScreenOrientation | undefined
         if (typeof or?.angle === "number" && (or.angle === 90 || or.angle === 270)) {
+          isLockedRef.current = true
           setStatus("locked")
           return
         }
@@ -67,6 +78,7 @@ export function useOrientationLock() {
           return
         }
         console.warn("[useOrientationLock] Orientation lock failed:", err)
+        isLockedRef.current = false
         setStatus("denied")
       }
     },
@@ -75,12 +87,21 @@ export function useOrientationLock() {
 
   const release = useCallback(async () => {
     if (typeof window === "undefined") return
+    if (!isLockedRef.current) {
+      setStatus((prev) => (prev === "unsupported" ? "unsupported" : "idle"))
+      return
+    }
     try {
-      if (window.screen?.orientation?.unlock) {
+      if (typeof window.screen?.orientation?.unlock === "function") {
         window.screen.orientation.unlock()
       }
-    } catch {}
-    setStatus("idle")
+    } catch (err) {
+      // Firefox or Chromium can throw if unlock is called without an active lock
+      console.warn("[useOrientationLock] Orientation unlock failed:", err)
+    } finally {
+      isLockedRef.current = false
+      setStatus((prev) => (prev === "unsupported" ? "unsupported" : "idle"))
+    }
   }, [])
 
   return { status, setStatus, lockLandscape, release }

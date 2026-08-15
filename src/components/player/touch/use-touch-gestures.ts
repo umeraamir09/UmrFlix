@@ -5,8 +5,8 @@ import { useEffect, useRef, useState } from "react"
 export type SkipSide = "left" | "right"
 export type SkipRipple = { side: SkipSide; count: number } | null
 
-/** Window in which a second tap on the same side is treated as a double-tap skip. */
-const DOUBLE_TAP_MS = 250
+/** Window in which a second tap on the same side is treated as a double-tap skip. (Issue 7.4: 200ms for snappy tap response) */
+const DOUBLE_TAP_MS = 200
 /** Press and hold duration before 2x playback speed engages. */
 const LONG_PRESS_2X_MS = 450
 /** Movement beyond this between pointerdown/up cancels the tap (it was a drag). */

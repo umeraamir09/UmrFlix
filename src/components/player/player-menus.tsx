@@ -5,6 +5,7 @@ import { Check, ChevronLeft, Type } from "lucide-react"
 import {
   QUALITY_PRESETS,
   type AudioTrack,
+  type QualityPreset,
   type SubtitleTrack,
 } from "@/lib/playback-types"
 import type { SubtitleShadowStyle, SubtitleStyle } from "./SubtitleOverlay"
@@ -263,8 +264,8 @@ export function AudioSubtitlesMenu({
       onKeyDown={(e) => e.stopPropagation()}
       className={`${
         sheet
-          ? "fixed left-1/2 -translate-x-1/2 bottom-6 w-[calc(100vw-2rem)] max-w-sm"
-          : "fixed sm:absolute left-1/2 sm:left-auto -translate-x-1/2 sm:translate-x-0 bottom-20 sm:bottom-16 sm:right-0 w-[calc(100vw-2rem)] max-w-sm sm:w-96"
+          ? "fixed left-1/2 -translate-x-1/2 bottom-[max(1.5rem,env(safe-area-inset-bottom,1.5rem))] w-[calc(100vw-2rem)] max-w-sm"
+          : "fixed sm:absolute left-1/2 sm:left-auto -translate-x-1/2 sm:translate-x-0 bottom-[max(5rem,env(safe-area-inset-bottom,5rem))] sm:bottom-16 sm:right-0 w-[calc(100vw-2rem)] max-w-sm sm:w-96"
       } z-[100] pointer-events-auto max-h-[75vh] overflow-y-auto rounded-lg sm:rounded-[4px] border border-white/20 bg-[#16181f]/98 p-3 shadow-2xl backdrop-blur-2xl animate-in fade-in zoom-in-95 duration-150`}
     >
       {section === "root" && (
@@ -437,7 +438,7 @@ const SPEED_OPTIONS = [
   { label: "2.0x", value: 2.0 },
 ]
 
-export function getAvailableQualityPresets(sourceHeight?: number) {
+export function getAvailableQualityPresets(sourceHeight?: number): QualityPreset[] {
   if (!sourceHeight || sourceHeight <= 0) return QUALITY_PRESETS
   return QUALITY_PRESETS.filter((preset) => {
     if (preset.id === "auto" || !preset.maxHeight) return true
@@ -503,8 +504,8 @@ export function SpeedQualityMenu({
       onKeyDown={(e) => e.stopPropagation()}
       className={`${
         sheet
-          ? "fixed left-1/2 -translate-x-1/2 bottom-6 w-[calc(100vw-2rem)] max-w-sm"
-          : "fixed sm:absolute left-1/2 sm:left-auto -translate-x-1/2 sm:translate-x-0 bottom-20 sm:bottom-16 sm:right-0 w-[calc(100vw-2rem)] max-w-xs sm:w-80"
+          ? "fixed left-1/2 -translate-x-1/2 bottom-[max(1.5rem,env(safe-area-inset-bottom,1.5rem))] w-[calc(100vw-2rem)] max-w-sm"
+          : "fixed sm:absolute left-1/2 sm:left-auto -translate-x-1/2 sm:translate-x-0 bottom-[max(5rem,env(safe-area-inset-bottom,5rem))] sm:bottom-16 sm:right-0 w-[calc(100vw-2rem)] max-w-xs sm:w-80"
       } z-[100] pointer-events-auto max-h-[75vh] overflow-y-auto rounded-lg sm:rounded-[4px] border border-white/20 bg-[#16181f]/98 p-3 shadow-2xl backdrop-blur-2xl animate-in fade-in zoom-in-95 duration-150`}
     >
       {section === "root" && (

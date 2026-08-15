@@ -197,7 +197,9 @@ export function CinemaPlayer({
   const [endpointReady, setEndpointReady] = useState(false) // playback info settled
   const [episodeBrowserOpen, setEpisodeBrowserOpen] = useState(false)
 
-  const [isFullscreen, setIsFullscreen] = useState(false)
+  const [isNativeFullscreen, setIsNativeFullscreen] = useState(false)
+  const [isPseudoFullscreen, setIsPseudoFullscreen] = useState(false)
+  const isFullscreen = isNativeFullscreen || isPseudoFullscreen
   const [nextPrompt, setNextPrompt] = useState<{ secondsLeft: number } | null>(null)
   const [creditsPillDismissed, setCreditsPillDismissed] = useState(false)
   const [debugOpen, setDebugOpen] = useState(false)
@@ -875,11 +877,14 @@ export function CinemaPlayer({
 
   // ── Fullscreen ──
   useEffect(() => {
-    const onChange = () =>
-      setIsFullscreen(
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        !!document.fullscreenElement || !!(document as any).webkitFullscreenElement
-      )
+    const onChange = () => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const isNative = !!document.fullscreenElement || !!(document as any).webkitFullscreenElement
+      setIsNativeFullscreen(isNative)
+      if (isNative) {
+        setIsPseudoFullscreen(false)
+      }
+    }
     document.addEventListener("fullscreenchange", onChange)
     document.addEventListener("webkitfullscreenchange", onChange)
     return () => {
@@ -891,38 +896,61 @@ export function CinemaPlayer({
   const toggleFullscreen = useCallback(async () => {
     try {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      if (document.fullscreenElement || (document as any).webkitFullscreenElement) {
+      const doc = document as any
+      const isNative = !!(doc.fullscreenElement || doc.webkitFullscreenElement)
+
+      if (isNative) {
         if (document.exitFullscreen) {
           await document.exitFullscreen()
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        } else if ((document as any).webkitExitFullscreen) {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          ;(document as any).webkitExitFullscreen()
+        } else if (doc.webkitExitFullscreen) {
+          doc.webkitExitFullscreen()
+        }
+      } else if (isPseudoFullscreen) {
+        setIsPseudoFullscreen(false)
+        if (isTouchDevice) {
+          void releaseOrientation()
         }
       } else if (isTouchDevice) {
-        // lockLandscape requests fullscreen itself (then orientation.lock);
-        // requesting fullscreen again here would be the duplicate request
-        // and log a rejection on every toggle — so let it own the enter path.
+        // lockLandscape requests fullscreen itself (then orientation.lock)
         await lockLandscape(containerRef.current)
+        if (!doc.fullscreenElement && !doc.webkitFullscreenElement) {
+          setIsPseudoFullscreen(true)
+        }
       } else {
         if (containerRef.current?.requestFullscreen) {
           await containerRef.current.requestFullscreen()
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        } else if ((videoRef.current as any)?.webkitEnterFullscreen) {
+        } else if ((containerRef.current as any)?.webkitRequestFullscreen) {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          ;(videoRef.current as any).webkitEnterFullscreen()
+          ;(containerRef.current as any).webkitRequestFullscreen()
+        } else {
+          // 7.1: Avoid webkitEnterFullscreen on iOS video element (which destroys custom UI).
+          // Fallback to CSS pseudo-fullscreen instead.
+          setIsPseudoFullscreen(true)
         }
       }
     } catch (err) {
       console.error("[CinemaPlayer] Fullscreen toggle error:", err)
+      if (!isPseudoFullscreen) {
+        setIsPseudoFullscreen(true)
+      }
     }
-  }, [isTouchDevice, lockLandscape])
+  }, [isPseudoFullscreen, isTouchDevice, lockLandscape, releaseOrientation])
 
+  // 7.2: PiP guard with proper typeof checks for WebView/browser safety
   const togglePip = useCallback(() => {
     const video = videoRef.current
-    if (!video || !document.pictureInPictureEnabled) return
+    if (
+      !video ||
+      typeof document === "undefined" ||
+      typeof document.pictureInPictureEnabled === "undefined" ||
+      !document.pictureInPictureEnabled ||
+      typeof video.requestPictureInPicture !== "function"
+    ) {
+      return
+    }
     if (document.pictureInPictureElement) {
-      void document.exitPictureInPicture()
+      void document.exitPictureInPicture().catch(() => {})
     } else {
       void video.requestPictureInPicture().catch(() => {})
     }
@@ -1278,6 +1306,15 @@ export function CinemaPlayer({
       case "f":
         toggleFullscreen()
         break
+      case "Escape":
+        if (isPseudoFullscreen) {
+          e.preventDefault()
+          setIsPseudoFullscreen(false)
+          if (isTouchDevice) {
+            void releaseOrientation()
+          }
+        }
+        break
       case "d":
         setDebugOpen((o) => !o)
         break
@@ -1309,7 +1346,11 @@ export function CinemaPlayer({
       onKeyDown={handleKeyDown}
       onPointerMove={handlePointerMove}
       className={`group relative select-none overflow-hidden bg-black outline-none [container-type:inline-size] ${
-        fill ? "h-dvh w-full rounded-none" : "aspect-video w-full rounded-lg"
+        isPseudoFullscreen
+          ? "fixed inset-0 z-[9999] h-dvh w-screen rounded-none"
+          : fill
+          ? "h-dvh w-full rounded-none"
+          : "aspect-video w-full rounded-lg"
       } ${!controlsVisible && playing && !episodeBrowserOpen ? "cursor-none" : ""} ${className}`}
     >
       {/* Video Tap & Gesture Backdrop Layer */}
