@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server"
+import { isValidItemId } from "@/lib/validation"
 import {
   authenticate,
   getPlaybackInfo,
@@ -97,6 +98,9 @@ export async function GET(
 ) {
   try {
     const { id } = await params
+    if (!isValidItemId(id)) {
+      return NextResponse.json({ error: "Invalid item ID" }, { status: 400 })
+    }
     const { token } = await authenticate()
 
     const [playbackInfo, detail] = await Promise.all([

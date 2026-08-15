@@ -49,4 +49,9 @@ export const PARTY_RATE_LIMITS = {
   COMMAND: { windowMs: 10_000, maxRequests: 20 }, // 20 per 10s
   STATUS: { windowMs: 10_000, maxRequests: 30 }, // 30 per 10s
   PING: { windowMs: 60_000, maxRequests: 60 }, // 60 per min
+  JOIN_ROOM: { windowMs: 60_000, maxRequests: 20 }, // 20 per min
+  INVITE: { windowMs: 60_000, maxRequests: 30 }, // 30 per min
+  ITEM: { windowMs: 10_000, maxRequests: 20 }, // 20 per 10s
+  LEAVE_ROOM: { windowMs: 60_000, maxRequests: 20 }, // 20 per min
+  END_ROOM: { windowMs: 60_000, maxRequests: 10 }, // 10 per min
 }

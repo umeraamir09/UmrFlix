@@ -3,6 +3,8 @@ import { getSession } from "@/lib/auth"
 import { roomManager } from "@/lib/party/room-manager"
 import { addPartyInviteNotification, type UserNotification } from "@/lib/requests-store"
 import { apiError } from "@/lib/api-response"
+import { checkRateLimit, PARTY_RATE_LIMITS } from "@/lib/rate-limit"
+import { isValidItemId } from "@/lib/validation"
 
 export const dynamic = "force-dynamic"
 
@@ -16,12 +18,24 @@ export async function POST(
     return apiError("Unauthorized", 401, "UNAUTHORIZED")
   }
 
+  if (!checkRateLimit(`invite:${session.userId}`, PARTY_RATE_LIMITS.INVITE)) {
+    return apiError("Invite rate limit exceeded", 429, "RATE_LIMITED")
+  }
+
   const { id } = await params
+  const room = roomManager.getRoom(id)
+  if (!room) {
+    return apiError("Room not found", 404, "ROOM_NOT_FOUND")
+  }
+  if (!room.members.has(session.userId)) {
+    return apiError("Not a member of this room", 403, "NOT_ROOM_MEMBER")
+  }
+
   try {
     const body = await req.json()
     const { userIds } = body
-    if (!Array.isArray(userIds) || userIds.length === 0) {
-      return apiError("userIds array required", 400, "INVALID_INVITE_PAYLOAD")
+    if (!Array.isArray(userIds) || userIds.length === 0 || !userIds.every((uid) => isValidItemId(uid))) {
+      return apiError("Valid userIds array required", 400, "INVALID_INVITE_PAYLOAD")
     }
 
     const inviterName = session.username || "A user"

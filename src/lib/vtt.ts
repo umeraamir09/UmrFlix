@@ -169,6 +169,52 @@ function extractCuePosition(
   return {}
 }
 
+const ALLOWED_TAGS = new Set(["b", "i", "u", "s", "em", "strong", "font", "span"])
+
+// Validate safe color value (hex #rgb, #rrggbb, #rrggbbaa, rgb/rgba, or standard color name)
+const SAFE_COLOR_RE = /^(#[0-9a-fA-F]{3,8}|rgba?\(\s*\d+\s*,\s*\d+\s*,\s*\d+\s*(?:,\s*[\d.]+\s*)?\)|[a-zA-Z]+)$/
+
+function sanitizeAttributes(tagName: string, rawAttrs: string): string {
+  if (tagName === "font") {
+    // Only extract color attribute: color="value" or color='value' or color=value
+    const colorMatch = rawAttrs.match(/\bcolor\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/i)
+    if (colorMatch) {
+      const colorVal = (colorMatch[1] ?? colorMatch[2] ?? colorMatch[3] ?? "").trim()
+      if (SAFE_COLOR_RE.test(colorVal)) {
+        return ` color="${colorVal}"`
+      }
+    }
+    return ""
+  }
+
+  if (tagName === "span") {
+    // Check style for safe color
+    const styleMatch = rawAttrs.match(/\bstyle\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/i)
+    if (styleMatch) {
+      const styleVal = (styleMatch[1] ?? styleMatch[2] ?? styleMatch[3] ?? "").trim()
+      // Only permit safe color style declaration: "color: #123456" or "color: red"
+      const colorStyleMatch = styleVal.match(/^color\s*:\s*([^;]+);?$/i)
+      if (colorStyleMatch) {
+        const colorVal = colorStyleMatch[1].trim()
+        if (SAFE_COLOR_RE.test(colorVal)) {
+          return ` style="color: ${colorVal}"`
+        }
+      }
+    }
+    const classMatch = rawAttrs.match(/\bclass\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/i)
+    if (classMatch) {
+      const classVal = (classMatch[1] ?? classMatch[2] ?? classMatch[3] ?? "").trim()
+      if (/^[a-zA-Z0-9_-]+$/.test(classVal)) {
+        return ` class="${classVal}"`
+      }
+    }
+    return ""
+  }
+
+  // No attributes allowed for b, i, u, s, em, strong
+  return ""
+}
+
 /** Automatically close any unclosed allowed HTML tags to prevent style leaks */
 function autoCloseTags(html: string): string {
   const openTags: string[] = []
@@ -178,7 +224,7 @@ function autoCloseTags(html: string): string {
   while ((match = tagRegex.exec(html)) !== null) {
     const fullTag = match[0]
     const tagName = match[1].toLowerCase()
-    if (["b", "i", "u", "s", "em", "strong", "font", "span"].includes(tagName)) {
+    if (ALLOWED_TAGS.has(tagName)) {
       if (fullTag.startsWith("</")) {
         const idx = openTags.lastIndexOf(tagName)
         if (idx !== -1) {
@@ -213,7 +259,7 @@ const FANSUB_WARNING_PATTERNS = [
  * 2. Strip ASS/SSA override tags like {\an8}, {\b1}, {\pos(x,y)}
  * 3. Convert <br> / <br/> tags to newlines (\n)
  * 4. Strip WebVTT voice/class/ruby/rt/lang/timestamp tags like <v Speaker>, <c.yellow>
- * 5. Strip unauthorized HTML tags while keeping b, i, u, s, em, strong, font, span
+ * 5. Strictly sanitize HTML tags & attributes (whitelisting b, i, u, s, em, strong, font, span)
  * 6. Filter out ASS vector drawing commands (e.g. "m 0 0 l 100 100...")
  * 7. Filter out MPV / player format warning messages embedded in ASS tracks
  * 8. Auto-close open tags
@@ -227,6 +273,8 @@ export function sanitizeCueText(text: string): string {
     .replace(/\\n/g, "\n")
     // Strip ASS / SSA override tags inside {...}
     .replace(/\{[^}]*\}/g, "")
+    // Strip script, style, iframe, textarea blocks including inner content
+    .replace(/<(script|style|iframe|textarea|title|noscript)\b[^>]*>[\s\S]*?<\/\1>/gi, "")
     // Convert <br> / <br/> tags to newlines
     .replace(/<br\s*\/?>/gi, "\n")
     // Normalize CRLF
@@ -235,14 +283,36 @@ export function sanitizeCueText(text: string): string {
     .replace(/<(\d{2}:)?\d{2}:\d{2}[.,]\d{3}>/g, "")
     // Strip WebVTT voice <v ...>, class <c...>, lang <lang ...>, ruby/rt tags
     .replace(/<\/?(v|c|lang|ruby|rt)(\s+[^>]*)?>/gi, "")
-    // Remove unauthorized HTML tags, preserving b, i, u, s, em, strong, font, span
-    .replace(/<\/?(?!(?:b|i|u|s|em|strong|font|span)\b)[a-z0-9]+(?:\s+[^>]*)?>/gi, "")
 
   // Filter out ASS vector drawing commands (e.g. "m 0 0 l 100 100...")
   if (/^[mslbcq]\s+[\d\s-]/i.test(cleaned.trim())) return ""
 
   // Filter out fansub warning messages embedded in ASS tracks for non-MPV players
   if (FANSUB_WARNING_PATTERNS.some((pattern) => pattern.test(cleaned))) return ""
+
+  // Strict whitelist-based HTML sanitization for tags & attributes
+  // Strip dangerous tag structures (script, iframe, object, embed, style, img, svg, etc.)
+  const sanitizePass = (input: string): string => {
+    return input.replace(/<\/?([a-zA-Z0-9]+)([^>]*)>/gi, (_match, tagNameRaw: string, rawAttrs: string) => {
+      const tagName = tagNameRaw.toLowerCase()
+      const isClosing = _match.startsWith("</")
+
+      if (!ALLOWED_TAGS.has(tagName)) {
+        return "" // Strip non-whitelisted tags entirely
+      }
+
+      if (isClosing) {
+        return `</${tagName}>`
+      }
+
+      const safeAttrs = sanitizeAttributes(tagName, rawAttrs)
+      return `<${tagName}${safeAttrs}>`
+    })
+  }
+
+  // Run two passes to handle any nested tag tricks (e.g., <scr<script>ipt>)
+  cleaned = sanitizePass(cleaned)
+  cleaned = sanitizePass(cleaned)
 
   // Auto-close any unclosed formatting tags
   cleaned = autoCloseTags(cleaned)

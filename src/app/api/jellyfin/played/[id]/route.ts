@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server"
 import { markItemPlayed, markItemUnplayed } from "@/lib/jellyfin"
+import { isValidItemId } from "@/lib/validation"
 
 export async function POST(
   _request: Request,
@@ -7,6 +8,9 @@ export async function POST(
 ) {
   try {
     const { id } = await params
+    if (!isValidItemId(id)) {
+      return NextResponse.json({ error: "Invalid item ID" }, { status: 400 })
+    }
     await markItemPlayed(id)
     return NextResponse.json({ ok: true })
   } catch (e) {
@@ -21,6 +25,9 @@ export async function DELETE(
 ) {
   try {
     const { id } = await params
+    if (!isValidItemId(id)) {
+      return NextResponse.json({ error: "Invalid item ID" }, { status: 400 })
+    }
     await markItemUnplayed(id)
     return NextResponse.json({ ok: true })
   } catch (e) {

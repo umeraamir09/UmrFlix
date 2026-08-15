@@ -1,10 +1,12 @@
 import { NextResponse } from "next/server"
 import { env } from "@/lib/env"
 import { authenticate } from "@/lib/jellyfin"
+import { isValidItemId, isValidIndex } from "@/lib/validation"
 
 export const dynamic = "force-dynamic"
 
 const BASE = () => env("JELLYFIN_URL")
+const ALLOWED_FORMATS = new Set(["vtt", "srt", "ass", "ssa", "subrip"])
 
 /**
  * GET /api/jellyfin/subtitles/{itemId}/{mediaSourceId}/{streamIndex}?format=vtt
@@ -21,13 +23,17 @@ export async function GET(
   try {
     const { slug } = await params
     const [itemId, mediaSourceId, streamIndex] = slug
-    if (!itemId || !mediaSourceId || streamIndex == null) {
+    if (
+      !isValidItemId(itemId) ||
+      !isValidItemId(mediaSourceId) ||
+      !isValidIndex(streamIndex)
+    ) {
       return NextResponse.json({ error: "Invalid subtitle path" }, { status: 400 })
     }
 
-    const format = new URL(request.url).searchParams.get("format") || "vtt"
-    if (!/^[a-z0-9]+$/i.test(format)) {
-      return NextResponse.json({ error: "Invalid format" }, { status: 400 })
+    const format = (new URL(request.url).searchParams.get("format") || "vtt").toLowerCase()
+    if (!ALLOWED_FORMATS.has(format)) {
+      return NextResponse.json({ error: "Invalid subtitle format" }, { status: 400 })
     }
 
     const { token } = await authenticate()

@@ -22,6 +22,14 @@ export async function POST(
   }
 
   const { id } = await params
+  const room = roomManager.getRoom(id)
+  if (!room) {
+    return apiError("Room not found", 404, "ROOM_NOT_FOUND")
+  }
+  if (!room.members.has(session.userId)) {
+    return apiError("Not a member of this room", 403, "NOT_ROOM_MEMBER")
+  }
+
   try {
     const body = await req.json()
     const { buffering, positionSec } = body

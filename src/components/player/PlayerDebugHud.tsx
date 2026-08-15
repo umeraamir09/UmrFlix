@@ -94,7 +94,7 @@ export function PlayerDebugHud({
       `video: readyState=${READY_STATE[stats.readyState] ?? stats.readyState} networkState=${NETWORK_STATE[stats.networkState] ?? stats.networkState} time=${stats.time.toFixed(2)} bufferedEnd=${stats.bufferedEnd.toFixed(2)} (${bufferAhead.toFixed(1)}s ahead) paused=${stats.paused}${stats.error ? ` error=${stats.error}` : ""}`,
       "--- log ---",
       ...entries.map(
-        (e) => `${new Date(e.t).toISOString().slice(11, 23)} ${e.level.toUpperCase().padEnd(5)} [${e.tag}] ${e.message}`,
+        (e) => `${new Date(e.t).toISOString().slice(11, 23)} ${e.level.toUpperCase().padEnd(5)} [${e.tag}] ${maskUrl(e.message)}`,
       ),
     ].join("\n")
     try {
@@ -181,7 +181,7 @@ export function PlayerDebugHud({
               <span className="text-white/35">
                 {new Date(e.t).toISOString().slice(11, 23)}
               </span>{" "}
-              <span className="text-white/60">[{e.tag}]</span> {e.message}
+              <span className="text-white/60">[{e.tag}]</span> {maskUrl(e.message)}
             </p>
           ))}
         </div>

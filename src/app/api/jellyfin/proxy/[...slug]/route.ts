@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import { env } from "@/lib/env"
 import { authenticate } from "@/lib/jellyfin"
+import { isValidPathSlug } from "@/lib/validation"
 
 export const dynamic = "force-dynamic"
 
@@ -30,6 +31,9 @@ export async function GET(
 ) {
   try {
     const { slug } = await params
+    if (!isValidPathSlug(slug)) {
+      return NextResponse.json({ error: "Invalid proxy path" }, { status: 400 })
+    }
     const path = slug.join("/")
 
     const baseUrl = BASE()
