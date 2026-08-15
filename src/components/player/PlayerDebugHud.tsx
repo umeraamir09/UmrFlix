@@ -62,10 +62,12 @@ export function PlayerDebugHud({
   })
   const [copied, setCopied] = useState(false)
 
-  // Live video element stats, polled 4x/sec
+  // 4.4 — poll only while playback is active: a 250ms interval re-rendering
+  // the HUD while paused is pure waste. Pause/seek/load transitions sync once
+  // directly so paused stats never go stale.
   useEffect(() => {
-    const id = setInterval(() => {
-      const v = videoRef.current
+    const v = videoRef.current
+    const sync = () => {
       if (!v) return
       setStats({
         readyState: v.readyState,
@@ -77,8 +79,20 @@ export function PlayerDebugHud({
         seeking: v.seeking,
         error: v.error ? `${v.error.code} ${v.error.message}` : "",
       })
+    }
+    const id = setInterval(() => {
+      if (!v || v.paused) return
+      sync()
     }, 250)
-    return () => clearInterval(id)
+    v?.addEventListener("pause", sync)
+    v?.addEventListener("seeked", sync)
+    v?.addEventListener("loadedmetadata", sync)
+    return () => {
+      clearInterval(id)
+      v?.removeEventListener("pause", sync)
+      v?.removeEventListener("seeked", sync)
+      v?.removeEventListener("loadedmetadata", sync)
+    }
   }, [videoRef])
 
   const bufferAhead = Math.max(0, stats.bufferedEnd - stats.time)

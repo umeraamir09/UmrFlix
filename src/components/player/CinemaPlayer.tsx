@@ -23,7 +23,9 @@ import { playerLog } from "./player-debug"
 import { canBrowserPlayNatively } from "./codec-probe"
 import { PlayerDebugHud } from "./PlayerDebugHud"
 import { BandwidthEstimator, attachHlsBandwidthMonitor } from "./bandwidth-estimator"
+import { buildHlsConfig } from "./hls-config"
 import { applyStreamParams, maskUrl } from "@/lib/url-utils"
+import { createThrottledClock } from "@/lib/tick-throttle"
 import { usePartySync } from "./use-party-sync"
 import { PartyBar } from "@/components/party/PartyBar"
 import type { EpisodeInfo, SeasonInfo } from "@/components/SeasonBrowser"
@@ -100,6 +102,12 @@ export function CinemaPlayer({
   const lastSeekSendAtRef = useRef(0)
   const pendingSeekRef = useRef<number | null>(null)
   const seekFlushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // 4.1 — high-frequency playback clock: currentTimeRef is written on every
+  // timeupdate (zero re-renders); the `currentTime` state mirror is throttled
+  // to at most one update per 250ms for UI consumers (seek bar, subtitles,
+  // skip markers, watched tracking).
+  const currentTimeRef = useRef(0)
+  const timeTickThrottleRef = useRef(createThrottledClock(250))
   // Once playback has started (or autoplay is requested) stream rebuilds keep playing
   const playIntentRef = useRef(autoPlay)
   // Tracks whether a stream has ever been attached — used to preserve the
@@ -271,6 +279,8 @@ export function CinemaPlayer({
     setBuffering(false)
     setPlaying(false)
     setCurrentTime(0)
+    currentTimeRef.current = 0
+    timeTickThrottleRef.current.reset()
     setDuration(0)
     setBuffered(0)
     watchedReportedRef.current = false
@@ -612,27 +622,9 @@ export function CinemaPlayer({
 
       if (HlsCtor.isSupported()) {
         const startPos = seekTargetRef.current > 0 ? seekTargetRef.current : -1
-        const hls = new HlsCtor({
-          enableWorker: true,
-          lowLatencyMode: false,
-          capLevelToPlayerSize: false,
-          abrEwmaDefaultEstimate: 25_000_000,
-          backBufferLength: 60,
-          maxBufferLength: 40,
-          startPosition: startPos,
-          // Jellyfin transcoders can take 30-60s to emit the first segment —
-          // hls.js' 20s default frag timeout aborts the request too early and
-          // the server has to restart ffmpeg for every retry (endless stall).
-          manifestLoadingTimeOut: 20_000,
-          manifestLoadingMaxRetry: 2,
-          levelLoadingTimeOut: 20_000,
-          levelLoadingMaxRetry: 4,
-          fragLoadingTimeOut: 60_000,
-          fragLoadingMaxRetry: 6,
-          fragLoadingRetryDelay: 2_000,
-          levelLoadingRetryDelay: 1_500,
-          manifestLoadingRetryDelay: 1_500,
-        })
+        const hls = new HlsCtor(
+          buildHlsConfig({ startPosition: startPos, isTouchDevice }),
+        )
         hlsRef.current = hls
         attachHlsBandwidthMonitor(hls, HlsCtor, estimatorRef.current)
         hls.on(HlsCtor.Events.MEDIA_ATTACHED, () => playerLog.info("hls", "media attached"))
@@ -932,6 +924,10 @@ export function CinemaPlayer({
       const video = videoRef.current
       if (!video) return
       video.currentTime = t
+      // 4.1 — user-initiated seeks update the ref AND the throttled state
+      // immediately so the seek bar / scrub preview never lags the playhead.
+      currentTimeRef.current = t
+      setCurrentTime(t)
       if (!party?.partyId) return
 
       // Coalesce scrub seeks: send at most one command per 650ms, but always
@@ -1213,7 +1209,14 @@ export function CinemaPlayer({
           setPlaying(false)
           reporter.ping()
         }}
-        onTimeUpdate={(e) => setCurrentTime(e.currentTarget.currentTime)}
+        onTimeUpdate={(e) => {
+          // 4.1 — always keep the ref fresh; only mirror to state at ≤4Hz
+          const t = e.currentTarget.currentTime
+          currentTimeRef.current = t
+          if (timeTickThrottleRef.current.update(Date.now())) {
+            setCurrentTime(t)
+          }
+        }}
         onLoadedMetadata={(e) => {
           setDuration(e.currentTarget.duration || 0)
           playerLog.info("video", `loadedmetadata: duration=${e.currentTarget.duration.toFixed(1)}s ${e.currentTarget.videoWidth}x${e.currentTarget.videoHeight}`)

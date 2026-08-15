@@ -32,6 +32,20 @@ export function chapterImageUrl(
 }
 
 /**
+ * 4.6 — URLs of the chapter images to preload when the cursor enters the seek
+ * bar (trickplay-less fallback), so the hover bubble never pops in with a
+ * network stall. Only chapters with an imageTag produce a thumbnail.
+ */
+export function getChapterPreloadUrls(chapters: ChapterInfo[], itemId: string): string[] {
+  const urls: string[] = []
+  chapters.forEach((ch, idx) => {
+    if (!ch.imageTag) return
+    urls.push(chapterImageUrl(itemId, idx, ch.imageTag))
+  })
+  return urls
+}
+
+/**
  * Given sorted chapters and a time, find the active chapter index via binary search.
  * Returns the last chapter whose startSeconds <= time, or 0.
  */

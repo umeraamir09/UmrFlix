@@ -85,9 +85,15 @@ export function SubtitleOverlay({
    * row), so subtitles lift higher above it. */
   touchLayout?: boolean
 }) {
+  // 4.2 — findActiveCues binary-searches a start-sorted array; guarantee the
+  // invariant with a one-time sort instead of trusting every caller.
+  const sortedCues = useMemo(
+    () => (cues.length > 1 ? [...cues].sort((a, b) => a.start - b.start) : cues),
+    [cues],
+  )
   const activeCues = useMemo(
-    () => (cues.length > 0 ? findActiveCues(cues, currentTime - style.offset) : []),
-    [cues, currentTime, style.offset],
+    () => (sortedCues.length > 0 ? findActiveCues(sortedCues, currentTime - style.offset) : []),
+    [sortedCues, currentTime, style.offset],
   )
 
   if (activeCues.length === 0) return null

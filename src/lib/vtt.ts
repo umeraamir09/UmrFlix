@@ -469,10 +469,42 @@ export function parseVtt(vtt: string): VttCue[] {
   return cues.sort((a, b) => a.start - b.start)
 }
 
-/** Get all cues active at a given time in seconds (handles overlapping cues). */
+/**
+ * Get all cues active at a given time in seconds (handles overlapping cues).
+ * Assumes `cues` are sorted ascending by `start` (parseVtt guarantees this).
+ * Binary search for the rightmost cue with start <= time, then a bounded
+ * backward scan collects cues still in effect: O(log n + k), k capped at
+ * MAX_OVERLAP_SCAN — a 2-hour movie (~1500 cues) costs ~11 comparisons and at
+ * most 32 end checks instead of 1500.
+ */
+const MAX_OVERLAP_SCAN = 32
+
 export function findActiveCues(cues: VttCue[], time: number): VttCue[] {
   if (cues.length === 0) return []
-  return cues.filter((cue) => time >= cue.start && time < cue.end)
+
+  let lo = 0
+  let hi = cues.length - 1
+  let idx = -1
+  while (lo <= hi) {
+    const mid = (lo + hi) >>> 1
+    if (cues[mid].start <= time) {
+      idx = mid
+      lo = mid + 1
+    } else {
+      hi = mid - 1
+    }
+  }
+  if (idx === -1) return []
+
+  // Every index <= idx has start <= time by construction, so the scan only
+  // needs to check `end`; the cap bounds pathological overlap chains.
+  const active: VttCue[] = []
+  for (let i = idx; i >= 0 && idx - i < MAX_OVERLAP_SCAN; i--) {
+    if (time < cues[i].end) active.push(cues[i])
+  }
+  // Restore ascending (file) order for overlapping stacks
+  active.reverse()
+  return active
 }
 
 /** Get the first active cue at a given time (backward compatibility). */

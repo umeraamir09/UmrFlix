@@ -22,6 +22,8 @@
 - Start dev server: npm run dev
 - Lint: npm run lint
 - Watch Party protocol/manager tests: npm run test:party
+- Pure-logic lib/player tests (node:test): npm run test:lib
+- Player component tests (vitest + jsdom, `*.component.test.tsx`): npm run test:components
 - Production build: npm run build
 - Start production server: npm run start
 
@@ -32,7 +34,7 @@
 - Prefer small, targeted changes that fit the existing component and data-fetching patterns.
 
 ## Notes
-- There are no dedicated test scripts in this repo today; use lint/build plus manual verification for behavior changes.
+- Test suites: `npm run test:party` (watch party), `npm run test:lib` (pure-logic via node:test), and `npm run test:components` (player UI via vitest/jsdom). Use lint/build plus these suites for behavior changes.
 - The /watch route intentionally renders a fullscreen player experience without the standard navbar/footer chrome.
 - Watch Party engine lives under `src/lib/party/` (in-memory ephemeral rooms, protocol math, `roomManager` globalThis singleton), `/api/party/*` route handlers, `src/components/player/use-party-sync.ts` hook, and `/watch?party=[id]` room route.
 - Watch Party requires a single Node process (PM2 fork mode; see DEPLOY_VPS.md). Convex persistence is restart-survival only; hydrated room states get their `updatedAt` rebased to load time.
