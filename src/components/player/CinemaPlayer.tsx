@@ -1069,6 +1069,10 @@ export function CinemaPlayer({
       playerLog.info("network", "connection restored — resuming stream load")
       if (engine === "hls" && hlsRef.current) {
         hlsRef.current.startLoad()
+      } else if (engine === "direct" && loadError) {
+        // Re-enter the common payload/stream setup path so direct-play media
+        // that failed while offline is rebuilt instead of remaining errored.
+        setRetryKey((k) => k + 1)
       }
     },
   })

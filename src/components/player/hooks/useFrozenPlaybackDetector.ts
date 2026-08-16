@@ -38,6 +38,8 @@ export function useFrozenPlaybackDetector({
   const stallCountRef = useRef<number>(0)
 
   useEffect(() => {
+    let removePendingDirectRecoveryListeners: (() => void) | null = null
+
     // Reset state whenever playback stops or starts buffering
     if (!playing || buffering) {
       stallCountRef.current = 0
@@ -81,11 +83,31 @@ export function useFrozenPlaybackDetector({
             const savedPos = v.currentTime
             try {
               v.load()
-              v.currentTime = savedPos
-              const playPromise = v.play()
-              if (playPromise && typeof playPromise.catch === "function") {
-                playPromise.catch(() => {})
+
+              let recovered = false
+              const resumeAfterReady = () => {
+                if (recovered) return
+                recovered = true
+                removePendingDirectRecoveryListeners?.()
+                removePendingDirectRecoveryListeners = null
+
+                try {
+                  v.currentTime = savedPos
+                  const playPromise = v.play()
+                  if (playPromise && typeof playPromise.catch === "function") {
+                    playPromise.catch(() => {})
+                  }
+                } catch {
+                  /* ignore */
+                }
               }
+
+              removePendingDirectRecoveryListeners = () => {
+                v.removeEventListener("loadedmetadata", resumeAfterReady)
+                v.removeEventListener("canplay", resumeAfterReady)
+              }
+              v.addEventListener("loadedmetadata", resumeAfterReady)
+              v.addEventListener("canplay", resumeAfterReady)
             } catch {
               /* ignore */
             }
@@ -106,6 +128,8 @@ export function useFrozenPlaybackDetector({
 
     return () => {
       clearInterval(intervalId)
+      removePendingDirectRecoveryListeners?.()
+      removePendingDirectRecoveryListeners = null
       stallCountRef.current = 0
     }
   }, [playing, buffering, engine, videoRef, hlsRef, onRecoverAttempt, onFrozenDetected])

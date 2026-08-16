@@ -77,7 +77,7 @@ describe("UX Component & Hook Tests (Audit 6.1 - 6.5)", () => {
 
       // Mock navigator.mediaSession
       const mockMediaSession = {
-        metadata: null,
+        metadata: null as MediaMetadata | null,
         playbackState: "none",
         setActionHandler: mockSetActionHandler,
         setPositionState: mockSetPositionState,
@@ -91,7 +91,7 @@ describe("UX Component & Hook Tests (Audit 6.1 - 6.5)", () => {
       const onSeekTo = vi.fn()
       const onSkipBy = vi.fn()
 
-      renderHook(() =>
+      const { unmount } = renderHook(() =>
         useMediaSession({
           title: "Inception",
           subtitle: "Movie",
@@ -112,6 +112,17 @@ describe("UX Component & Hook Tests (Audit 6.1 - 6.5)", () => {
       expect(mockSetActionHandler).toHaveBeenCalledWith("seekforward", expect.any(Function))
       expect(mockSetActionHandler).toHaveBeenCalledWith("seekbackward", expect.any(Function))
       expect(mockSetActionHandler).toHaveBeenCalledWith("seekto", expect.any(Function))
+
+      mockMediaSession.metadata = {
+        title: "stale metadata",
+        artist: "",
+        album: "",
+        artwork: [],
+      } as MediaMetadata
+      unmount()
+
+      expect(mockMediaSession.metadata).toBeNull()
+      expect(mockMediaSession.playbackState).toBe("none")
     })
   })
 
@@ -141,6 +152,41 @@ describe("UX Component & Hook Tests (Audit 6.1 - 6.5)", () => {
   })
 
   describe("6.2 — useFrozenPlaybackDetector", () => {
+    it("waits for media readiness before restoring direct-play position", () => {
+      const video = document.createElement("video")
+      const setCurrentTime = vi.fn()
+      Object.defineProperty(video, "paused", { configurable: true, get: () => false })
+      Object.defineProperty(video, "readyState", { configurable: true, get: () => 4 })
+      Object.defineProperty(video, "currentTime", {
+        configurable: true,
+        get: () => 42.0,
+        set: setCurrentTime,
+      })
+      Object.defineProperty(video, "seeking", { configurable: true, get: () => false })
+      vi.spyOn(video, "load").mockImplementation(() => {})
+      vi.spyOn(video, "play").mockResolvedValue(undefined)
+
+      renderHook(() =>
+        useFrozenPlaybackDetector({
+          videoRef: { current: video },
+          playing: true,
+          buffering: false,
+          engine: "direct",
+          hlsRef: { current: null },
+        }),
+      )
+
+      act(() => vi.advanceTimersByTime(9000))
+
+      expect(video.load).toHaveBeenCalledTimes(1)
+      expect(video.play).not.toHaveBeenCalled()
+
+      act(() => video.dispatchEvent(new Event("loadedmetadata")))
+
+      expect(setCurrentTime).toHaveBeenLastCalledWith(42)
+      expect(video.play).toHaveBeenCalledTimes(1)
+    })
+
     it("escalates recovery when playback is frozen across polling intervals", () => {
       const video = document.createElement("video")
       Object.defineProperty(video, "paused", { configurable: true, get: () => false })

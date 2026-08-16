@@ -66,6 +66,21 @@ export function useMediaSession({
     }
   }, [title, subtitle, poster])
 
+  // Clear lock-screen metadata and state when the player leaves the page so
+  // a previous title/artwork is not retained by the browser.
+  useEffect(() => {
+    if (typeof window === "undefined" || !("mediaSession" in navigator)) return
+
+    return () => {
+      try {
+        navigator.mediaSession.metadata = null
+        navigator.mediaSession.playbackState = "none"
+      } catch {
+        /* Media Session may become unavailable during teardown */
+      }
+    }
+  }, [])
+
   // Register Media Session Action Handlers
   useEffect(() => {
     if (typeof window === "undefined" || !("mediaSession" in navigator)) return
