@@ -38,10 +38,13 @@ export async function GET() {
         }
       })
 
-      // Send periodic heartbeat every 20 seconds to prevent connection timeout
+      // Send periodic heartbeat & SSE keepalive comment every 20 seconds to prevent proxy connection timeouts
       heartbeatInterval = setInterval(() => {
         try {
-          controller.enqueue(encoder.encode(`event: ping\ndata: ${JSON.stringify({ time: Date.now() })}\n\n`))
+          // 8.1 — SSE comment (: keepalive\n\n) prevents proxy timeouts (nginx/Cloudflare/ALB)
+          controller.enqueue(
+            encoder.encode(`: keepalive\n\nevent: ping\ndata: ${JSON.stringify({ time: Date.now() })}\n\n`)
+          )
         } catch {
           clearInterval(heartbeatInterval)
         }

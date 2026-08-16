@@ -20,7 +20,7 @@ export function Footer() {
               />
             </Link>
             <p className="text-xs text-gray-400 leading-relaxed">
-              UmrFlix is your unified home for streaming media, merging TMDB's global catalog with your Jellyfin library, Radarr, and Sonarr media automation.
+              UmrFlix is your unified home for streaming media, merging TMDB&apos;s global catalog with your Jellyfin library, Radarr, and Sonarr media automation.
             </p>
           </div>
 

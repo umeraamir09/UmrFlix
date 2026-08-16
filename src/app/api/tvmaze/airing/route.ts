@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import { authenticate, getAllItems } from "@/lib/jellyfin"
+import { authenticate, getAllItems, type JellyfinItem } from "@/lib/jellyfin"
 import { lookupShowByTvdbId, getNextEpisode, getAiringLabel, type TvMazeShow } from "@/lib/tvmaze"
 
 interface ApiItem {
@@ -20,11 +20,11 @@ export async function GET() {
     const jellyfinItems = await getAllItems(token, token)
     
     // Filter only TV series
-    const seriesItems = jellyfinItems.filter((item: any) => item.Type === "Series")
+    const seriesItems = jellyfinItems.filter((item: JellyfinItem) => item.Type === "Series")
     
     // For each series, try to get TVMaze info
     const series = await Promise.all(
-      seriesItems.slice(0, 20).map(async (item: any) => {
+      seriesItems.slice(0, 20).map(async (item: JellyfinItem) => {
         const tvdbId = item.ProviderIds?.Tvdb ? parseInt(item.ProviderIds.Tvdb) : null
         let tvmazeData: TvMazeShow | null = null
         

@@ -6,7 +6,7 @@ import { useRouter, useSearchParams } from "next/navigation"
 import { Loader2, TriangleAlert } from "lucide-react"
 import { CinemaPlayer } from "@/components/player/CinemaPlayer"
 import type { NextEpisodeInfo } from "@/components/player/PlayerOverlays"
-import type { PlaybackPayload } from "@/lib/playback-types"
+import { parsePlaybackPayload, type PlaybackPayload } from "@/lib/playback-types"
 import type { AvailabilityResult } from "@/app/api/availability/route"
 import type { EpisodeInfo, SeasonInfo } from "@/components/SeasonBrowser"
 import { PartyRoomSnapshot, predictedPosition } from "@/lib/party/protocol"
@@ -75,13 +75,13 @@ export function WatchPage() {
       play(target.id)
     }
 
-    setResolvedId(null)
-    setPayload(null)
-    setEpisodes(null)
-    setSeasons([])
-    setError(null)
+    void (async () => {
+      setResolvedId(null)
+      setPayload(null)
+      setEpisodes(null)
+      setSeasons([])
+      setError(null)
 
-    async function resolve() {
       try {
         if (partyParam) {
           const partyRes = await fetch(`/api/party/${partyParam}`)
@@ -136,9 +136,8 @@ export function WatchPage() {
       } catch (e) {
         fail({ message: e instanceof Error ? e.message : "Failed to resolve the title to play." })
       }
-    }
+    })()
 
-    void resolve()
     return () => {
       cancelled = true
     }
@@ -150,9 +149,11 @@ export function WatchPage() {
     let cancelled = false
     fetch(`/api/jellyfin/playback/${resolvedId}`)
       .then(async (r) => {
-        const data = (await r.json()) as PlaybackPayload
-        if (!r.ok || data.error) throw new Error(data.error ?? "Failed to load stream info")
-        return data
+        const raw = await r.json()
+        if (!r.ok || (raw && typeof raw === "object" && raw.error && !raw.itemId)) {
+          throw new Error(raw?.error ?? "Failed to load stream info")
+        }
+        return parsePlaybackPayload(raw)
       })
       .then((p) => {
         if (cancelled) return
@@ -198,8 +199,12 @@ export function WatchPage() {
   }, [payload, episodes, resolvedId])
 
   const goToNextEpisode = useCallback(() => {
-    if (nextEpisode) router.replace(`/watch?id=${nextEpisode.id}`)
-  }, [router, nextEpisode])
+    if (!nextEpisode) return
+    setResolvedId(nextEpisode.id)
+    if (typeof window !== "undefined" && window.history?.replaceState) {
+      window.history.replaceState(null, "", `/watch?id=${nextEpisode.id}`)
+    }
+  }, [nextEpisode])
 
   const handlePartyNextEpisode = useCallback(async () => {
     // Host advances the entire party to the next episode
@@ -213,6 +218,9 @@ export function WatchPage() {
       })
       // Update locally — SSE broadcast will handle guests via onPartyItemChange
       setResolvedId(nextEpisode.id)
+      if (typeof window !== "undefined" && window.history?.replaceState) {
+        window.history.replaceState(null, "", `/watch?party=${partyId}`)
+      }
     } catch (err) {
       console.error("[WatchPage] Party next episode error:", err)
     }
@@ -229,14 +237,20 @@ export function WatchPage() {
             body: JSON.stringify({ itemId: episodeId }),
           })
           setResolvedId(episodeId)
+          if (typeof window !== "undefined" && window.history?.replaceState) {
+            window.history.replaceState(null, "", `/watch?party=${partyInfo.partyId}`)
+          }
         } catch (err) {
           console.error("[WatchPage] Party episode select error:", err)
         }
         return
       }
-      router.replace(`/watch?id=${episodeId}`)
+      setResolvedId(episodeId)
+      if (typeof window !== "undefined" && window.history?.replaceState) {
+        window.history.replaceState(null, "", `/watch?id=${episodeId}`)
+      }
     },
-    [router, partyInfo],
+    [partyInfo],
   )
 
   const handleBack = useCallback(() => {
@@ -303,7 +317,6 @@ export function WatchPage() {
   const playerSubtitle = series?.name ? payload?.title : undefined
   return (
     <CinemaPlayer
-      key={resolvedId}
       fill
       itemId={resolvedId}
       title={playerTitle}

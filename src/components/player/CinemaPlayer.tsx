@@ -4,9 +4,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import type Hls from "hls.js"
 import {
   QUALITY_PRESETS,
+  parsePlaybackPayload,
   type PlaybackPayload,
 } from "@/lib/playback-types"
-import { usePlayerSettings, savePlayerSettings } from "@/lib/player-settings"
+import { usePlayerSettings, updatePlayerSettings } from "@/lib/player-settings"
 import { SubtitleOverlay } from "./SubtitleOverlay"
 import { PlayerControls } from "./PlayerControls"
 import {
@@ -23,7 +24,9 @@ import { playerLog } from "./player-debug"
 import { canBrowserPlayNatively } from "./codec-probe"
 import { PlayerDebugHud } from "./PlayerDebugHud"
 import { BandwidthEstimator, attachHlsBandwidthMonitor } from "./bandwidth-estimator"
+import { buildHlsConfig } from "./hls-config"
 import { applyStreamParams, maskUrl } from "@/lib/url-utils"
+import { createThrottledClock } from "@/lib/tick-throttle"
 import { usePartySync } from "./use-party-sync"
 import { PartyBar } from "@/components/party/PartyBar"
 import type { EpisodeInfo, SeasonInfo } from "@/components/SeasonBrowser"
@@ -35,6 +38,11 @@ import { useWatchedTracking } from "./hooks/useWatchedTracking"
 import { usePlayerControls } from "./hooks/usePlayerControls"
 import { useSubtitles } from "./hooks/useSubtitles"
 import { useAdaptiveBitrate } from "./hooks/useAdaptiveBitrate"
+import { useMediaSession } from "./hooks/useMediaSession"
+import { useFrozenPlaybackDetector } from "./hooks/useFrozenPlaybackDetector"
+import { useNetworkStatus } from "./hooks/useNetworkStatus"
+import { useReportToast } from "./hooks/useReportToast"
+import { useReporterCleanup } from "./hooks/useReporterCleanup"
 
 const TICKS_PER_SECOND = 10_000_000
 const NEXT_EPISODE_COUNTDOWN = 10
@@ -100,6 +108,12 @@ export function CinemaPlayer({
   const lastSeekSendAtRef = useRef(0)
   const pendingSeekRef = useRef<number | null>(null)
   const seekFlushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // 4.1 — high-frequency playback clock: currentTimeRef is written on every
+  // timeupdate (zero re-renders); the `currentTime` state mirror is throttled
+  // to at most one update per 250ms for UI consumers (seek bar, subtitles,
+  // skip markers, watched tracking).
+  const currentTimeRef = useRef(0)
+  const timeTickThrottleRef = useRef(createThrottledClock(250))
   // Once playback has started (or autoplay is requested) stream rebuilds keep playing
   const playIntentRef = useRef(autoPlay)
   // Tracks whether a stream has ever been attached — used to preserve the
@@ -125,6 +139,13 @@ export function CinemaPlayer({
     seekTo: seekToFn,
     onItemChange: onPartyItemChange,
     onPartyEnded,
+    // 8.2 — Adaptive buffer recovery calculation based on HLS segment duration
+    segmentDurationSec: () => {
+      const hls = hlsRef.current
+      if (!hls) return 6
+      const lvl = hls.currentLevel >= 0 ? hls.levels?.[hls.currentLevel] : hls.levels?.[0]
+      return lvl?.details?.targetduration || 6
+    },
   })
 
   // Stable handle for unmount-time fire-and-forget commands; the usePartySync
@@ -137,7 +158,9 @@ export function CinemaPlayer({
   }, [partySync])
 
   useEffect(() => {
-    if (typeof startAtSec === "number" && startAtSec > 0) {
+    // 3.5 — Number.isFinite excludes NaN (typeof NaN === "number" passes a
+    // bare typeof check) so a malformed startAtSec can never seed a NaN seek.
+    if (typeof startAtSec === "number" && Number.isFinite(startAtSec) && startAtSec > 0) {
       seekTargetRef.current = startAtSec
     }
   }, [startAtSec])
@@ -184,13 +207,15 @@ export function CinemaPlayer({
   const [endpointReady, setEndpointReady] = useState(false) // playback info settled
   const [episodeBrowserOpen, setEpisodeBrowserOpen] = useState(false)
 
-  const [isFullscreen, setIsFullscreen] = useState(false)
+  const [isNativeFullscreen, setIsNativeFullscreen] = useState(false)
+  const [isPseudoFullscreen, setIsPseudoFullscreen] = useState(false)
+  const isFullscreen = isNativeFullscreen || isPseudoFullscreen
   const [nextPrompt, setNextPrompt] = useState<{ secondsLeft: number } | null>(null)
   const [creditsPillDismissed, setCreditsPillDismissed] = useState(false)
   const [debugOpen, setDebugOpen] = useState(false)
   const [lastStreamUrl, setLastStreamUrl] = useState("")
   const [playbackRate, setPlaybackRate] = useState(1)
-  const [reportToast, setReportToast] = useState(false)
+  const { reportToast, handleReport } = useReportToast(onReport)
   // 1.1 — shows "Switching to 720p…" (etc.) in the buffering overlay during a stream rebuild
   const [qualitySwitchToast, setQualitySwitchToast] = useState<string | null>(null)
   const [isTouchDevice, setIsTouchDevice] = useState(() => {
@@ -199,13 +224,72 @@ export function CinemaPlayer({
   })
 
   // ── Volume Hook ──
-  const { volume, muted, updateVolume, toggleMute, setMuted } = useVolumeManager(videoRef)
+  const { volume, muted, updateVolume, toggleMute } = useVolumeManager(videoRef)
 
   // ── Controls Hook ──
   const { controlsVisible, pokeControls } = usePlayerControls({
     playing,
     episodeBrowserOpen,
   })
+
+  // ── A11y: visually-hidden live region + announcement helper (issue 5.2) ──
+  const liveRegionRef = useRef<HTMLDivElement>(null)
+  const announce = useCallback((message: string) => {
+    if (liveRegionRef.current) liveRegionRef.current.textContent = message
+  }, [])
+
+  // 5.3 — when the controls auto-hide while focus is on a disappearing button,
+  // redirect focus to the player surface (Netflix-style) instead of dropping
+  // it to <body> and breaking keyboard navigation.
+  useEffect(() => {
+    if (controlsVisible || !playing || episodeBrowserOpen) return
+    const el = containerRef.current
+    const active = document.activeElement
+    if (el && active instanceof Node && el.contains(active)) {
+      el.focus({ preventScroll: true })
+    }
+  }, [controlsVisible, playing, episodeBrowserOpen])
+
+  // 5.2 — announce playback-state transitions (playing/paused/buffering/error)
+  // on actual changes only, so the live region never re-announces steady state.
+  const prevA11yStateRef = useRef({ playing: false, buffering: false, error: null as string | null })
+  useEffect(() => {
+    const prev = prevA11yStateRef.current
+    prevA11yStateRef.current = { playing, buffering, error: loadError }
+    if (loadError !== prev.error) {
+      if (loadError) announce(`Playback error: ${loadError}`)
+      return
+    }
+    if (buffering && !prev.buffering) {
+      announce("Buffering")
+      return
+    }
+    if (playing && !prev.playing) {
+      announce("Playing")
+      return
+    }
+    if (prev.playing && !playing && !buffering && endpointReady) {
+      announce("Paused")
+    }
+  }, [playing, buffering, loadError, endpointReady, announce])
+
+  // 5.2 — announce volume/mute changes with a short trailing debounce so a
+  // slider drag collapses into a single announcement.
+  const volumeAnnounceInitRef = useRef(false)
+  const volumeAnnounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  useEffect(() => {
+    if (!volumeAnnounceInitRef.current) {
+      volumeAnnounceInitRef.current = true
+      return
+    }
+    if (volumeAnnounceTimerRef.current) clearTimeout(volumeAnnounceTimerRef.current)
+    volumeAnnounceTimerRef.current = setTimeout(() => {
+      announce(muted ? "Muted" : `Volume ${Math.round(volume * 100)}%`)
+    }, 300)
+    return () => {
+      if (volumeAnnounceTimerRef.current) clearTimeout(volumeAnnounceTimerRef.current)
+    }
+  }, [volume, muted, announce])
 
   // ── Watched Tracking Hook ──
   useWatchedTracking({
@@ -245,15 +329,6 @@ export function CinemaPlayer({
     [party?.partyId, partySync]
   )
 
-  const handleReport = useCallback(() => {
-    if (onReport) {
-      onReport()
-    } else {
-      setReportToast(true)
-      setTimeout(() => setReportToast(false), 3000)
-    }
-  }, [onReport])
-
   // ── Fetch playback payload ──
   useEffect(() => {
     let cancelled = false
@@ -269,6 +344,8 @@ export function CinemaPlayer({
     setBuffering(false)
     setPlaying(false)
     setCurrentTime(0)
+    currentTimeRef.current = 0
+    timeTickThrottleRef.current.reset()
     setDuration(0)
     setBuffered(0)
     watchedReportedRef.current = false
@@ -281,9 +358,11 @@ export function CinemaPlayer({
 
     fetch(`/api/jellyfin/playback/${itemId}`)
       .then(async (r) => {
-        const data = (await r.json()) as PlaybackPayload
-        if (!r.ok || data.error) throw new Error(data.error ?? "Failed to load stream")
-        return data
+        const raw = await r.json()
+        if (!r.ok || (raw && typeof raw === "object" && raw.error && !raw.itemId)) {
+          throw new Error(raw?.error ?? "Failed to load stream")
+        }
+        return parsePlaybackPayload(raw)
       })
       .then((data) => {
         if (cancelled) return
@@ -319,6 +398,20 @@ export function CinemaPlayer({
     return QUALITY_PRESETS[0]
   })()
 
+  // 3.9 — probe only the audio codec that will actually be played. Probing
+  // EVERY track rejects direct play for files with a DTS track + an AAC track
+  // (or any other unsupported secondary audio) even when the supported track
+  // is the one in use, forcing a pointless transcode. Non-default audio
+  // selections force the HLS engine via `wantsTranscode` anyway, so only the
+  // default/selected track's codec needs to pass for direct play.
+  const probeAudioCodecs = useMemo(() => {
+    if (!payload) return []
+    const idx = audioIndex ?? payload.defaultAudioIndex
+    const track = payload.audio.find((a) => a.index === idx)
+    const codec = track?.codec ?? payload.audio[0]?.codec
+    return codec ? [codec] : []
+  }, [payload, audioIndex])
+
   // Probe the real browser for container+codec support — the server can
   // only gate on the file, not on what this device can decode.
   const codecProbe = useMemo(() => {
@@ -332,9 +425,9 @@ export function CinemaPlayer({
     return canBrowserPlayNatively(
       payload.container,
       payload.videoCodec,
-      payload.audio.map((a) => a.codec),
+      probeAudioCodecs,
     )
-  }, [payload])
+  }, [payload, probeAudioCodecs])
 
   const wantsTranscode =
     qualityId !== "auto" ||
@@ -360,8 +453,7 @@ export function CinemaPlayer({
   useEffect(() => {
     if (!payload) return
     playerLog.info("engine", `decision: ${engine.toUpperCase()} — ${engineReason}`)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [payload, engine])
+  }, [payload, engine, engineReason])
 
   // Single source of truth for the stream URL — ANY change to quality,
   // audio track, burned-in subtitle track or subtitle mode produces a new
@@ -458,10 +550,7 @@ export function CinemaPlayer({
   const reporter = usePlaybackReporter(getReporterState)
 
   // Stop reporting when leaving this item
-  useEffect(() => {
-    return () => reporter.stop()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [itemId])
+  useReporterCleanup(itemId, reporter.stop)
 
   // ── Stream setup — rebuilds whenever the resolved stream URL changes
   // (quality preset, audio track, burned-in subtitle track, subtitle mode) ──
@@ -471,6 +560,11 @@ export function CinemaPlayer({
 
     let cancelled = false
     const url = streamUrl
+    // 3.11 — track the loadedmetadata listener so it can be removed on
+    // teardown: the <video> element survives stream rebuilds, so a listener
+    // left behind by a previous attach would fire when the NEXT stream's
+    // metadata loads and run tryPlay from a dead closure.
+    let loadedMetadataHandler: (() => void) | null = null
 
     // 1.1 — capture the last visible frame to a canvas overlay so there's no
     // black flash while the new stream loads. The canvas is removed once the
@@ -570,7 +664,8 @@ export function CinemaPlayer({
 
       if (engine === "direct") {
         el.src = url
-        el.addEventListener("loadedmetadata", tryPlay, { once: true })
+        loadedMetadataHandler = () => tryPlay()
+        el.addEventListener("loadedmetadata", loadedMetadataHandler, { once: true })
         return
       }
 
@@ -590,27 +685,9 @@ export function CinemaPlayer({
 
       if (HlsCtor.isSupported()) {
         const startPos = seekTargetRef.current > 0 ? seekTargetRef.current : -1
-        const hls = new HlsCtor({
-          enableWorker: true,
-          lowLatencyMode: false,
-          capLevelToPlayerSize: false,
-          abrEwmaDefaultEstimate: 25_000_000,
-          backBufferLength: 60,
-          maxBufferLength: 40,
-          startPosition: startPos,
-          // Jellyfin transcoders can take 30-60s to emit the first segment —
-          // hls.js' 20s default frag timeout aborts the request too early and
-          // the server has to restart ffmpeg for every retry (endless stall).
-          manifestLoadingTimeOut: 20_000,
-          manifestLoadingMaxRetry: 2,
-          levelLoadingTimeOut: 20_000,
-          levelLoadingMaxRetry: 4,
-          fragLoadingTimeOut: 60_000,
-          fragLoadingMaxRetry: 6,
-          fragLoadingRetryDelay: 2_000,
-          levelLoadingRetryDelay: 1_500,
-          manifestLoadingRetryDelay: 1_500,
-        })
+        const hls = new HlsCtor(
+          buildHlsConfig({ startPosition: startPos, isTouchDevice }),
+        )
         hlsRef.current = hls
         attachHlsBandwidthMonitor(hls, HlsCtor, estimatorRef.current)
         hls.on(HlsCtor.Events.MEDIA_ATTACHED, () => playerLog.info("hls", "media attached"))
@@ -735,7 +812,8 @@ export function CinemaPlayer({
       } else if (el.canPlayType("application/vnd.apple.mpegurl")) {
         // Safari: native HLS
         el.src = url
-        el.addEventListener("loadedmetadata", tryPlay, { once: true })
+        loadedMetadataHandler = () => tryPlay()
+        el.addEventListener("loadedmetadata", loadedMetadataHandler, { once: true })
       } else if (!cancelled) {
         playerLog.error("hls", "neither MSE-hls.js nor native HLS available")
         fail("HLS playback is not supported in this browser.")
@@ -752,14 +830,28 @@ export function CinemaPlayer({
         seekTargetRef.current = video.currentTime
       }
       cancelled = true
+      // 3.11 — remove the stale loadedmetadata listener so a rebuild that
+      // happens before metadata loads can't leave a dead closure behind.
+      if (loadedMetadataHandler) {
+        video.removeEventListener("loadedmetadata", loadedMetadataHandler)
+        loadedMetadataHandler = null
+      }
       hlsRef.current?.destroy()
       hlsRef.current = null
       // 1.1 — clean up any stale frame-capture canvas if the effect was
       // cancelled before FRAG_BUFFERED fired (fast consecutive rebuilds).
       removeFrameCanvas()
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [payload, streamUrl, endpointReady])
+  }, [
+    payload,
+    streamUrl,
+    endpointReady,
+    engine,
+    qualityId,
+    autoResolvedId,
+    quality,
+    isTouchDevice,
+  ])
 
   // Preserve volume across stream rebuilds
   useEffect(() => {
@@ -777,7 +869,7 @@ export function CinemaPlayer({
   // diagnostics surface to regular viewers. Closes itself once playback resumes.
   useEffect(() => {
     if (!party?.partyId || !partySync.isOwner) return
-    if (buffering) {
+      if (buffering) {
       const id = setTimeout(() => {
         debugAutoOpenedRef.current = true
         setDebugOpen(true)
@@ -792,11 +884,14 @@ export function CinemaPlayer({
 
   // ── Fullscreen ──
   useEffect(() => {
-    const onChange = () =>
-      setIsFullscreen(
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        !!document.fullscreenElement || !!(document as any).webkitFullscreenElement
-      )
+    const onChange = () => {
+      const doc = document as unknown as { webkitFullscreenElement?: Element }
+      const isNative = !!document.fullscreenElement || !!doc.webkitFullscreenElement
+      setIsNativeFullscreen(isNative)
+      if (isNative) {
+        setIsPseudoFullscreen(false)
+      }
+    }
     document.addEventListener("fullscreenchange", onChange)
     document.addEventListener("webkitfullscreenchange", onChange)
     return () => {
@@ -807,39 +902,67 @@ export function CinemaPlayer({
 
   const toggleFullscreen = useCallback(async () => {
     try {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      if (document.fullscreenElement || (document as any).webkitFullscreenElement) {
+      const doc = document as unknown as {
+        fullscreenElement?: Element
+        webkitFullscreenElement?: Element
+        exitFullscreen?: () => Promise<void>
+        webkitExitFullscreen?: () => Promise<void>
+      }
+      const isNative = !!(doc.fullscreenElement || doc.webkitFullscreenElement)
+
+      if (isNative) {
         if (document.exitFullscreen) {
           await document.exitFullscreen()
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        } else if ((document as any).webkitExitFullscreen) {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          ;(document as any).webkitExitFullscreen()
+        } else if (doc.webkitExitFullscreen) {
+          await doc.webkitExitFullscreen()
+        }
+      } else if (isPseudoFullscreen) {
+        setIsPseudoFullscreen(false)
+        if (isTouchDevice) {
+          void releaseOrientation()
         }
       } else if (isTouchDevice) {
-        // lockLandscape requests fullscreen itself (then orientation.lock);
-        // requesting fullscreen again here would be the duplicate request
-        // and log a rejection on every toggle — so let it own the enter path.
+        // lockLandscape requests fullscreen itself (then orientation.lock)
         await lockLandscape(containerRef.current)
+        if (!doc.fullscreenElement && !doc.webkitFullscreenElement) {
+          setIsPseudoFullscreen(true)
+        }
       } else {
-        if (containerRef.current?.requestFullscreen) {
-          await containerRef.current.requestFullscreen()
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        } else if ((videoRef.current as any)?.webkitEnterFullscreen) {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          ;(videoRef.current as any).webkitEnterFullscreen()
+        const container = containerRef.current as (HTMLDivElement & {
+          webkitRequestFullscreen?: () => Promise<void>
+        }) | null
+        if (container?.requestFullscreen) {
+          await container.requestFullscreen()
+        } else if (container?.webkitRequestFullscreen) {
+          container.webkitRequestFullscreen()
+        } else {
+          // 7.1: Avoid webkitEnterFullscreen on iOS video element (which destroys custom UI).
+          // Fallback to CSS pseudo-fullscreen instead.
+          setIsPseudoFullscreen(true)
         }
       }
     } catch (err) {
       console.error("[CinemaPlayer] Fullscreen toggle error:", err)
+      if (!isPseudoFullscreen) {
+        setIsPseudoFullscreen(true)
+      }
     }
-  }, [isTouchDevice, lockLandscape])
+  }, [isPseudoFullscreen, isTouchDevice, lockLandscape, releaseOrientation])
 
+  // 7.2: PiP guard with proper typeof checks for WebView/browser safety
   const togglePip = useCallback(() => {
     const video = videoRef.current
-    if (!video || !document.pictureInPictureEnabled) return
+    if (
+      !video ||
+      typeof document === "undefined" ||
+      typeof document.pictureInPictureEnabled === "undefined" ||
+      !document.pictureInPictureEnabled ||
+      typeof video.requestPictureInPicture !== "function"
+    ) {
+      return
+    }
     if (document.pictureInPictureElement) {
-      void document.exitPictureInPicture()
+      void document.exitPictureInPicture().catch(() => {})
     } else {
       void video.requestPictureInPicture().catch(() => {})
     }
@@ -903,6 +1026,10 @@ export function CinemaPlayer({
       const video = videoRef.current
       if (!video) return
       video.currentTime = t
+      // 4.1 — user-initiated seeks update the ref AND the throttled state
+      // immediately so the seek bar / scrub preview never lags the playhead.
+      currentTimeRef.current = t
+      setCurrentTime(t)
       if (!party?.partyId) return
 
       // Coalesce scrub seeks: send at most one command per 650ms, but always
@@ -951,11 +1078,55 @@ export function CinemaPlayer({
     pokeControls()
   }, [togglePlay, pokeControls])
 
+  // 6.5 — Long-press 2x speed gesture handling on touch devices
+  const [is2xHolding, setIs2xHolding] = useState(false)
+  const speedBeforeHoldRef = useRef<number>(1)
+
+  const handle2xSpeedChange = useCallback((holding: boolean) => {
+    const video = videoRef.current
+    if (!video) return
+    if (holding) {
+      speedBeforeHoldRef.current = video.playbackRate || 1
+      video.playbackRate = 2.0
+      setIs2xHolding(true)
+    } else {
+      video.playbackRate = speedBeforeHoldRef.current || displayPlaybackRate || 1
+      setIs2xHolding(false)
+    }
+  }, [displayPlaybackRate])
+
   const { gestureHandlers, ripple: skipRipple } = useTouchGestures({
     enabled: !episodeBrowserOpen,
     onSingleTap: handleSingleTap,
     onSkip: skipBy,
     onMouseClick: handleSurfaceMouseClick,
+    on2xSpeedChange: handle2xSpeedChange,
+  })
+
+  // 6.3 — Network status and auto-recovery on reconnection
+  const { isOffline } = useNetworkStatus({
+    onOnline: () => {
+      playerLog.info("network", "connection restored — resuming stream load")
+      if (engine === "hls" && hlsRef.current) {
+        hlsRef.current.startLoad()
+      } else if (engine === "direct" && loadError) {
+        // Re-enter the common payload/stream setup path so direct-play media
+        // that failed while offline is rebuilt instead of remaining errored.
+        setRetryKey((k) => k + 1)
+      }
+    },
+  })
+
+  // 6.2 — Frozen playback detection and decoder stall recovery
+  useFrozenPlaybackDetector({
+    videoRef,
+    playing,
+    buffering,
+    engine,
+    hlsRef,
+    onFrozenDetected: () => {
+      setLoadError("Playback stalled due to decoder freeze. Please retry.")
+    },
   })
 
   // Flush a pending scrub seek when leaving the page: fire-and-forget the
@@ -1000,15 +1171,16 @@ export function CinemaPlayer({
   const handleQualityChange = useCallback(
     (id: string) => {
       playerLog.info("user", `quality change → ${id}`)
-      savePlayerSettings({ ...playerSettings, qualityPreference: id })
+      updatePlayerSettings({ qualityPreference: id })
       if (id === "auto") {
         estimatorRef.current.reset()
         setAutoResolvedId(null)
       }
       const qLabel = QUALITY_PRESETS.find((q) => q.id === id)?.label ?? id
       rebuildAtPosition(() => setQualityId(id), qLabel)
+      announce(`Quality changed to ${qLabel}`)
     },
-    [rebuildAtPosition, playerSettings],
+    [rebuildAtPosition, announce],
   )
   const handleAudioChange = useCallback(
     (index: number) => {
@@ -1018,8 +1190,9 @@ export function CinemaPlayer({
         payload?.audio.find((a) => a.index === index)?.language ||
         `Audio Track ${index + 1}`
       rebuildAtPosition(() => setAudioIndex(index), audioLabel)
+      announce(`Audio track changed to ${audioLabel}`)
     },
-    [rebuildAtPosition, payload],
+    [rebuildAtPosition, payload, announce],
   )
   const handleSubtitleChange = useCallback(
     (index: number | null) => {
@@ -1041,26 +1214,57 @@ export function CinemaPlayer({
   )
 
   // ── Next-episode auto-play countdown ──
+  // 3.4 — anchored to an absolute wall-clock end time, so background-tab
+  // timer throttling (Chrome drops hidden-tab timers to 1/min after 5 min)
+  // can never freeze the countdown: whenever a tick finally runs it computes
+  // the true remaining time, and the episode fires on schedule even if the
+  // tab was hidden the whole time.
+  const countdownEndRef = useRef(0)
   useEffect(() => {
-    if (!nextPrompt) return
-    if (nextPrompt.secondsLeft <= 0) {
-      const id = setTimeout(() => {
+    if (!nextPrompt) {
+      countdownEndRef.current = 0
+      return
+    }
+    // Anchor the deadline once per countdown (not per re-render/tick).
+    if (countdownEndRef.current === 0) {
+      countdownEndRef.current = Date.now() + nextPrompt.secondsLeft * 1000
+    }
+    const tick = () => {
+      const remaining = Math.ceil((countdownEndRef.current - Date.now()) / 1000)
+      if (remaining <= 0) {
+        countdownEndRef.current = 0
         setNextPrompt(null)
         onNextEpisode?.()
-      }, 0)
-      return () => clearTimeout(id)
+        return
+      }
+      // Keep the same object reference when the displayed value is unchanged
+      // so the 250ms interval doesn't force a re-render (and effect restart)
+      // four times per second.
+      setNextPrompt((p) => (p && p.secondsLeft === remaining ? p : { secondsLeft: remaining }))
     }
-    const id = setTimeout(
-      () => setNextPrompt((p) => (p ? { secondsLeft: p.secondsLeft - 1 } : p)),
-      1_000,
-    )
-    return () => clearTimeout(id)
+    const id = setInterval(tick, 250)
+    return () => clearInterval(id)
   }, [nextPrompt, onNextEpisode])
 
   const beginNextEpisode = useCallback(() => {
     setNextPrompt(null)
     onNextEpisode?.()
   }, [onNextEpisode])
+
+  // 6.1 — Media Session API: lock screen, notification shade, and media keys
+  useMediaSession({
+    title,
+    subtitle,
+    poster: poster || payload?.backdropUrl,
+    playing,
+    currentTime,
+    duration: duration || (payload ? payload.runtimeTicks / TICKS_PER_SECOND : 0),
+    playbackRate: displayPlaybackRate,
+    onTogglePlay: togglePlay,
+    onSeekTo: seekTo,
+    onSkipBy: skipBy,
+    onNextTrack: nextEpisode && onNextEpisode ? beginNextEpisode : undefined,
+  })
 
   // ── Active skip marker ──
   const activeMarker =
@@ -1072,54 +1276,77 @@ export function CinemaPlayer({
     !nextPrompt
 
   // ── Keyboard shortcuts ──
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    // The episode browser is a full-screen modal with its own focusable
-    // content — let its keys (arrows, Space, Tab) operate the list, not the
-    // player. It also handles Escape itself.
-    if (episodeBrowserOpen) return
-    const target = e.target as HTMLElement
-    if (target.tagName === "INPUT" || target.tagName === "TEXTAREA") return
-    const video = videoRef.current
-    if (!video) return
-    switch (e.key) {
-      case " ":
-      case "k":
-        e.preventDefault()
-        togglePlay()
-        break
-      case "ArrowRight":
-      case "l":
-        e.preventDefault()
-        seekTo(Math.min(duration || video.duration, video.currentTime + 10))
-        break
-      case "ArrowLeft":
-      case "j":
-        e.preventDefault()
-        seekTo(Math.max(0, video.currentTime - 10))
-        break
-      case "ArrowUp":
-        e.preventDefault()
-        updateVolume(volume + 0.1)
-        break
-      case "ArrowDown":
-        e.preventDefault()
-        updateVolume(volume - 0.1)
-        break
-      case "m": {
-        const next = !muted
-        video.muted = next
-        setMuted(next)
-        break
+  const handleKeyDown = useCallback(
+    (e: React.KeyboardEvent) => {
+      // The episode browser is a full-screen modal with its own focusable
+      // content — let its keys (arrows, Space, Tab) operate the list, not the
+      // player. It also handles Escape itself.
+      if (episodeBrowserOpen) return
+      const target = e.target as HTMLElement
+      if (target.tagName === "INPUT" || target.tagName === "TEXTAREA") return
+      const video = videoRef.current
+      if (!video) return
+      switch (e.key) {
+        case " ":
+        case "k":
+          e.preventDefault()
+          togglePlay()
+          break
+        case "ArrowRight":
+        case "l":
+          e.preventDefault()
+          seekTo(Math.min(duration || video.duration, video.currentTime + 10))
+          break
+        case "ArrowLeft":
+        case "j":
+          e.preventDefault()
+          seekTo(Math.max(0, video.currentTime - 10))
+          break
+        case "ArrowUp":
+          e.preventDefault()
+          updateVolume(volume + 0.1)
+          break
+        case "ArrowDown":
+          e.preventDefault()
+          updateVolume(volume - 0.1)
+          break
+        case "m": {
+          toggleMute()
+          break
+        }
+        case "f":
+          toggleFullscreen()
+          break
+        case "Escape":
+          if (isPseudoFullscreen) {
+            e.preventDefault()
+            setIsPseudoFullscreen(false)
+            if (isTouchDevice) {
+              void releaseOrientation()
+            }
+          }
+          break
+        case "d":
+          setDebugOpen((o) => !o)
+          break
       }
-      case "f":
-        toggleFullscreen()
-        break
-      case "d":
-        setDebugOpen((o) => !o)
-        break
-    }
-    pokeControls()
-  }
+      pokeControls()
+    },
+    [
+      episodeBrowserOpen,
+      togglePlay,
+      duration,
+      seekTo,
+      updateVolume,
+      volume,
+      toggleMute,
+      toggleFullscreen,
+      isPseudoFullscreen,
+      isTouchDevice,
+      releaseOrientation,
+      pokeControls,
+    ],
+  )
 
   const startedOrWaiting = endpointReady && !loadError
   const autoResolvedLabel = autoResolvedId
@@ -1133,6 +1360,8 @@ export function CinemaPlayer({
   return (
     <div
       ref={containerRef}
+      role="application"
+      aria-label={`Video player: ${title}`}
       data-force-landscape={
         isTouchDevice &&
         (orientationStatus === "unsupported" || orientationStatus === "denied")
@@ -1143,7 +1372,11 @@ export function CinemaPlayer({
       onKeyDown={handleKeyDown}
       onPointerMove={handlePointerMove}
       className={`group relative select-none overflow-hidden bg-black outline-none [container-type:inline-size] ${
-        fill ? "h-dvh w-full rounded-none" : "aspect-video w-full rounded-lg"
+        isPseudoFullscreen
+          ? "fixed inset-0 z-[9999] h-dvh w-screen rounded-none"
+          : fill
+          ? "h-dvh w-full rounded-none"
+          : "aspect-video w-full rounded-lg"
       } ${!controlsVisible && playing && !episodeBrowserOpen ? "cursor-none" : ""} ${className}`}
     >
       {/* Video Tap & Gesture Backdrop Layer */}
@@ -1152,10 +1385,14 @@ export function CinemaPlayer({
         {...gestureHandlers}
       />
 
+      {/* A11y live region (issue 5.2) — announces playback state transitions */}
+      <div ref={liveRegionRef} aria-live="polite" aria-atomic="true" className="sr-only" />
+
       <video
         ref={videoRef}
         poster={poster}
         playsInline
+        aria-label={title}
         className="size-full object-contain pointer-events-none"
         onPlay={() => {
           setPlaying(true)
@@ -1168,7 +1405,14 @@ export function CinemaPlayer({
           setPlaying(false)
           reporter.ping()
         }}
-        onTimeUpdate={(e) => setCurrentTime(e.currentTarget.currentTime)}
+        onTimeUpdate={(e) => {
+          // 4.1 — always keep the ref fresh; only mirror to state at ≤4Hz
+          const t = e.currentTarget.currentTime
+          currentTimeRef.current = t
+          if (timeTickThrottleRef.current.update(Date.now())) {
+            setCurrentTime(t)
+          }
+        }}
         onLoadedMetadata={(e) => {
           setDuration(e.currentTarget.duration || 0)
           playerLog.info("video", `loadedmetadata: duration=${e.currentTarget.duration.toFixed(1)}s ${e.currentTarget.videoWidth}x${e.currentTarget.videoHeight}`)
@@ -1223,6 +1467,8 @@ export function CinemaPlayer({
           isOwner={partySync.isOwner}
           members={partySync.members}
           bufferingUsers={partySync.bufferingUsers}
+          syncQuality={partySync.syncQuality}
+          syncDriftMs={partySync.syncDriftMs}
         />
       )}
 
@@ -1293,6 +1539,7 @@ export function CinemaPlayer({
             buffered={buffered}
             qualityId={qualityId}
             autoResolvedLabel={autoResolvedLabel}
+            sourceHeight={payload.height}
             audioTracks={payload.audio}
             audioIndex={audioIndex}
             subtitleTracks={payload.subtitles}
@@ -1338,6 +1585,7 @@ export function CinemaPlayer({
             muted={muted}
             qualityId={qualityId}
             autoResolvedLabel={autoResolvedLabel}
+            sourceHeight={payload.height}
             audioTracks={payload.audio}
             audioIndex={audioIndex}
             subtitleTracks={payload.subtitles}
@@ -1372,6 +1620,22 @@ export function CinemaPlayer({
             onReport={handleReport}
           />
         )
+      )}
+
+      {/* 6.3 — Offline indicator badge */}
+      {isOffline && (
+        <div className="pointer-events-none absolute top-4 left-1/2 z-50 -translate-x-1/2 flex items-center gap-2 rounded-full bg-red-600/90 px-4 py-1.5 text-xs font-semibold text-white shadow-lg backdrop-blur animate-in fade-in duration-200">
+          <span className="size-2 rounded-full bg-white animate-pulse" />
+          Network connection lost. Reconnecting…
+        </div>
+      )}
+
+      {/* 6.5 — 2x speed hold indicator badge */}
+      {is2xHolding && (
+        <div className="pointer-events-none absolute top-8 left-1/2 z-50 -translate-x-1/2 flex items-center gap-1.5 rounded-full bg-black/85 border border-white/20 px-4 py-1.5 text-sm font-bold text-white shadow-2xl backdrop-blur animate-in fade-in zoom-in-95 duration-100">
+          <span>2× Speed</span>
+          <span className="text-accent font-mono tracking-widest">&gt;&gt;</span>
+        </div>
       )}
 
       {/* Report Toast Notification */}

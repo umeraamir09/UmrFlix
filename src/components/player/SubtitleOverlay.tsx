@@ -85,9 +85,15 @@ export function SubtitleOverlay({
    * row), so subtitles lift higher above it. */
   touchLayout?: boolean
 }) {
+  // 4.2 — findActiveCues binary-searches a start-sorted array; guarantee the
+  // invariant with a one-time sort instead of trusting every caller.
+  const sortedCues = useMemo(
+    () => (cues.length > 1 ? [...cues].sort((a, b) => a.start - b.start) : cues),
+    [cues],
+  )
   const activeCues = useMemo(
-    () => (cues.length > 0 ? findActiveCues(cues, currentTime - style.offset) : []),
-    [cues, currentTime, style.offset],
+    () => (sortedCues.length > 0 ? findActiveCues(sortedCues, currentTime - style.offset) : []),
+    [sortedCues, currentTime, style.offset],
   )
 
   if (activeCues.length === 0) return null
@@ -112,7 +118,8 @@ export function SubtitleOverlay({
       {/* Standard bottom dialogue stack */}
       {bottomCues.length > 0 && (
         <div
-          className={`pointer-events-none absolute inset-x-0 flex flex-col items-center gap-1.5 px-8 text-center transition-[bottom] duration-300 ${
+          aria-live="polite"
+          className={`pointer-events-none absolute inset-x-0 flex flex-col items-center gap-1.5 px-8 text-center transition-[bottom] duration-200 ease-out ${
             controlsVisible ? (touchLayout ? "bottom-[128px]" : "bottom-[14cqh]") : "bottom-[5cqh]"
           }`}
         >

@@ -1,14 +1,12 @@
 import { NextResponse } from "next/server"
 import { env } from "@/lib/env"
 import { authenticate } from "@/lib/jellyfin"
+import { isValidItemId, isValidIndex } from "@/lib/validation"
 
 export const dynamic = "force-dynamic"
 
 const BASE = () => env("JELLYFIN_URL")
 
-// Guardrails so the proxy can't be used to probe arbitrary paths/params
-const ITEM_ID_RE = /^[a-zA-Z0-9]+$/
-const MIN_TILE_INDEX = 0
 const MAX_TILE_INDEX = 10_000
 const MIN_WIDTH = 32
 const MAX_WIDTH = 1920
@@ -28,7 +26,7 @@ export async function GET(
   try {
     const { slug } = await params
     const [itemId, widthRaw, indexRaw] = slug
-    if (!itemId || !ITEM_ID_RE.test(itemId)) {
+    if (!isValidItemId(itemId)) {
       return NextResponse.json({ error: "Invalid trickplay path" }, { status: 400 })
     }
 
@@ -38,9 +36,7 @@ export async function GET(
       !Number.isInteger(width) ||
       width < MIN_WIDTH ||
       width > MAX_WIDTH ||
-      !Number.isInteger(index) ||
-      index < MIN_TILE_INDEX ||
-      index > MAX_TILE_INDEX
+      !isValidIndex(index, MAX_TILE_INDEX)
     ) {
       return NextResponse.json({ error: "Invalid trickplay path" }, { status: 400 })
     }

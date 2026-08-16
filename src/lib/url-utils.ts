@@ -1,5 +1,49 @@
+const SENSITIVE_PARAM_KEYS = new Set([
+  "api_key",
+  "apikey",
+  "token",
+  "x-emby-token",
+  "accesstoken",
+  "access_token",
+  "auth",
+  "authorization",
+  "password",
+  "secret",
+  "sig",
+  "signature",
+])
+
 export function maskUrl(url: string): string {
-  return url.replace(/api_key=[^&]+/, "api_key=***")
+  if (!url) return ""
+
+  // Use URL object parsing only for clean URL strings without spaces
+  if (!/\s/.test(url) && (url.startsWith("http://") || url.startsWith("https://") || url.startsWith("/"))) {
+    try {
+      const isAbsolute = url.startsWith("http://") || url.startsWith("https://")
+      const parsed = new URL(url, "http://localhost")
+      let hasModified = false
+      for (const key of Array.from(parsed.searchParams.keys())) {
+        if (SENSITIVE_PARAM_KEYS.has(key.toLowerCase())) {
+          parsed.searchParams.set(key, "***")
+          hasModified = true
+        }
+      }
+      if (hasModified) {
+        if (isAbsolute) {
+          return parsed.toString()
+        }
+        return `${parsed.pathname}${parsed.search}${parsed.hash}`
+      }
+    } catch {
+      // Fall back to regex replacement
+    }
+  }
+
+  // Regex replacement for relative/partial URLs, query strings, or text fragments
+  return url.replace(
+    /([?&](?:api_?key|token|x-emby-token|access_?token|auth|authorization|password|secret|sig|signature)=)([^&\s#]+)/gi,
+    "$1***",
+  )
 }
 
 export type StreamOptions = {

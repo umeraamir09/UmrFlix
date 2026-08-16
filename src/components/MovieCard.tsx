@@ -172,7 +172,7 @@ export function MovieCard({
           <div className="flex items-center gap-2 text-[15px] font-bold text-amber-400">
             {hasOmdbRating ? (
               <div className="flex items-center gap-1.5 text-white">
-                <img src="/imdb.webp" alt="IMDb" className="h-3.5 w-auto object-contain" />
+                <Image src="/imdb.webp" alt="IMDb" width={1280} height={1280} sizes="14px" className="h-3.5 w-auto object-contain" />
                 <span>{omdbData.imdbRating}</span>
               </div>
             ) : item.vote_average ? (

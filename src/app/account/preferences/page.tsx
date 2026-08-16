@@ -1,9 +1,8 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import Link from "next/link"
 import { usePlayerSettings, type SubtitleMode } from "@/lib/player-settings"
-import { Settings, ShieldCheck, UserCheck, Check, Server, Film, Volume2, HardDrive, Bell } from "lucide-react"
+import { Settings, ShieldCheck, UserCheck, Check, Server, Film, Volume2, HardDrive } from "lucide-react"
 
 type UserProfile = {
   userId: string

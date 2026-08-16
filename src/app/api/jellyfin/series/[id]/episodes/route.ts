@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server"
+import { isValidItemId } from "@/lib/validation"
 import {
   authenticate,
   getSeasons,
@@ -30,6 +31,9 @@ export async function GET(
 ) {
   try {
     const { id } = await params
+    if (!isValidItemId(id)) {
+      return NextResponse.json({ error: "Invalid series ID" }, { status: 400 })
+    }
     const tvdbId = Number(new URL(request.url).searchParams.get("tvdbId")) || null
 
     const { token } = await authenticate()

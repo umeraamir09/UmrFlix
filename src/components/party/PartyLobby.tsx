@@ -54,12 +54,14 @@ export function PartyLobby({
       if (res.ok) {
         const data = await res.json()
         setTotalRecordCount(data.TotalRecordCount || 0)
-        const items = (data.Items || []).map((item: any) => ({
-          id: item.Id,
-          title: item.Name,
-          type: item.Type,
-          posterUrl: `/api/jellyfin/image/${item.Id}?type=Primary`,
-        }))
+        const items = (data.Items || []).map(
+          (item: { Id: string; Name: string; Type: string }) => ({
+            id: item.Id,
+            title: item.Name,
+            type: item.Type,
+            posterUrl: `/api/jellyfin/image/${item.Id}?type=Primary`,
+          })
+        )
         setSearchResults(items)
       }
     } catch (err) {

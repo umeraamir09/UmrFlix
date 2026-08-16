@@ -93,6 +93,38 @@ function BrightnessRail({
     onChange(Math.min(1, Math.max(BRIGHTNESS_MIN, frac)))
   }
 
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    const step = e.shiftKey ? 0.1 : 0.05
+    let next: number | null = null
+    switch (e.key) {
+      case "ArrowUp":
+      case "ArrowRight":
+        next = value + step
+        break
+      case "ArrowDown":
+      case "ArrowLeft":
+        next = value - step
+        break
+      case "PageUp":
+        next = value + 0.2
+        break
+      case "PageDown":
+        next = value - 0.2
+        break
+      case "Home":
+        next = BRIGHTNESS_MIN
+        break
+      case "End":
+        next = 1
+        break
+      default:
+        return
+    }
+    e.preventDefault()
+    e.stopPropagation()
+    onChange(Math.min(1, Math.max(BRIGHTNESS_MIN, next)))
+  }
+
   return (
     <div
       className={`pointer-events-auto absolute ${EDGE_L} top-1/2 z-30 flex -translate-y-1/2 flex-col items-center gap-2 px-2 py-1 drop-shadow-[0_16px_48px_rgba(0,16,61,0.48)]`}
@@ -100,7 +132,16 @@ function BrightnessRail({
       <IconBrightness className="size-6 text-white drop-shadow-[0_2px_6px_rgba(0,0,0,0.8)]" />
       <div
         ref={trackRef}
-        className="relative flex h-32 w-7 touch-none items-center justify-center"
+        role="slider"
+        aria-label="Brightness"
+        aria-orientation="vertical"
+        aria-valuemin={Math.round(BRIGHTNESS_MIN * 100)}
+        aria-valuemax={100}
+        aria-valuenow={Math.round(value * 100)}
+        aria-valuetext={`${Math.round(value * 100)} percent`}
+        tabIndex={0}
+        onKeyDown={handleKeyDown}
+        className="relative flex h-32 w-7 touch-none items-center justify-center cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-white/70 rounded"
         onPointerDown={(e) => {
           e.stopPropagation()
           e.currentTarget.setPointerCapture(e.pointerId)
@@ -137,11 +178,13 @@ function ActionButton({
   label,
   onClick,
   active = false,
+  ariaExpanded,
 }: {
   icon: React.ReactNode
   label: string
   onClick: () => void
   active?: boolean
+  ariaExpanded?: boolean
 }) {
   return (
     <button
@@ -152,6 +195,7 @@ function ActionButton({
       className={`flex items-center justify-center gap-1.5 rounded-full px-2 sm:px-3 py-1.5 text-xs sm:text-sm font-medium tracking-tight transition-colors hover:bg-white/10 active:bg-white/20 shrink-0 ${
         active ? "text-accent" : "text-white/95"
       }`}
+      aria-expanded={ariaExpanded}
     >
       {icon}
       <span className="whitespace-nowrap font-medium">{label}</span>
@@ -171,6 +215,7 @@ export function TouchControls({
   buffered,
   qualityId,
   autoResolvedLabel,
+  sourceHeight,
   audioTracks,
   audioIndex,
   subtitleTracks,
@@ -195,7 +240,6 @@ export function TouchControls({
   onSubtitleChange,
   onPlaybackRateChange,
   onBack,
-  onReport: _onReport,
   onInteract,
   isFullscreen = false,
   onToggleFullscreen,
@@ -211,6 +255,7 @@ export function TouchControls({
   buffered: number
   qualityId: string
   autoResolvedLabel?: string
+  sourceHeight?: number
   audioTracks: AudioTrack[]
   audioIndex: number | null
   subtitleTracks: SubtitleTrack[]
@@ -334,6 +379,7 @@ export function TouchControls({
           onSubtitleChange={onSubtitleChange}
           subStyle={subStyle}
           onSubStyleChange={onSubStyleChange}
+          onClose={() => setAudioSubsOpen(false)}
         />
       )}
 
@@ -343,16 +389,18 @@ export function TouchControls({
           sheet
           qualityId={qualityId}
           autoResolvedLabel={autoResolvedLabel}
+          sourceHeight={sourceHeight}
           onQualityChange={onQualityChange}
           playbackRate={playbackRate}
           onPlaybackRateChange={onPlaybackRateChange}
+          onClose={() => setSpeedOpen(false)}
         />
       )}
 
       {/* Main overlay chrome */}
       <div
         className={`absolute inset-0 z-40 flex flex-col pointer-events-none transition-opacity duration-300 ${
-          show ? "opacity-100" : "opacity-0"
+          show ? "visible opacity-100" : "invisible opacity-0"
         }`}
       >
         {/* Background gradients */}
@@ -495,6 +543,7 @@ export function TouchControls({
               icon={<IconSpeed className="size-5 shrink-0" />}
               label={speedLabel}
               active={speedOpen}
+              ariaExpanded={speedOpen}
               onClick={() => {
                 setSpeedOpen((o) => !o)
                 setAudioSubsOpen(false)
@@ -505,6 +554,7 @@ export function TouchControls({
               icon={<IconSubtitles className="size-5 shrink-0" />}
               label="Audio & Subtitles"
               active={audioSubsOpen}
+              ariaExpanded={audioSubsOpen}
               onClick={() => {
                 setAudioSubsOpen((o) => !o)
                 setSpeedOpen(false)
@@ -524,6 +574,7 @@ export function TouchControls({
                 }
                 label="Episodes"
                 active={episodeBrowserOpen}
+                ariaExpanded={episodeBrowserOpen}
                 onClick={() => {
                   setAudioSubsOpen(false)
                   setSpeedOpen(false)

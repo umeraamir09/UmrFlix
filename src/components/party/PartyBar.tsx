@@ -3,7 +3,7 @@
 import { useState, useCallback } from "react"
 import { useRouter } from "next/navigation"
 import { ChevronDown, LogOut, ShieldAlert, UserPlus, Users, XCircle } from "lucide-react"
-import type { PartyMember } from "@/lib/party/protocol"
+import type { PartyMember, SyncQuality } from "@/lib/party/protocol"
 import { StartPartyModal } from "./StartPartyModal"
 
 const STORAGE_KEY = "party-bar-collapsed"
@@ -13,6 +13,8 @@ export type PartyBarProps = {
   isOwner: boolean
   members: PartyMember[]
   bufferingUsers?: string[]
+  syncQuality?: SyncQuality
+  syncDriftMs?: number
 }
 
 export function PartyBar({
@@ -20,6 +22,8 @@ export function PartyBar({
   isOwner,
   members,
   bufferingUsers = [],
+  syncQuality = "paused",
+  syncDriftMs = 0,
 }: PartyBarProps) {
   const router = useRouter()
   const [inviteModalOpen, setInviteModalOpen] = useState(false)
@@ -66,6 +70,26 @@ export function PartyBar({
   const firstTwo = members.slice(0, 2)
   const extraCount = memberCount - 2
 
+  const syncDotColor =
+    syncQuality === "synced"
+      ? "bg-emerald-400"
+      : syncQuality === "syncing"
+        ? "bg-cyan-400"
+        : syncQuality === "resyncing" || syncQuality === "buffering"
+          ? "bg-amber-400"
+          : "bg-gray-400"
+
+  const syncLabel =
+    syncQuality === "synced"
+      ? "Synced"
+      : syncQuality === "syncing"
+        ? `Syncing ${Math.abs(syncDriftMs) > 0 ? `(${Math.abs(syncDriftMs)}ms)` : ""}`
+        : syncQuality === "resyncing"
+          ? "Resyncing"
+          : syncQuality === "buffering"
+            ? "Buffering"
+            : "Paused"
+
   return (
     <>
       <div className="absolute top-4 sm:top-6 right-3 sm:right-6 z-40 flex flex-col items-end gap-1.5 max-w-[calc(100vw-3rem)] pt-safe">
@@ -73,13 +97,18 @@ export function PartyBar({
         {isCollapsed && (
           <button
             onClick={toggleCollapsed}
-            title="Show Party Bar"
+            title={`Show Party Bar • Sync: ${syncLabel}`}
             className="flex items-center gap-2 bg-black/70 backdrop-blur-xl border border-white/15 px-3 py-2 text-white shadow-xl rounded-none transition-all duration-300 hover:bg-black/80 group"
           >
             <div className="flex items-center gap-1.5">
               <Users className="size-3.5 text-accent" />
               <span className="text-xs font-bold text-gray-200">{memberCount}</span>
             </div>
+            {/* 8.4 — Mini sync status dot */}
+            <span
+              className={`size-2 rounded-full ${syncDotColor} ${syncQuality !== "paused" ? "animate-pulse" : ""}`}
+              title={`Sync status: ${syncLabel}`}
+            />
             <div className="flex -space-x-1.5">
               {firstTwo.map((m) => (
                 <div
@@ -120,6 +149,25 @@ export function PartyBar({
           >
             <ChevronDown className="size-3.5 text-gray-400 rotate-180" />
           </button>
+
+          {/* 8.4 — Sync Quality Badge */}
+          <div
+            className={`flex items-center gap-1.5 px-2 py-0.5 rounded-full border text-[10px] font-bold shrink-0 ${
+              syncQuality === "synced"
+                ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-300"
+                : syncQuality === "syncing"
+                  ? "border-cyan-500/40 bg-cyan-500/10 text-cyan-300"
+                  : syncQuality === "resyncing" || syncQuality === "buffering"
+                    ? "border-amber-500/40 bg-amber-500/10 text-amber-300"
+                    : "border-white/20 bg-white/5 text-gray-300"
+            }`}
+            title={`Party Sync Quality: ${syncLabel} (${syncDriftMs > 0 ? "+" : ""}${syncDriftMs}ms)`}
+          >
+            <span
+              className={`size-1.5 rounded-full ${syncDotColor} ${syncQuality !== "paused" ? "animate-pulse" : ""}`}
+            />
+            <span className="capitalize">{syncLabel}</span>
+          </div>
 
           {/* Active Members Stack */}
           <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar">

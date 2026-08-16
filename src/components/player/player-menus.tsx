@@ -1,13 +1,15 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { Check, ChevronLeft, Type } from "lucide-react"
 import {
   QUALITY_PRESETS,
   type AudioTrack,
+  type QualityPreset,
   type SubtitleTrack,
 } from "@/lib/playback-types"
 import type { SubtitleShadowStyle, SubtitleStyle } from "./SubtitleOverlay"
+import { useFocusTrap } from "@/hooks/useFocusTrap"
 
 // ── Menu Helpers ──
 
@@ -16,23 +18,51 @@ export function MenuRow({
   value,
   selected,
   onClick,
+  role,
+  optionId,
+  className = "",
 }: {
   label: string
   value?: string
   selected?: boolean
   onClick: () => void
+  /** Render as a listbox option (div) instead of a button. */
+  role?: "option"
+  /** Required when role="option": stable id for aria-activedescendant. */
+  optionId?: string
+  className?: string
 }) {
-  return (
-    <button
-      onClick={onClick}
-      className="flex w-full items-center justify-between gap-6 rounded-none px-4 py-3 text-left text-base font-medium transition-colors hover:bg-white/10 active:bg-white/15"
-    >
+  const content = (
+    <>
       <span className={selected ? "font-bold text-white" : "text-gray-200"}>{label}</span>
       {selected ? (
         <Check className="size-5 shrink-0 text-accent" />
       ) : value ? (
         <span className="shrink-0 text-sm text-gray-400 font-normal">{value}</span>
       ) : null}
+    </>
+  )
+
+  if (role === "option") {
+    return (
+      <div
+        id={optionId}
+        role="option"
+        aria-selected={selected ?? false}
+        onClick={onClick}
+        className={`flex w-full cursor-pointer items-center justify-between gap-6 rounded-none px-4 py-3 text-left text-base font-medium transition-colors hover:bg-white/10 active:bg-white/15 ${className}`}
+      >
+        {content}
+      </div>
+    )
+  }
+
+  return (
+    <button
+      onClick={onClick}
+      className={`flex w-full items-center justify-between gap-6 rounded-none px-4 py-3 text-left text-base font-medium transition-colors hover:bg-white/10 active:bg-white/15 ${className}`}
+    >
+      {content}
     </button>
   )
 }
@@ -49,6 +79,114 @@ export function MenuHeader({ title, onBack }: { title: string; onBack: () => voi
   )
 }
 
+// ── Listbox (ARIA APG pattern) for single-selection option lists ──
+// role="listbox" + aria-activedescendant on the container; Arrow/Home/End move
+// the virtual cursor, Enter/Space activates. Keys are contained by the parent
+// menu's stopPropagation, so the player surface's shortcuts (Space =
+// play/pause) never fire while a menu is open.
+
+export function SelectionList({
+  id,
+  label,
+  options,
+  selectedIndex,
+  onSelect,
+}: {
+  id: string
+  label: string
+  options: { key: string; label: string; value?: string; selected: boolean }[]
+  selectedIndex: number
+  onSelect: (optionIndex: number) => void
+}) {
+  const [cursor, setCursor] = useState(() => Math.max(0, selectedIndex))
+  const [prevSelectedIndex, setPrevSelectedIndex] = useState(selectedIndex)
+
+  if (selectedIndex !== prevSelectedIndex) {
+    setPrevSelectedIndex(selectedIndex)
+    setCursor(Math.max(0, selectedIndex))
+  }
+
+  const move = (next: number) => {
+    if (options.length === 0) return
+    const clamped = ((next % options.length) + options.length) % options.length
+    setCursor(clamped)
+    const el = document.getElementById(`${id}-opt-${clamped}`)
+    if (typeof el?.scrollIntoView === "function") {
+      el.scrollIntoView({ block: "nearest" })
+    }
+  }
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    switch (e.key) {
+      case "ArrowDown":
+        e.preventDefault()
+        move(cursor + 1)
+        break
+      case "ArrowUp":
+        e.preventDefault()
+        move(cursor - 1)
+        break
+      case "Home":
+        e.preventDefault()
+        move(0)
+        break
+      case "End":
+        e.preventDefault()
+        move(options.length - 1)
+        break
+      case "Enter":
+      case " ":
+        e.preventDefault()
+        onSelect(cursor)
+        break
+    }
+  }
+
+  return (
+    <div
+      role="listbox"
+      aria-label={label}
+      aria-activedescendant={`${id}-opt-${cursor}`}
+      tabIndex={0}
+      onKeyDown={handleKeyDown}
+      onFocus={() => setCursor(Math.max(0, selectedIndex))}
+      className="outline-none"
+    >
+      {options.map((opt, idx) => (
+        <MenuRow
+          key={opt.key}
+          role="option"
+          optionId={`${id}-opt-${idx}`}
+          label={opt.label}
+          value={opt.value}
+          selected={opt.selected}
+          onClick={() => {
+            setCursor(idx)
+            onSelect(idx)
+          }}
+          className={idx === cursor ? "bg-white/10" : ""}
+        />
+      ))}
+    </div>
+  )
+}
+
+// ── Audio Track Label Helper (Issue 6.8) ──
+export function formatAudioTrackLabel(
+  track: AudioTrack & { displayTitle?: string },
+  index?: number,
+): string {
+  if (track.title && track.title.trim().length > 0) return track.title.trim()
+  if (track.displayTitle && track.displayTitle.trim().length > 0) {
+    return track.displayTitle.trim()
+  }
+  if (track.language && track.language.trim().length > 0) {
+    const lang = track.language.trim()
+    return track.channels ? `${lang} (${track.channels}ch)` : lang
+  }
+  return index != null ? `Audio Track ${index + 1}` : `Track ${track.index}`
+}
+
 // ── Audio & Subtitles Popover Menu ──
 
 type AudioSubSection = "root" | "audio" | "subtitles" | "substyle"
@@ -63,6 +201,7 @@ export function AudioSubtitlesMenu({
   subStyle,
   onSubStyleChange,
   sheet = false,
+  onClose,
 }: {
   audioTracks: AudioTrack[]
   audioIndex: number | null
@@ -75,22 +214,58 @@ export function AudioSubtitlesMenu({
   /** Force the mobile bottom-sheet layout (used by the touch controls even on
    * landscape-width screens where sm: would anchor the menu desktop-style). */
   sheet?: boolean
+  /** Closes the menu (Escape key). */
+  onClose: () => void
 }) {
   const [section, setSection] = useState<AudioSubSection>("root")
+  const menuRef = useRef<HTMLDivElement>(null)
+  useFocusTrap({ containerRef: menuRef, onClose })
 
-  const audioLabel = audioTracks.find((a) => a.index === audioIndex)?.title ?? "Default"
+  // 5.5 — when a section swap unmounts the focused row, move focus to the new
+  // section's first interactive element (listbox container or back button).
+  useEffect(() => {
+    const menu = menuRef.current
+    if (!menu) return
+    const listbox = menu.querySelector<HTMLElement>('[role="listbox"]')
+    const target = listbox ?? menu.querySelector<HTMLElement>("button")
+    target?.focus()
+  }, [section])
+
+  const selectedTrack = audioTracks.find((a) => a.index === audioIndex)
+  const audioLabel = selectedTrack
+    ? formatAudioTrackLabel(selectedTrack, audioTracks.indexOf(selectedTrack))
+    : audioTracks.length > 0
+      ? formatAudioTrackLabel(audioTracks[0], 0)
+      : "Default"
   const subLabel =
     subtitleIndex === null
       ? "Off"
       : (subtitleTracks.find((s) => s.index === subtitleIndex)?.title ?? "On")
 
+  const subtitleOptions = [
+    { key: "off", label: "Off", selected: subtitleIndex === null },
+    ...subtitleTracks.map((track) => ({
+      key: String(track.index),
+      label: track.isImageBased ? `${track.title} (burned in)` : track.title,
+      value: track.language,
+      selected: subtitleIndex === track.index,
+    })),
+  ]
+  const subtitleSelectedIndex = subtitleIndex === null
+    ? 0
+    : subtitleTracks.findIndex((t) => t.index === subtitleIndex) + 1
+
   return (
     <div
+      ref={menuRef}
+      role="dialog"
+      aria-label="Audio and subtitles menu"
       onClick={(e) => e.stopPropagation()}
+      onKeyDown={(e) => e.stopPropagation()}
       className={`${
         sheet
-          ? "fixed left-1/2 -translate-x-1/2 bottom-6 w-[calc(100vw-2rem)] max-w-sm"
-          : "fixed sm:absolute left-1/2 sm:left-auto -translate-x-1/2 sm:translate-x-0 bottom-20 sm:bottom-16 sm:right-0 w-[calc(100vw-2rem)] max-w-sm sm:w-96"
+          ? "fixed left-1/2 -translate-x-1/2 bottom-[max(1.5rem,env(safe-area-inset-bottom,1.5rem))] w-[calc(100vw-2rem)] max-w-sm"
+          : "fixed sm:absolute left-1/2 sm:left-auto -translate-x-1/2 sm:translate-x-0 bottom-[max(5rem,env(safe-area-inset-bottom,5rem))] sm:bottom-16 sm:right-0 w-[calc(100vw-2rem)] max-w-sm sm:w-96"
       } z-[100] pointer-events-auto max-h-[75vh] overflow-y-auto rounded-lg sm:rounded-[4px] border border-white/20 bg-[#16181f]/98 p-3 shadow-2xl backdrop-blur-2xl animate-in fade-in zoom-in-95 duration-150`}
     >
       {section === "root" && (
@@ -109,35 +284,33 @@ export function AudioSubtitlesMenu({
       {section === "audio" && (
         <>
           <MenuHeader title="Audio Track" onBack={() => setSection("root")} />
-          {audioTracks.map((track) => (
-            <MenuRow
-              key={track.index}
-              label={track.title}
-              value={track.channels ? `${track.channels}.ch` : undefined}
-              selected={audioIndex === track.index}
-              onClick={() => onAudioChange(track.index)}
+          {audioTracks.length > 0 && (
+            <SelectionList
+              id="audio"
+              label="Audio track"
+              options={audioTracks.map((track, idx) => ({
+                key: String(track.index),
+                label: formatAudioTrackLabel(track, idx),
+                value: track.channels ? `${track.channels}.ch` : undefined,
+                selected: audioIndex === track.index,
+              }))}
+              selectedIndex={Math.max(0, audioTracks.findIndex((t) => t.index === audioIndex))}
+              onSelect={(idx) => onAudioChange(audioTracks[idx].index)}
             />
-          ))}
+          )}
         </>
       )}
 
       {section === "subtitles" && (
         <>
           <MenuHeader title="Subtitles" onBack={() => setSection("root")} />
-          <MenuRow
-            label="Off"
-            selected={subtitleIndex === null}
-            onClick={() => onSubtitleChange(null)}
+          <SelectionList
+            id="subs"
+            label="Subtitles"
+            options={subtitleOptions}
+            selectedIndex={subtitleSelectedIndex}
+            onSelect={(idx) => onSubtitleChange(idx === 0 ? null : subtitleTracks[idx - 1].index)}
           />
-          {subtitleTracks.map((track) => (
-            <MenuRow
-              key={track.index}
-              label={track.isImageBased ? `${track.title} (burned in)` : track.title}
-              value={track.language}
-              selected={subtitleIndex === track.index}
-              onClick={() => onSubtitleChange(track.index)}
-            />
-          ))}
         </>
       )}
 
@@ -265,26 +438,57 @@ const SPEED_OPTIONS = [
   { label: "2.0x", value: 2.0 },
 ]
 
+export function getAvailableQualityPresets(sourceHeight?: number): QualityPreset[] {
+  if (!sourceHeight || sourceHeight <= 0) return QUALITY_PRESETS
+  return QUALITY_PRESETS.filter((preset) => {
+    if (preset.id === "auto" || !preset.maxHeight) return true
+    // 6.4 — Avoid showing upscaling options above the media source resolution
+    return preset.maxHeight <= sourceHeight + 40
+  })
+}
+
 export function SpeedQualityMenu({
   qualityId,
   autoResolvedLabel,
+  sourceHeight,
   onQualityChange,
   playbackRate,
   onPlaybackRateChange,
   sheet = false,
+  onClose,
 }: {
   qualityId: string
   autoResolvedLabel?: string
+  sourceHeight?: number
   onQualityChange: (id: string) => void
   playbackRate: number
   onPlaybackRateChange: (rate: number) => void
   /** Force the mobile bottom-sheet layout (used by the touch controls even on
    * landscape-width screens where sm: would anchor the menu desktop-style). */
   sheet?: boolean
+  /** Closes the menu (Escape key). */
+  onClose: () => void
 }) {
   const [section, setSection] = useState<SpeedQualitySection>("root")
+  const menuRef = useRef<HTMLDivElement>(null)
+  useFocusTrap({ containerRef: menuRef, onClose })
 
-  const baseLabel = QUALITY_PRESETS.find((q) => q.id === qualityId)?.label ?? "Auto"
+  // 5.5 — when a section swap unmounts the focused row, move focus to the new
+  // section's first interactive element (listbox container or back button).
+  useEffect(() => {
+    const menu = menuRef.current
+    if (!menu) return
+    const listbox = menu.querySelector<HTMLElement>('[role="listbox"]')
+    const target = listbox ?? menu.querySelector<HTMLElement>("button")
+    target?.focus()
+  }, [section])
+
+  const availableQualities = useMemo(
+    () => getAvailableQualityPresets(sourceHeight),
+    [sourceHeight],
+  )
+
+  const baseLabel = availableQualities.find((q) => q.id === qualityId)?.label ?? "Auto"
   const qualityLabel =
     qualityId === "auto" && autoResolvedLabel
       ? `Auto (${autoResolvedLabel})`
@@ -293,11 +497,15 @@ export function SpeedQualityMenu({
 
   return (
     <div
+      ref={menuRef}
+      role="dialog"
+      aria-label="Playback speed and quality menu"
       onClick={(e) => e.stopPropagation()}
+      onKeyDown={(e) => e.stopPropagation()}
       className={`${
         sheet
-          ? "fixed left-1/2 -translate-x-1/2 bottom-6 w-[calc(100vw-2rem)] max-w-sm"
-          : "fixed sm:absolute left-1/2 sm:left-auto -translate-x-1/2 sm:translate-x-0 bottom-20 sm:bottom-16 sm:right-0 w-[calc(100vw-2rem)] max-w-xs sm:w-80"
+          ? "fixed left-1/2 -translate-x-1/2 bottom-[max(1.5rem,env(safe-area-inset-bottom,1.5rem))] w-[calc(100vw-2rem)] max-w-sm"
+          : "fixed sm:absolute left-1/2 sm:left-auto -translate-x-1/2 sm:translate-x-0 bottom-[max(5rem,env(safe-area-inset-bottom,5rem))] sm:bottom-16 sm:right-0 w-[calc(100vw-2rem)] max-w-xs sm:w-80"
       } z-[100] pointer-events-auto max-h-[75vh] overflow-y-auto rounded-lg sm:rounded-[4px] border border-white/20 bg-[#16181f]/98 p-3 shadow-2xl backdrop-blur-2xl animate-in fade-in zoom-in-95 duration-150`}
     >
       {section === "root" && (
@@ -317,28 +525,34 @@ export function SpeedQualityMenu({
       {section === "speed" && (
         <>
           <MenuHeader title="Playback Speed" onBack={() => setSection("root")} />
-          {SPEED_OPTIONS.map((opt) => (
-            <MenuRow
-              key={opt.value}
-              label={opt.label}
-              selected={playbackRate === opt.value}
-              onClick={() => onPlaybackRateChange(opt.value)}
-            />
-          ))}
+          <SelectionList
+            id="speed"
+            label="Playback speed"
+            options={SPEED_OPTIONS.map((opt) => ({
+              key: String(opt.value),
+              label: opt.label,
+              selected: playbackRate === opt.value,
+            }))}
+            selectedIndex={Math.max(0, SPEED_OPTIONS.findIndex((o) => o.value === playbackRate))}
+            onSelect={(idx) => onPlaybackRateChange(SPEED_OPTIONS[idx].value)}
+          />
         </>
       )}
 
       {section === "quality" && (
         <>
           <MenuHeader title="Video Quality" onBack={() => setSection("root")} />
-          {QUALITY_PRESETS.map((q) => (
-            <MenuRow
-              key={q.id}
-              label={q.label}
-              selected={qualityId === q.id}
-              onClick={() => onQualityChange(q.id)}
-            />
-          ))}
+          <SelectionList
+            id="quality"
+            label="Video quality"
+            options={availableQualities.map((q) => ({
+              key: q.id,
+              label: q.label,
+              selected: qualityId === q.id,
+            }))}
+            selectedIndex={Math.max(0, availableQualities.findIndex((q) => q.id === qualityId))}
+            onSelect={(idx) => onQualityChange(availableQualities[idx].id)}
+          />
           <p className="px-4 py-2.5 text-xs leading-relaxed text-gray-400">
             Qualities other than Auto are transcoded on demand.
           </p>

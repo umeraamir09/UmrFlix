@@ -40,6 +40,7 @@ export function StartPartyModal({
   const [loadingUsers, setLoadingUsers] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [copied, setCopied] = useState(false)
+  const [inviteError, setInviteError] = useState<string | null>(null)
   const [partyId, setPartyId] = useState<string | null>(existingPartyId ?? null)
 
   // ── Episode picker state (TV series) ──
@@ -87,6 +88,7 @@ export function StartPartyModal({
       /* eslint-disable react-hooks/set-state-in-effect */
       setSelectedUserIds([])
       setCopied(false)
+      setInviteError(null)
       if (!existingPartyId) setPartyId(null)
       /* eslint-enable react-hooks/set-state-in-effect */
     }
@@ -159,11 +161,23 @@ export function StartPartyModal({
       if (!id) throw new Error("Failed to create room")
 
       if (selectedUserIds.length > 0) {
-        await fetch(`/api/party/${id}/invite`, {
+        const inviteRes = await fetch(`/api/party/${id}/invite`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ userIds: selectedUserIds }),
         })
+        if (!inviteRes.ok) {
+          let message = "Failed to send invites. Please try again."
+          try {
+            const data = (await inviteRes.json()) as { error?: string }
+            if (data?.error) message = data.error
+          } catch {
+            /* non-JSON error body */
+          }
+          setInviteError(message)
+          setSubmitting(false)
+          return
+        }
       }
 
       onClose()
@@ -415,6 +429,12 @@ export function StartPartyModal({
               )}
             </div>
           </div>
+
+          {inviteError && (
+            <p role="alert" className="text-[11px] text-red-400">
+              {inviteError}
+            </p>
+          )}
         </div>
 
         {/* Pinned Sticky Action Footer */}

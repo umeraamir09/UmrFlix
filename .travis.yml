@@ -23,8 +23,7 @@ before_install:
       ssh-keyscan -p ${SSH_PORT:-22} -H $SSH_HOST >> ~/.ssh/known_hosts 2>/dev/null
     fi
 
-before_script:
-  - npm ci
+# Note: Travis runs 'npm ci' automatically in the install phase, so 'before_script: npm ci' can be removed.
 
 script:
   # 1. Run AI PR Review on Pull Requests

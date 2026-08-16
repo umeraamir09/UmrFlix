@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server"
 import { setFavoriteItem } from "@/lib/jellyfin"
+import { isValidItemId } from "@/lib/validation"
 
 export async function POST(
   req: Request,
@@ -7,6 +8,9 @@ export async function POST(
 ) {
   try {
     const { id } = await params
+    if (!isValidItemId(id)) {
+      return NextResponse.json({ error: "Invalid item ID" }, { status: 400 })
+    }
     const success = await setFavoriteItem(id, true)
     return NextResponse.json({ success })
   } catch (e) {
@@ -21,6 +25,9 @@ export async function DELETE(
 ) {
   try {
     const { id } = await params
+    if (!isValidItemId(id)) {
+      return NextResponse.json({ error: "Invalid item ID" }, { status: 400 })
+    }
     const success = await setFavoriteItem(id, false)
     return NextResponse.json({ success })
   } catch (e) {

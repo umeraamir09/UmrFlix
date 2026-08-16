@@ -39,10 +39,21 @@ const MIN_SAMPLES_FOR_DECISION = 8
 const DOWNGRADE_BUFFER_THRESHOLD = 5  // seconds: buffer below this = danger
 const UPGRADE_BUFFER_THRESHOLD = 25   // seconds: buffer above this = safe to upgrade
 const SAFETY_FACTOR = 0.85            // use 85% of estimated bandwidth
-const UPGRADE_MARGIN = 1.35           // require 1.35x bandwidth headroom for upgrades
-const UPGRADE_STABILITY_REQUIRED = 2  // require 2 consecutive checks (10s) before upgrading
+// 3.7 — Netflix/YouTube-grade margins: a 1.3-1.35x upgrade margin lets CDN
+// burst spikes trigger an upgrade, the higher bitrate exhausts the bandwidth,
+// and the next check downgrades again — visible "pumping" that costs a full
+// stream rebuild + transcode restart each time with Jellyfin.
+const UPGRADE_MARGIN = 1.5            // require 1.5x bandwidth headroom for upgrades
+const UPGRADE_STABILITY_REQUIRED = 3  // require 3 consecutive checks (15s) before upgrading
 const UPGRADE_COOLDOWN_MS = 20_000    // don't upgrade within 20s of a downgrade or upgrade
 const DOWNGRADE_COOLDOWN_MS = 10_000  // don't downgrade more than once per 10s
+// 3.7 — hysteresis: after an upgrade, hold the new quality for 30s before
+// allowing a bandwidth-based downgrade. Samples collected right after a
+// stream rebuild are unreliable (new transcode session, cold ffmpeg), so a
+// quick re-downgrade would just restart the transcode for nothing.
+// The buffer-emergency downgrade stays exempt — a genuinely declining buffer
+// must always be allowed to fire even inside the window.
+const UPGRADE_DOWNGRADE_HYSTERESIS_MS = 30_000
 
 // Ordered by bitrate ascending for easy binary searching.
 // Auto preset has no maxStreamingBitrate — it's a no-op placeholder, not a
@@ -96,6 +107,11 @@ export class BandwidthEstimator {
     return Math.min(this.ewmaFast, this.ewmaSlow)
   }
 
+  /** Current time in ms — extracted so tests can drive cooldowns deterministically. */
+  protected now(): number {
+    return Date.now()
+  }
+
   /** Check Navigator.connection for supplementary info. */
   private getConnectionInfo(): ConnectionInfo | null {
     const nav = typeof navigator !== "undefined" ? (navigator as unknown as { connection?: ConnectionInfo }) : null
@@ -129,7 +145,7 @@ export class BandwidthEstimator {
     sourceBitrate?: number,
   ): QualitySuggestion {
     this.recordBufferHealth(bufferAheadSeconds)
-    const now = Date.now()
+    const now = this.now()
     const bw = this.estimatedBandwidth
     const safeBw = bw * SAFETY_FACTOR
     const conn = this.getConnectionInfo()
@@ -225,6 +241,12 @@ export class BandwidthEstimator {
         (bestPreset.maxStreamingBitrate ?? 0) < currentBitrate) {
       this.pendingUpgradeTargetPresetId = null
       this.pendingUpgradeCount = 0
+      // 3.7 — post-upgrade hysteresis: block bandwidth downgrades for 30s
+      // after an upgrade. The new stream rebuild's early samples are
+      // unreliable, and an immediate re-downgrade restarts the transcode.
+      if (now - this.lastUpgradeTime < UPGRADE_DOWNGRADE_HYSTERESIS_MS) {
+        return { action: "hold", targetPresetId: currentPresetId, reason: "post-upgrade hysteresis", estimatedBandwidth: bw }
+      }
       if (now - this.lastDowngradeTime < DOWNGRADE_COOLDOWN_MS) {
         return { action: "hold", targetPresetId: currentPresetId, reason: "downgrade cooldown", estimatedBandwidth: bw }
       }
@@ -237,7 +259,7 @@ export class BandwidthEstimator {
       }
     }
 
-    // ── Upgrade: require 1.35x margin, healthy buffer, cooldowns, and 2 consecutive checks ──
+    // ── Upgrade: require 1.5x margin, healthy buffer, cooldowns, and 3 consecutive checks ──
     const targetBitrate = bestPreset.maxStreamingBitrate ?? 0
     const satisfiesUpgradeMargin = bw >= targetBitrate * UPGRADE_MARGIN
     if (bestPreset.id !== currentPresetId &&
@@ -260,7 +282,7 @@ export class BandwidthEstimator {
         return {
           action: "upgrade",
           targetPresetId: bestPreset.id,
-          reason: `bandwidth ${(bw / 1_000_000).toFixed(1)} Mbps >= 1.35x target, buffer healthy (${bufferAheadSeconds.toFixed(0)}s), sustained over ${UPGRADE_STABILITY_REQUIRED} checks`,
+          reason: `bandwidth ${(bw / 1_000_000).toFixed(1)} Mbps >= ${UPGRADE_MARGIN}x target, buffer healthy (${bufferAheadSeconds.toFixed(0)}s), sustained over ${UPGRADE_STABILITY_REQUIRED} checks`,
           estimatedBandwidth: bw,
         }
       } else {

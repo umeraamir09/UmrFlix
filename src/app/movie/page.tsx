@@ -4,7 +4,7 @@ import { MovieRow } from "@/components/MovieRow"
 import { SpotlightBanner, SpotlightItem } from "@/components/SpotlightBanner"
 import { GenreFilterBar } from "@/components/GenreFilterBar"
 import { PersonalizedFeed } from "@/components/PersonalizedFeed"
-import { getTrending, getItemLogo, discoverMovies } from "@/lib/tmdb"
+import { getTrending, getItemLogo, discoverMovies, type TmdbMovie, type TmdbPaginated } from "@/lib/tmdb"
 import { filterReleasedContent } from "@/lib/catalog"
 import { getGenreByParam, getMovieGenres, getGenreDiscoverParams, buildGenreDiscoverQuery } from "@/lib/genres"
 
@@ -38,7 +38,7 @@ export default async function MovieCatalogPage({
 
       const rawHero = movieResults.slice(0, 5)
       heroItems = await Promise.all(
-        rawHero.map(async (item: any) => {
+        rawHero.map(async (item: TmdbMovie) => {
           const logo_path = await getItemLogo("movie", item.id)
           return {
             id: item.id,
@@ -55,7 +55,7 @@ export default async function MovieCatalogPage({
       )
 
       if (movieResults.length > 5) {
-        const sp1 = movieResults[5] as any
+        const sp1 = movieResults[5]
         spotlightItem1 = {
           id: sp1.id,
           title: sp1.title || "",
@@ -66,7 +66,7 @@ export default async function MovieCatalogPage({
       }
     } else {
       // 1. Fetch trending movies
-      const trendingMovieData = await getTrending("movie", "week")
+      const trendingMovieData = (await getTrending("movie", "week")) as TmdbPaginated<TmdbMovie>
       const movieResults = filterReleasedContent(trendingMovieData?.results || [])
 
       // 2. Personalized movie rows are client-fetched per session via
@@ -75,7 +75,7 @@ export default async function MovieCatalogPage({
       // 3. Build hero billboard items
       const rawHero = movieResults.slice(0, 5)
       heroItems = await Promise.all(
-        rawHero.map(async (item: any) => {
+        rawHero.map(async (item: TmdbMovie) => {
           const logo_path = await getItemLogo("movie", item.id)
           return {
             id: item.id,
@@ -93,7 +93,7 @@ export default async function MovieCatalogPage({
 
       // 4. Build spotlight banners
       if (movieResults.length > 5) {
-        const sp1 = movieResults[5] as any
+        const sp1 = movieResults[5]
         spotlightItem1 = {
           id: sp1.id,
           title: sp1.title || "",
@@ -104,7 +104,7 @@ export default async function MovieCatalogPage({
       }
 
       if (movieResults.length > 8) {
-        const sp2 = movieResults[8] as any
+        const sp2 = movieResults[8]
         spotlightItem2 = {
           id: sp2.id,
           title: sp2.title || "",

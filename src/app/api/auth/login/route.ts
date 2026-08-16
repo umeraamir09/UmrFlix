@@ -25,9 +25,10 @@ function isServerUrlAllowed(targetUrl: string): boolean {
 
 export async function POST(req: Request) {
   const clientIp = getClientIp(req)
+  const auditIp = clientIp ?? "unknown"
 
-  if (!checkRateLimit(`login:${clientIp}`, { windowMs: 60_000, maxRequests: 5 })) {
-    logAuditEvent("login_failed", { ip: clientIp, reason: "rate_limited" })
+  if (!checkRateLimit(`login:${auditIp}`, { windowMs: 60_000, maxRequests: 5 })) {
+    logAuditEvent("login_failed", { ip: auditIp, reason: "rate_limited" })
     return NextResponse.json(
       { error: "Too many login attempts. Please wait 1 minute before trying again." },
       { status: 429 }
@@ -47,7 +48,7 @@ export async function POST(req: Request) {
     }
 
     if (!isServerUrlAllowed(serverUrl)) {
-      logAuditEvent("login_failed", { ip: clientIp, username, reason: "unauthorized_server_url" })
+      logAuditEvent("login_failed", { ip: auditIp, username, reason: "unauthorized_server_url" })
       return NextResponse.json(
         { error: "Connecting to unapproved Jellyfin server URL is restricted." },
         { status: 400 }
@@ -77,7 +78,7 @@ export async function POST(req: Request) {
     if (!res.ok) {
       const errText = await res.text().catch(() => "")
       console.error(`Jellyfin auth failed (${res.status}):`, errText)
-      logAuditEvent("login_failed", { ip: clientIp, username, reason: `jellyfin_${res.status}` })
+      logAuditEvent("login_failed", { ip: auditIp, username, reason: `jellyfin_${res.status}` })
       return NextResponse.json(
         { error: res.status === 401 ? "Invalid username or password." : "Failed to authenticate with Jellyfin server." },
         { status: res.status }
@@ -104,7 +105,7 @@ export async function POST(req: Request) {
     }
 
     await setSessionCookie(session)
-    logAuditEvent("login_ok", { ip: clientIp, userId: session.userId, username: session.username })
+    logAuditEvent("login_ok", { ip: auditIp, userId: session.userId, username: session.username })
 
     return NextResponse.json({
       success: true,

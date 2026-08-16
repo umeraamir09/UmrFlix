@@ -169,6 +169,97 @@ function extractCuePosition(
   return {}
 }
 
+const ALLOWED_TAGS = new Set(["b", "i", "u", "s", "em", "strong", "font", "span"])
+
+// Validate safe color value (hex #rgb, #rrggbb, #rrggbbaa, rgb/rgba, or standard color name)
+const SAFE_COLOR_RE = /^(#[0-9a-fA-F]{3,8}|rgba?\(\s*\d+\s*,\s*\d+\s*,\s*\d+\s*(?:,\s*[\d.]+\s*)?\)|[a-zA-Z]+)$/
+
+// Inline style allowlist. Every value is anchored and restricted to inert
+// characters: no quotes, semicolons, backslashes or parens (outside the fixed
+// rgba() shape), so emitted declarations can never break out of the attribute
+// or invoke CSS tricks — unquoted font families only, no url()/expression.
+const STYLE_FONT_SIZE_RE = /^\d+(?:\.\d+)?(?:px|em|rem|%)$/
+const STYLE_FONT_STYLE_RE = /^(?:normal|italic|oblique)$/i
+const STYLE_FONT_WEIGHT_RE = /^(?:normal|bold|[1-9]00)$/i
+const STYLE_FONT_FAMILY_RE = /^[A-Za-z0-9 -]+$/
+const STYLE_TEXT_SHADOW_RE =
+  /^\d+(?:\.\d+)?(?:px|em)?\s+\d+(?:\.\d+)?(?:px|em)?(?:\s+\d+(?:\.\d+)?(?:px|em)?)?\s+(?:#[0-9a-fA-F]{3,8}|rgba?\(\s*\d+\s*,\s*\d+\s*,\s*\d+\s*(?:,\s*[\d.]+\s*)?\))$/
+
+/** Rebuild a span style attribute from a per-declaration whitelist. */
+function sanitizeStyleAttribute(rawAttrs: string): string {
+  const styleMatch = rawAttrs.match(/\bstyle\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/i)
+  if (!styleMatch) return ""
+  const styleVal = (styleMatch[1] ?? styleMatch[2] ?? styleMatch[3] ?? "").trim()
+  if (!styleVal) return ""
+
+  const safeDeclarations: string[] = []
+  for (const rawDeclaration of styleVal.split(";")) {
+    const declaration = rawDeclaration.trim()
+    const colonIdx = declaration.indexOf(":")
+    if (colonIdx === -1) continue
+    const prop = declaration.slice(0, colonIdx).trim().toLowerCase()
+    const value = declaration.slice(colonIdx + 1).trim()
+    if (!value) continue
+
+    let valid = false
+    switch (prop) {
+      case "color":
+      case "background-color":
+        valid = SAFE_COLOR_RE.test(value)
+        break
+      case "font-size":
+        valid = STYLE_FONT_SIZE_RE.test(value)
+        break
+      case "font-style":
+        valid = STYLE_FONT_STYLE_RE.test(value)
+        break
+      case "font-weight":
+        valid = STYLE_FONT_WEIGHT_RE.test(value)
+        break
+      case "font-family":
+        valid = STYLE_FONT_FAMILY_RE.test(value)
+        break
+      case "text-shadow":
+        valid = STYLE_TEXT_SHADOW_RE.test(value)
+        break
+      default:
+        valid = false
+    }
+
+    if (valid) safeDeclarations.push(`${prop}: ${value}`)
+  }
+
+  if (safeDeclarations.length === 0) return ""
+  return ` style="${safeDeclarations.join("; ")}"`
+}
+
+function sanitizeAttributes(tagName: string, rawAttrs: string): string {
+  if (tagName === "font") {
+    // Only extract color attribute: color="value" or color='value' or color=value
+    const colorMatch = rawAttrs.match(/\bcolor\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/i)
+    if (colorMatch) {
+      const colorVal = (colorMatch[1] ?? colorMatch[2] ?? colorMatch[3] ?? "").trim()
+      if (SAFE_COLOR_RE.test(colorVal)) {
+        return ` color="${colorVal}"`
+      }
+    }
+    return ""
+  }
+
+  if (tagName === "span") {
+    const classMatch = rawAttrs.match(/\bclass\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/i)
+    const classFragment = classMatch
+      ? (/^[a-zA-Z0-9_-]+$/.test((classMatch[1] ?? classMatch[2] ?? classMatch[3] ?? "").trim())
+          ? ` class="${(classMatch[1] ?? classMatch[2] ?? classMatch[3] ?? "").trim()}"`
+          : "")
+      : ""
+    return `${sanitizeStyleAttribute(rawAttrs)}${classFragment}`
+  }
+
+  // No attributes allowed for b, i, u, s, em, strong
+  return ""
+}
+
 /** Automatically close any unclosed allowed HTML tags to prevent style leaks */
 function autoCloseTags(html: string): string {
   const openTags: string[] = []
@@ -178,7 +269,7 @@ function autoCloseTags(html: string): string {
   while ((match = tagRegex.exec(html)) !== null) {
     const fullTag = match[0]
     const tagName = match[1].toLowerCase()
-    if (["b", "i", "u", "s", "em", "strong", "font", "span"].includes(tagName)) {
+    if (ALLOWED_TAGS.has(tagName)) {
       if (fullTag.startsWith("</")) {
         const idx = openTags.lastIndexOf(tagName)
         if (idx !== -1) {
@@ -213,7 +304,7 @@ const FANSUB_WARNING_PATTERNS = [
  * 2. Strip ASS/SSA override tags like {\an8}, {\b1}, {\pos(x,y)}
  * 3. Convert <br> / <br/> tags to newlines (\n)
  * 4. Strip WebVTT voice/class/ruby/rt/lang/timestamp tags like <v Speaker>, <c.yellow>
- * 5. Strip unauthorized HTML tags while keeping b, i, u, s, em, strong, font, span
+ * 5. Strictly sanitize HTML tags & attributes (whitelisting b, i, u, s, em, strong, font, span)
  * 6. Filter out ASS vector drawing commands (e.g. "m 0 0 l 100 100...")
  * 7. Filter out MPV / player format warning messages embedded in ASS tracks
  * 8. Auto-close open tags
@@ -227,6 +318,8 @@ export function sanitizeCueText(text: string): string {
     .replace(/\\n/g, "\n")
     // Strip ASS / SSA override tags inside {...}
     .replace(/\{[^}]*\}/g, "")
+    // Strip script, style, iframe, textarea blocks including inner content
+    .replace(/<(script|style|iframe|textarea|title|noscript)\b[^>]*>[\s\S]*?<\/\1>/gi, "")
     // Convert <br> / <br/> tags to newlines
     .replace(/<br\s*\/?>/gi, "\n")
     // Normalize CRLF
@@ -235,14 +328,36 @@ export function sanitizeCueText(text: string): string {
     .replace(/<(\d{2}:)?\d{2}:\d{2}[.,]\d{3}>/g, "")
     // Strip WebVTT voice <v ...>, class <c...>, lang <lang ...>, ruby/rt tags
     .replace(/<\/?(v|c|lang|ruby|rt)(\s+[^>]*)?>/gi, "")
-    // Remove unauthorized HTML tags, preserving b, i, u, s, em, strong, font, span
-    .replace(/<\/?(?!(?:b|i|u|s|em|strong|font|span)\b)[a-z0-9]+(?:\s+[^>]*)?>/gi, "")
 
   // Filter out ASS vector drawing commands (e.g. "m 0 0 l 100 100...")
   if (/^[mslbcq]\s+[\d\s-]/i.test(cleaned.trim())) return ""
 
   // Filter out fansub warning messages embedded in ASS tracks for non-MPV players
   if (FANSUB_WARNING_PATTERNS.some((pattern) => pattern.test(cleaned))) return ""
+
+  // Strict whitelist-based HTML sanitization for tags & attributes
+  // Strip dangerous tag structures (script, iframe, object, embed, style, img, svg, etc.)
+  const sanitizePass = (input: string): string => {
+    return input.replace(/<\/?([a-zA-Z0-9]+)([^>]*)>/gi, (_match, tagNameRaw: string, rawAttrs: string) => {
+      const tagName = tagNameRaw.toLowerCase()
+      const isClosing = _match.startsWith("</")
+
+      if (!ALLOWED_TAGS.has(tagName)) {
+        return "" // Strip non-whitelisted tags entirely
+      }
+
+      if (isClosing) {
+        return `</${tagName}>`
+      }
+
+      const safeAttrs = sanitizeAttributes(tagName, rawAttrs)
+      return `<${tagName}${safeAttrs}>`
+    })
+  }
+
+  // Run two passes to handle any nested tag tricks (e.g., <scr<script>ipt>)
+  cleaned = sanitizePass(cleaned)
+  cleaned = sanitizePass(cleaned)
 
   // Auto-close any unclosed formatting tags
   cleaned = autoCloseTags(cleaned)
@@ -354,10 +469,73 @@ export function parseVtt(vtt: string): VttCue[] {
   return cues.sort((a, b) => a.start - b.start)
 }
 
-/** Get all cues active at a given time in seconds (handles overlapping cues). */
+/**
+ * Get all cues active at a given time in seconds (handles overlapping cues).
+ * Assumes `cues` are sorted ascending by `start` (parseVtt guarantees this).
+ * Binary search for the rightmost cue with start <= time, then a bounded
+ * backward scan collects cues still in effect: O(log n + k), k capped at
+ * MAX_OVERLAP_SCAN — a 2-hour movie (~1500 cues) costs ~11 comparisons and at
+ * most 32 end checks instead of 1500. When the window is exhausted, a cached
+ * prefix-max end array proves in O(1) whether an older cue can still be
+ * active; only then does the scan extend over the remaining prefix, so
+ * pathological overlap chains stay correct without taxing normal tracks.
+ */
+const MAX_OVERLAP_SCAN = 32
+
+/** prefixMaxEnds[i] = max(cues[0..i].end) — one O(n) pass per track array,
+ *  cached by array identity (callers memoize their sorted arrays). */
+const prefixEndCache = new WeakMap<readonly VttCue[], Float64Array>()
+
+function prefixMaxEnds(cues: readonly VttCue[]): Float64Array {
+  let ends = prefixEndCache.get(cues)
+  if (!ends) {
+    ends = new Float64Array(cues.length)
+    let max = -Infinity
+    for (let i = 0; i < cues.length; i++) {
+      const end = cues[i].end
+      if (end > max) max = end
+      ends[i] = max
+    }
+    prefixEndCache.set(cues, ends)
+  }
+  return ends
+}
+
 export function findActiveCues(cues: VttCue[], time: number): VttCue[] {
   if (cues.length === 0) return []
-  return cues.filter((cue) => time >= cue.start && time < cue.end)
+
+  let lo = 0
+  let hi = cues.length - 1
+  let idx = -1
+  while (lo <= hi) {
+    const mid = (lo + hi) >>> 1
+    if (cues[mid].start <= time) {
+      idx = mid
+      lo = mid + 1
+    } else {
+      hi = mid - 1
+    }
+  }
+  if (idx === -1) return []
+
+  // Every index <= idx has start <= time by construction, so the scan only
+  // needs to check `end`; the cap bounds pathological overlap chains.
+  const active: VttCue[] = []
+  const windowStart = Math.max(0, idx - MAX_OVERLAP_SCAN + 1)
+  for (let i = idx; i >= windowStart; i--) {
+    if (time < cues[i].end) active.push(cues[i])
+  }
+  // Cues before windowStart also have start <= time, so one of them is active
+  // iff the prefix max end over [0, windowStart) exceeds time. The probe is
+  // O(1) on the cached array; the rare true case scans the remaining prefix.
+  if (windowStart > 0 && prefixMaxEnds(cues)[windowStart - 1] > time) {
+    for (let i = windowStart - 1; i >= 0; i--) {
+      if (time < cues[i].end) active.push(cues[i])
+    }
+  }
+  // Restore ascending (file) order for overlapping stacks
+  active.reverse()
+  return active
 }
 
 /** Get the first active cue at a given time (backward compatibility). */

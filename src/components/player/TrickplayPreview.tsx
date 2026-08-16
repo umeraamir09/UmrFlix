@@ -23,6 +23,22 @@ export function trickplayTileUrl(itemId: string, width: number, tileIndex: numbe
   return `/api/jellyfin/trickplay/${itemId}/${width}/${tileIndex}`
 }
 
+/** Cap for seek-bar sprite preloading (≈4.4h of content at 10s intervals). */
+export const MAX_PRELOAD_TILES = 32
+
+/**
+ * 4.6 — URLs of the trickplay sprite tiles to preload when the cursor enters
+ * the seek bar, so the hover bubble never pops in with a network stall.
+ */
+export function getTrickplayPreloadUrls(trickplay: TrickplayInfo, itemId: string): string[] {
+  const perTile = trickplay.tileWidth * trickplay.tileHeight
+  const tileCount = Math.min(
+    MAX_PRELOAD_TILES,
+    Math.max(1, Math.ceil(trickplay.thumbnailCount / perTile)),
+  )
+  return Array.from({ length: tileCount }, (_, i) => trickplayTileUrl(itemId, trickplay.width, i))
+}
+
 /**
  * Seek-bar hover thumbnail backed by Jellyfin trickplay sprite tiles.
  * Renders the single thumbnail at `time` by cropping it out of its tile via

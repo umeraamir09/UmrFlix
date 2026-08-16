@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server"
 import { authenticate, getAllItems } from "@/lib/jellyfin"
-import { ensureJellyfinIndex, setJellyfinIndex, getJellyfinIndex } from "@/lib/cache"
+import { setJellyfinIndex, getJellyfinIndex } from "@/lib/cache"
 
 export async function GET(request: Request) {
   const url = new URL(request.url)

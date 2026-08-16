@@ -1,11 +1,11 @@
 import { NextResponse } from "next/server"
 import { env } from "@/lib/env"
 import { authenticate } from "@/lib/jellyfin"
+import { isValidItemId, isValidIndex } from "@/lib/validation"
 
 export const dynamic = "force-dynamic"
 
 const BASE = () => env("JELLYFIN_URL")
-const ITEM_ID_RE = /^[a-zA-Z0-9]+$/
 const MAX_CHAPTER_INDEX = 500
 
 /**
@@ -23,20 +23,20 @@ export async function GET(
   try {
     const { slug } = await params
     const [itemId, indexRaw] = slug
-    if (!itemId || !ITEM_ID_RE.test(itemId)) {
+    if (!isValidItemId(itemId)) {
       return NextResponse.json(
         { error: "Invalid chapter image path" },
         { status: 400 },
       )
     }
 
-    const index = Number(indexRaw)
-    if (!Number.isInteger(index) || index < 0 || index > MAX_CHAPTER_INDEX) {
+    if (!isValidIndex(indexRaw, MAX_CHAPTER_INDEX)) {
       return NextResponse.json(
         { error: "Invalid chapter index" },
         { status: 400 },
       )
     }
+    const index = Number(indexRaw)
 
     const { token } = await authenticate()
 

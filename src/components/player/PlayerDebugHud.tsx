@@ -62,10 +62,12 @@ export function PlayerDebugHud({
   })
   const [copied, setCopied] = useState(false)
 
-  // Live video element stats, polled 4x/sec
+  // 4.4 — poll only while playback is active: a 250ms interval re-rendering
+  // the HUD while paused is pure waste. Pause/seek/load transitions sync once
+  // directly so paused stats never go stale.
   useEffect(() => {
-    const id = setInterval(() => {
-      const v = videoRef.current
+    const v = videoRef.current
+    const sync = () => {
       if (!v) return
       setStats({
         readyState: v.readyState,
@@ -77,26 +79,87 @@ export function PlayerDebugHud({
         seeking: v.seeking,
         error: v.error ? `${v.error.code} ${v.error.message}` : "",
       })
+    }
+    const id = setInterval(() => {
+      if (!v || v.paused) return
+      sync()
     }, 250)
-    return () => clearInterval(id)
+    v?.addEventListener("pause", sync)
+    v?.addEventListener("seeked", sync)
+    v?.addEventListener("loadedmetadata", sync)
+    return () => {
+      clearInterval(id)
+      v?.removeEventListener("pause", sync)
+      v?.removeEventListener("seeked", sync)
+      v?.removeEventListener("loadedmetadata", sync)
+    }
   }, [videoRef])
 
   const bufferAhead = Math.max(0, stats.bufferedEnd - stats.time)
 
+  // Close on Escape (5.6) — the HUD is toggled by the "d" key, so Escape must
+  // close it too; window-level listener because focus often stays elsewhere.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose()
+    }
+    window.addEventListener("keydown", onKey)
+    return () => window.removeEventListener("keydown", onKey)
+  }, [onClose])
+
   const copyAll = async () => {
+    const v = videoRef.current
+    let videoQualityStats = ""
+    if (
+      v &&
+      "getVideoPlaybackQuality" in v &&
+      typeof (v as HTMLVideoElement & {
+        getVideoPlaybackQuality?: () => {
+          totalVideoFrames?: number
+          droppedVideoFrames?: number
+          corruptedVideoFrames?: number
+        }
+      }).getVideoPlaybackQuality === "function"
+    ) {
+      try {
+        const q = (
+          v as HTMLVideoElement & {
+            getVideoPlaybackQuality: () => {
+              totalVideoFrames?: number
+              droppedVideoFrames?: number
+              corruptedVideoFrames?: number
+            }
+          }
+        ).getVideoPlaybackQuality()
+        videoQualityStats = `quality: totalFrames=${q.totalVideoFrames ?? "?"} droppedFrames=${q.droppedVideoFrames ?? "?"} corruptedFrames=${q.corruptedVideoFrames ?? "?"}`
+      } catch {
+        /* ignore */
+      }
+    }
+
     const text = [
-      `engine=${engine} quality=${qualityId}`,
+      `=== UmrFlix CinemaPlayer Diagnostics ===`,
+      `timestamp: ${new Date().toISOString()}`,
+      `engine=${engine} quality=${qualityId}${autoResolvedId ? ` (ABR → ${autoResolvedId})` : ""}`,
+      `bandwidth: ${estimatedBandwidth && estimatedBandwidth > 0 ? `${(estimatedBandwidth / 1_000_000).toFixed(2)} Mbps` : "unknown"}`,
       `probe: ${probeReason}`,
       `streamUrl: ${maskUrl(streamUrl)}`,
       payload
         ? `payload: container=${payload.container} vcodec=${payload.videoCodec} canDirectPlay=${payload.canDirectPlay} supportsTranscoding=${payload.supportsTranscoding} audio=${payload.audio.map((a) => `[${a.index}]${a.codec}`).join(",")} subs=${payload.subtitles.map((s) => `[${s.index}]${s.codec}${s.isImageBased ? "(img)" : ""}`).join(",")}`
         : "payload: (none)",
-      `video: readyState=${READY_STATE[stats.readyState] ?? stats.readyState} networkState=${NETWORK_STATE[stats.networkState] ?? stats.networkState} time=${stats.time.toFixed(2)} bufferedEnd=${stats.bufferedEnd.toFixed(2)} (${bufferAhead.toFixed(1)}s ahead) paused=${stats.paused}${stats.error ? ` error=${stats.error}` : ""}`,
-      "--- log ---",
+      `video: readyState=${READY_STATE[stats.readyState] ?? stats.readyState} networkState=${NETWORK_STATE[stats.networkState] ?? stats.networkState} time=${stats.time.toFixed(2)}s / ${stats.duration.toFixed(1)}s bufferedEnd=${stats.bufferedEnd.toFixed(2)}s (${bufferAhead.toFixed(1)}s ahead) paused=${stats.paused}${stats.error ? ` error=${stats.error}` : ""}`,
+      videoQualityStats ? videoQualityStats : null,
+      typeof window !== "undefined"
+        ? `client: viewport=${window.innerWidth}x${window.innerHeight} dpr=${window.devicePixelRatio} touch=${window.matchMedia("(pointer: coarse)").matches} ua=${navigator.userAgent}`
+        : null,
+      "--- Event Log ---",
       ...entries.map(
-        (e) => `${new Date(e.t).toISOString().slice(11, 23)} ${e.level.toUpperCase().padEnd(5)} [${e.tag}] ${e.message}`,
+        (e) => `${new Date(e.t).toISOString()} ${e.level.toUpperCase().padEnd(5)} [${e.tag}] ${maskUrl(e.message)}`,
       ),
-    ].join("\n")
+    ]
+      .filter(Boolean)
+      .join("\n")
+
     try {
       await navigator.clipboard.writeText(text)
       setCopied(true)
@@ -107,16 +170,21 @@ export function PlayerDebugHud({
   }
 
   return (
-    <div className="absolute left-2 top-2 z-[60] w-[min(92%,520px)] rounded-lg border border-white/15 bg-black/85 font-mono text-[11px] leading-relaxed text-green-300 shadow-2xl backdrop-blur-md">
+    <div
+      role="dialog"
+      aria-label="Playback diagnostics"
+      className="absolute left-2 top-2 z-[60] w-[min(92%,520px)] rounded-lg border border-white/15 bg-black/85 font-mono text-[11px] leading-relaxed text-green-300 shadow-2xl backdrop-blur-md"
+    >
       <div className="flex items-center justify-between border-b border-white/10 px-3 py-1.5">
         <span className="font-bold tracking-wider text-white/90">PLAYER DEBUG</span>
         <div className="flex items-center gap-1">
           <button
             onClick={copyAll}
+            aria-label="Copy debug info to clipboard"
             className="flex items-center gap-1 rounded bg-white/10 px-2 py-0.5 text-[10px] font-semibold text-white transition-colors hover:bg-white/20"
           >
             <ClipboardCopy className="size-3" />
-            {copied ? "Copied!" : "Copy"}
+            {copied ? "Copied!" : "Copy Debug Info"}
           </button>
           <button
             onClick={onClose}
@@ -181,7 +249,7 @@ export function PlayerDebugHud({
               <span className="text-white/35">
                 {new Date(e.t).toISOString().slice(11, 23)}
               </span>{" "}
-              <span className="text-white/60">[{e.tag}]</span> {e.message}
+              <span className="text-white/60">[{e.tag}]</span> {maskUrl(e.message)}
             </p>
           ))}
         </div>

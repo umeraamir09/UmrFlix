@@ -1,6 +1,7 @@
 "use client"
 
 import { use, useState } from "react"
+import Image from "next/image"
 import useSWR from "swr"
 import { getImageUrl, formatRating, formatDate } from "@/lib/utils"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -99,10 +100,13 @@ export function TvDetail({ params }: { params: Promise<{ id: string }> }) {
       {/* ── Hero Backdrop & Title Section ── */}
       <div className="relative h-[65vh] min-h-[500px] max-h-[750px] w-full overflow-hidden bg-background">
         {show.backdrop_path ? (
-          <img
+          <Image
             src={getImageUrl(show.backdrop_path, "w1280")}
             alt={show.name}
-            className="size-full object-cover object-center"
+            fill
+            priority
+            sizes="100vw"
+            className="object-cover object-center"
           />
         ) : (
           <div className="size-full bg-surface" />
@@ -120,11 +124,13 @@ export function TvDetail({ params }: { params: Promise<{ id: string }> }) {
               <div className="flex items-center gap-2 text-xs font-black uppercase tracking-widest text-accent">
                 <span className="bg-accent/20 px-2 py-0.5 border border-accent/40">SERIES</span>
               </div>
-              <div className="w-28 sm:w-44 md:w-52 shrink-0 overflow-hidden rounded-none border border-border shadow-2xl block">
-                <img
+              <div className="relative aspect-[2/3] w-28 sm:w-44 md:w-52 shrink-0 overflow-hidden rounded-none border border-border shadow-2xl block">
+                <Image
                   src={getImageUrl(show.poster_path, "w500")}
                   alt={show.name}
-                  className="w-full h-auto object-cover"
+                  fill
+                  sizes="(max-width: 640px) 112px, (max-width: 768px) 176px, 208px"
+                  className="object-cover"
                 />
               </div>
             </div>
@@ -135,10 +141,12 @@ export function TvDetail({ params }: { params: Promise<{ id: string }> }) {
               {/* Logo image or text title */}
               {logoUrl ? (
                 <div className="relative h-20 sm:h-28 md:h-32 w-64 sm:w-80 md:w-[420px] drop-shadow-2xl my-2">
-                  <img
+                  <Image
                     src={logoUrl}
                     alt={show.name}
-                    className="max-h-full max-w-full object-contain object-left drop-shadow-xl"
+                    fill
+                    sizes="(max-width: 640px) 256px, (max-width: 768px) 320px, 420px"
+                    className="object-contain object-left drop-shadow-xl"
                   />
                 </div>
               ) : (
@@ -156,7 +164,7 @@ export function TvDetail({ params }: { params: Promise<{ id: string }> }) {
               <div className="flex flex-wrap items-center gap-3 text-xs font-semibold text-gray-300">
                 {hasOmdbRating ? (
                   <span className="flex items-center gap-1.5 bg-surface/90 border border-border px-2.5 py-1 text-white font-bold">
-                    <img src="/imdb.webp" alt="IMDb" className="h-4 w-auto object-contain" />
+                    <Image src="/imdb.webp" alt="IMDb" width={1280} height={1280} sizes="16px" className="h-4 w-auto object-contain" />
                     <span>{omdbData.imdbRating}</span>
                     {omdbData.imdbVotes && omdbData.imdbVotes !== "N/A" && (
                       <span className="text-gray-400 font-normal text-[11px]">

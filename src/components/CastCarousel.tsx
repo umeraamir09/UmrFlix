@@ -1,6 +1,7 @@
 "use client"
 
 import { useRef, useState, useEffect, useCallback } from "react"
+import Image from "next/image"
 import { ChevronLeft, ChevronRight, User } from "lucide-react"
 import { getImageUrl } from "@/lib/utils"
 import type { TmdbCastMember } from "@/lib/tmdb"
@@ -91,10 +92,12 @@ export function CastCarousel({ cast }: { cast: TmdbCastMember[] }) {
             >
               <div className="relative size-20 sm:size-24 rounded-full overflow-hidden border-2 border-border/80 group-hover:border-accent group-hover:scale-105 transition-all duration-300 shadow-md bg-card">
                 {actor.profile_path ? (
-                  <img
+                  <Image
                     src={getImageUrl(actor.profile_path, "w185")}
                     alt={actor.name}
-                    className="size-full object-cover"
+                    fill
+                    sizes="(max-width: 640px) 80px, 96px"
+                    className="object-cover"
                   />
                 ) : (
                   <div className="size-full flex items-center justify-center text-gray-600 bg-surface">

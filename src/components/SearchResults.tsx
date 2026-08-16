@@ -34,6 +34,19 @@ const GENRE_PARAMS: Record<string, string> = {
   name: "sort_by=original_title.asc",
 }
 
+type SearchResultItem = {
+  id: number
+  title?: string
+  name?: string
+  overview: string
+  backdrop_path: string | null
+  poster_path: string | null
+  vote_average: number
+  release_date?: string
+  first_air_date?: string
+  media_type?: string
+}
+
 export function SearchResults() {
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -280,13 +293,12 @@ export function SearchResults() {
     return () => clearTimeout(idleTimer)
   }, [debouncedQuery, isLoading, addRecentSearch])
 
-  const rawResults: any[] = searchData?.results ?? []
-
   // Filter out unreleased, announced, & cinema-only items.
   // Browse mode stays strict (no theatre-only titles); a typed query should
   // still surface movies that are currently in the theatrical window, so
   // cinema-only items are kept there.
   const results = useMemo(() => {
+    const rawResults: SearchResultItem[] = searchData?.results ?? []
     let items = filterDisplayableContent(rawResults, { includeCinemas: !isBrowseMode })
     if (isBrowseMode && sort === "name") {
       items = [...items].sort((a, b) => {
@@ -296,7 +308,7 @@ export function SearchResults() {
       })
     }
     return items
-  }, [rawResults, isBrowseMode, sort])
+  }, [searchData, isBrowseMode, sort])
 
   // Batch availability check
   const itemRefs = useMemo(() => {

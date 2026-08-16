@@ -1,6 +1,6 @@
 "use client"
 
-import { useRef, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import Image from "next/image"
 import {
   ArrowLeft,
@@ -16,8 +16,9 @@ import type {
   SubtitleTrack,
   TrickplayInfo,
 } from "@/lib/playback-types"
-import { TrickplayPreview, trickplayPreviewDisplaySize } from "./TrickplayPreview"
-import { ChapterImagePreview, chapterPreviewDisplaySize } from "./ChapterImagePreview"
+import { TrickplayPreview, trickplayPreviewDisplaySize, getTrickplayPreloadUrls } from "./TrickplayPreview"
+import { ChapterImagePreview, chapterPreviewDisplaySize, getChapterPreloadUrls } from "./ChapterImagePreview"
+import { preloadImages } from "./use-preloaded-image"
 import { EpisodeBrowser } from "./EpisodeBrowser"
 import { AudioSubtitlesMenu, SpeedQualityMenu } from "./player-menus"
 import type { EpisodeInfo, SeasonInfo } from "@/components/SeasonBrowser"
@@ -57,6 +58,55 @@ export function SeekBar({
   const [hover, setHover] = useState<{ time: number; x: number; barW: number } | null>(null)
   const [scrubTime, setScrubTime] = useState<number | null>(null)
 
+  // 4.3 — pointermove fires 60-120x/sec during a drag; batch hover/scrub state
+  // writes into a single rAF per frame instead of re-rendering per pixel, and
+  // DON'T seek during the drag — the preview shows the position visually and
+  // video.currentTime (plus party commands) only move on pointerdown/up.
+  const pendingHoverRef = useRef<{ time: number; x: number; barW: number } | null>(null)
+  const pendingScrubRef = useRef<number | null>(null)
+  const scrubTimeRef = useRef<number | null>(null)
+  const rafRef = useRef<number | null>(null)
+
+  // 4.6 — preload trickplay sprite tiles (or chapter images) as soon as the
+  // cursor enters the bar, so the hover bubble never pops in with a stall.
+  // preloadImages shares usePreloadedImage's cache, so a completed preload
+  // makes the first hover render instantly; the ref dedupes in-flight URLs.
+  const preloadedTilesRef = useRef(new Set<string>())
+  const preloadPreviews = () => {
+    const urls = trickplay
+      ? getTrickplayPreloadUrls(trickplay, itemId)
+      : hasChapterImages
+        ? getChapterPreloadUrls(chapters, itemId)
+        : []
+    const fresh = urls.filter((url) => !preloadedTilesRef.current.has(url))
+    for (const url of fresh) preloadedTilesRef.current.add(url)
+    if (fresh.length > 0) preloadImages(fresh)
+  }
+
+  const flushPointerMove = () => {
+    rafRef.current = null
+    const h = pendingHoverRef.current
+    const s = pendingScrubRef.current
+    pendingHoverRef.current = null
+    pendingScrubRef.current = null
+    if (h) setHover(h)
+    if (s !== null) setScrubTime(s)
+  }
+
+  const schedulePointerMove = (h: { time: number; x: number; barW: number } | null, s: number | null) => {
+    pendingHoverRef.current = h
+    pendingScrubRef.current = s
+    if (rafRef.current === null) {
+      rafRef.current = requestAnimationFrame(flushPointerMove)
+    }
+  }
+
+  useEffect(() => {
+    return () => {
+      if (rafRef.current !== null) cancelAnimationFrame(rafRef.current)
+    }
+  }, [])
+
   const fraction = (clientX: number) => {
     const rect = barRef.current?.getBoundingClientRect()
     if (!rect || rect.width === 0) return 0
@@ -66,6 +116,45 @@ export function SeekBar({
   const shownTime = scrubTime ?? currentTime
   const playedPct = duration > 0 ? (shownTime / duration) * 100 : 0
   const bufferedPct = duration > 0 ? Math.min(100, (buffered / duration) * 100) : 0
+
+  // 5.1 — role="slider" needs keyboard support: arrows nudge by ±10s (±5s with
+  // Shift), Up/Down step 10% of the duration, Home/End jump to the edges.
+  // Keys stopPropagation so the player surface's shortcuts never double-handle.
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (duration <= 0) return
+    let next: number | null = null
+    switch (e.key) {
+      case "ArrowRight":
+        next = shownTime + (e.shiftKey ? 5 : 10)
+        break
+      case "ArrowLeft":
+        next = shownTime - (e.shiftKey ? 5 : 10)
+        break
+      case "ArrowUp":
+        next = shownTime + duration * 0.1
+        break
+      case "ArrowDown":
+        next = shownTime - duration * 0.1
+        break
+      case "Home":
+        next = 0
+        break
+      case "End":
+        next = duration
+        break
+      case "PageUp":
+        next = shownTime + Math.max(30, duration * 0.1)
+        break
+      case "PageDown":
+        next = shownTime - Math.max(30, duration * 0.1)
+        break
+      default:
+        return
+    }
+    e.preventDefault()
+    e.stopPropagation()
+    onSeek(Math.min(Math.max(0, next), duration))
+  }
 
   // Chapter images available as fallback when trickplay is absent?
   const hasChapterImages = !trickplay && chapters.some((c) => c.imageTag)
@@ -85,12 +174,23 @@ export function SeekBar({
   return (
     <div
       ref={barRef}
+      role="slider"
+      aria-label="Seek bar"
+      aria-valuemin={0}
+      aria-valuemax={Math.max(0, duration)}
+      aria-valuenow={shownTime}
+      aria-valuetext={formatTimecode(shownTime)}
+      aria-disabled={duration <= 0}
+      tabIndex={0}
+      onKeyDown={handleKeyDown}
       className="group/seek relative flex h-11 sm:h-6 cursor-pointer items-center touch-none select-none"
+      onPointerEnter={preloadPreviews}
       onPointerDown={(e) => {
         e.currentTarget.setPointerCapture(e.pointerId)
         const t = fraction(e.clientX) * duration
+        scrubTimeRef.current = t
         setScrubTime(t)
-        onSeek(t)
+        onSeek(t) // tap-to-seek: instant jump on press
         onScrubStateChange?.(true)
       }}
       onPointerMove={(e) => {
@@ -99,27 +199,40 @@ export function SeekBar({
           rect && rect.width > 0
             ? Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width))
             : 0
-        setHover({
+        const h = {
           time: f * duration,
           x: e.clientX - (rect?.left ?? 0),
           barW: rect?.width ?? 0,
-        })
-        if (scrubTime !== null) {
-          const t = f * duration
-          setScrubTime(t)
-          onSeek(t)
+        }
+        if (scrubTimeRef.current !== null) {
+          // 4.3 — dragging: update the preview position only; the actual seek
+          // happens once on pointerup (video.currentTime + party commands).
+          scrubTimeRef.current = f * duration
+          schedulePointerMove(h, f * duration)
           onScrubStateChange?.(true)
+        } else {
+          schedulePointerMove(h, null)
         }
       }}
       onPointerUp={() => {
+        // 4.3 — single seek at release with the final drag position
+        const final = scrubTimeRef.current
+        if (final !== null) onSeek(final)
+        scrubTimeRef.current = null
+        pendingScrubRef.current = null
         setScrubTime(null)
         onScrubStateChange?.(false)
       }}
       onPointerCancel={() => {
+        scrubTimeRef.current = null
+        pendingScrubRef.current = null
         setScrubTime(null)
         onScrubStateChange?.(false)
       }}
-      onPointerLeave={() => setHover(null)}
+      onPointerLeave={() => {
+        pendingHoverRef.current = null
+        setHover(null)
+      }}
     >
       {/* track */}
       <div className="relative h-[3px] w-full rounded-full bg-white/35 transition-[height] duration-150 group-hover/seek:h-[5px]">
@@ -200,6 +313,7 @@ export function PlayerControls({
   muted,
   qualityId,
   autoResolvedLabel,
+  sourceHeight,
   audioTracks,
   audioIndex,
   subtitleTracks,
@@ -245,6 +359,7 @@ export function PlayerControls({
   muted: boolean
   qualityId: string
   autoResolvedLabel?: string
+  sourceHeight?: number
   audioTracks: AudioTrack[]
   audioIndex: number | null
   subtitleTracks: SubtitleTrack[]
@@ -323,6 +438,7 @@ export function PlayerControls({
           onSubtitleChange={onSubtitleChange}
           subStyle={subStyle}
           onSubStyleChange={onSubStyleChange}
+          onClose={() => setAudioSubsOpen(false)}
         />
       )}
 
@@ -331,15 +447,17 @@ export function PlayerControls({
         <SpeedQualityMenu
           qualityId={qualityId}
           autoResolvedLabel={autoResolvedLabel}
+          sourceHeight={sourceHeight}
           onQualityChange={onQualityChange}
           playbackRate={playbackRate}
           onPlaybackRateChange={onPlaybackRateChange}
+          onClose={() => setSpeedOpen(false)}
         />
       )}
 
       <div
         className={`absolute inset-0 z-40 flex flex-col justify-between pointer-events-none transition-opacity duration-300 ${
-          visible || isAnyMenuOpen ? "opacity-100" : "opacity-0"
+          visible || isAnyMenuOpen ? "visible opacity-100" : "invisible opacity-0"
         }`}
       >
       {/* Background gradients */}
@@ -464,6 +582,7 @@ export function PlayerControls({
                   onChange={(e) => onVolumeChange(Number(e.target.value) / 100)}
                   className="w-0 opacity-0 transition-all duration-200 accent-accent h-2 group-hover/vol:ml-2.5 group-hover/vol:w-20 sm:group-hover/vol:w-24 group-hover/vol:opacity-100"
                   aria-label="Volume"
+                  aria-valuetext={`${Math.round(volume * 100)} percent`}
                 />
               )}
             </div>
@@ -514,6 +633,8 @@ export function PlayerControls({
                 }`}
                 aria-label="Browse episodes"
                 title="Episodes"
+                aria-haspopup="dialog"
+                aria-expanded={episodeBrowserOpen}
               >
                 <Image
                   src="/icons/ep-browser.svg"
@@ -536,6 +657,8 @@ export function PlayerControls({
                   audioSubsOpen ? "text-accent" : ""
                 }`}
                 aria-label="Audio and Subtitles"
+                aria-haspopup="menu"
+                aria-expanded={audioSubsOpen}
               >
                 <IconSubtitles className="size-5 sm:size-7" />
               </button>
@@ -552,6 +675,8 @@ export function PlayerControls({
                   speedOpen ? "text-accent" : ""
                 }`}
                 aria-label="Playback Speed and Quality"
+                aria-haspopup="menu"
+                aria-expanded={speedOpen}
               >
                 <IconSpeed className="size-5 sm:size-7" />
               </button>
