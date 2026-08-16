@@ -174,6 +174,65 @@ const ALLOWED_TAGS = new Set(["b", "i", "u", "s", "em", "strong", "font", "span"
 // Validate safe color value (hex #rgb, #rrggbb, #rrggbbaa, rgb/rgba, or standard color name)
 const SAFE_COLOR_RE = /^(#[0-9a-fA-F]{3,8}|rgba?\(\s*\d+\s*,\s*\d+\s*,\s*\d+\s*(?:,\s*[\d.]+\s*)?\)|[a-zA-Z]+)$/
 
+// Inline style allowlist. Every value is anchored and restricted to inert
+// characters: no quotes, semicolons, backslashes or parens (outside the fixed
+// rgba() shape), so emitted declarations can never break out of the attribute
+// or invoke CSS tricks — unquoted font families only, no url()/expression.
+const STYLE_FONT_SIZE_RE = /^\d+(?:\.\d+)?(?:px|em|rem|%)$/
+const STYLE_FONT_STYLE_RE = /^(?:normal|italic|oblique)$/i
+const STYLE_FONT_WEIGHT_RE = /^(?:normal|bold|[1-9]00)$/i
+const STYLE_FONT_FAMILY_RE = /^[A-Za-z0-9 -]+$/
+const STYLE_TEXT_SHADOW_RE =
+  /^\d+(?:\.\d+)?(?:px|em)?\s+\d+(?:\.\d+)?(?:px|em)?(?:\s+\d+(?:\.\d+)?(?:px|em)?)?\s+(?:#[0-9a-fA-F]{3,8}|rgba?\(\s*\d+\s*,\s*\d+\s*,\s*\d+\s*(?:,\s*[\d.]+\s*)?\))$/
+
+/** Rebuild a span style attribute from a per-declaration whitelist. */
+function sanitizeStyleAttribute(rawAttrs: string): string {
+  const styleMatch = rawAttrs.match(/\bstyle\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/i)
+  if (!styleMatch) return ""
+  const styleVal = (styleMatch[1] ?? styleMatch[2] ?? styleMatch[3] ?? "").trim()
+  if (!styleVal) return ""
+
+  const safeDeclarations: string[] = []
+  for (const rawDeclaration of styleVal.split(";")) {
+    const declaration = rawDeclaration.trim()
+    const colonIdx = declaration.indexOf(":")
+    if (colonIdx === -1) continue
+    const prop = declaration.slice(0, colonIdx).trim().toLowerCase()
+    const value = declaration.slice(colonIdx + 1).trim()
+    if (!value) continue
+
+    let valid = false
+    switch (prop) {
+      case "color":
+      case "background-color":
+        valid = SAFE_COLOR_RE.test(value)
+        break
+      case "font-size":
+        valid = STYLE_FONT_SIZE_RE.test(value)
+        break
+      case "font-style":
+        valid = STYLE_FONT_STYLE_RE.test(value)
+        break
+      case "font-weight":
+        valid = STYLE_FONT_WEIGHT_RE.test(value)
+        break
+      case "font-family":
+        valid = STYLE_FONT_FAMILY_RE.test(value)
+        break
+      case "text-shadow":
+        valid = STYLE_TEXT_SHADOW_RE.test(value)
+        break
+      default:
+        valid = false
+    }
+
+    if (valid) safeDeclarations.push(`${prop}: ${value}`)
+  }
+
+  if (safeDeclarations.length === 0) return ""
+  return ` style="${safeDeclarations.join("; ")}"`
+}
+
 function sanitizeAttributes(tagName: string, rawAttrs: string): string {
   if (tagName === "font") {
     // Only extract color attribute: color="value" or color='value' or color=value
@@ -188,27 +247,13 @@ function sanitizeAttributes(tagName: string, rawAttrs: string): string {
   }
 
   if (tagName === "span") {
-    // Check style for safe color
-    const styleMatch = rawAttrs.match(/\bstyle\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/i)
-    if (styleMatch) {
-      const styleVal = (styleMatch[1] ?? styleMatch[2] ?? styleMatch[3] ?? "").trim()
-      // Only permit safe color style declaration: "color: #123456" or "color: red"
-      const colorStyleMatch = styleVal.match(/^color\s*:\s*([^;]+);?$/i)
-      if (colorStyleMatch) {
-        const colorVal = colorStyleMatch[1].trim()
-        if (SAFE_COLOR_RE.test(colorVal)) {
-          return ` style="color: ${colorVal}"`
-        }
-      }
-    }
     const classMatch = rawAttrs.match(/\bclass\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/i)
-    if (classMatch) {
-      const classVal = (classMatch[1] ?? classMatch[2] ?? classMatch[3] ?? "").trim()
-      if (/^[a-zA-Z0-9_-]+$/.test(classVal)) {
-        return ` class="${classVal}"`
-      }
-    }
-    return ""
+    const classFragment = classMatch
+      ? (/^[a-zA-Z0-9_-]+$/.test((classMatch[1] ?? classMatch[2] ?? classMatch[3] ?? "").trim())
+          ? ` class="${(classMatch[1] ?? classMatch[2] ?? classMatch[3] ?? "").trim()}"`
+          : "")
+      : ""
+    return `${sanitizeStyleAttribute(rawAttrs)}${classFragment}`
   }
 
   // No attributes allowed for b, i, u, s, em, strong

@@ -6,6 +6,11 @@
 // Jellyfin item IDs / MediaSource IDs are typically 32-character hex UUIDs or alphanumeric identifiers
 const SAFE_ID_RE = /^[a-zA-Z0-9_-]{1,64}$/
 
+// Jellyfin MediaSourceIds are GUIDs for library media, but plugin or
+// multi-part sources can yield other safe identifiers. Keep the check
+// path-safe rather than GUID-strict.
+const SAFE_MEDIA_SOURCE_ID_RE = /^[A-Za-z0-9._:\-]{1,128}$/
+
 /**
  * Validates that an item ID or resource identifier is well-formed.
  * Rejects path traversal tokens ('..', '/', '\\'), null bytes, and abnormal lengths.
@@ -13,6 +18,17 @@ const SAFE_ID_RE = /^[a-zA-Z0-9_-]{1,64}$/
 export function isValidItemId(id: unknown): id is string {
   if (typeof id !== "string" || !id) return false
   return SAFE_ID_RE.test(id)
+}
+
+/**
+ * Validates a Jellyfin media source ID for path interpolation.
+ * Deliberately broader than isValidItemId (dotted/colon IDs are legal), but
+ * still rejects path separators, null bytes, and traversal tokens.
+ */
+export function isValidMediaSourceId(id: unknown): id is string {
+  if (typeof id !== "string" || !id) return false
+  if (!SAFE_MEDIA_SOURCE_ID_RE.test(id)) return false
+  return id !== ".." && id !== "."
 }
 
 /**

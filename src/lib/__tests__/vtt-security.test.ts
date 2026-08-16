@@ -54,8 +54,39 @@ describe("VTT / Subtitle Security & Sanitization", () => {
     const maliciousFont = '<font color="javascript:alert(1)">Text</font>'
     assert.strictEqual(sanitizeCueText(maliciousFont), "<font>Text</font>")
 
+    // The unsafe background declaration is dropped, the safe color survives
     const maliciousSpan = '<span style="background: url(javascript:alert(1)); color: red">Styled</span>'
-    assert.strictEqual(sanitizeCueText(maliciousSpan), "<span>Styled</span>")
+    assert.strictEqual(sanitizeCueText(maliciousSpan), '<span style="color: red">Styled</span>')
+
+    const cssExpression = '<span style="color: expression(alert(1))">Styled</span>'
+    assert.strictEqual(sanitizeCueText(cssExpression), "<span>Styled</span>")
+  })
+
+  it("preserves multi-property safe styles regardless of declaration order", () => {
+    const input = '<span style="background-color: rgba(0,0,0,0.65); color: #fff">Hello</span> <span style="font-size: 18px; color: red">World</span> <span style="text-shadow: 2px 2px 0 #000; font-family: Arial">Dark</span>'
+    assert.strictEqual(
+      sanitizeCueText(input),
+      '<span style="background-color: rgba(0,0,0,0.65); color: #fff">Hello</span> <span style="font-size: 18px; color: red">World</span> <span style="text-shadow: 2px 2px 0 #000; font-family: Arial">Dark</span>'
+    )
+  })
+
+  it("drops invalid style declarations individually and rejects quote/url tricks", () => {
+    const quotedFamily = '<span style="font-family: \'Times New Roman\'">Quoted</span>'
+    assert.strictEqual(sanitizeCueText(quotedFamily), "<span>Quoted</span>")
+
+    const unclosedQuote = '<span style="font-family: \\"x">Injected</span>'
+    assert.strictEqual(sanitizeCueText(unclosedQuote), "<span>Injected</span>")
+
+    const fontUrl = '<span style="font-family: url(x); color: #fff">T</span>'
+    assert.strictEqual(sanitizeCueText(fontUrl), '<span style="color: #fff">T</span>')
+
+    const position = '<span style="position: fixed; color: red">P</span>'
+    assert.strictEqual(sanitizeCueText(position), '<span style="color: red">P</span>')
+  })
+
+  it("combines safe style and class attributes on the same span", () => {
+    const input = '<span style="color: #ff0000" class="speaker">A</span>'
+    assert.strictEqual(sanitizeCueText(input), '<span style="color: #ff0000" class="speaker">A</span>')
   })
 
   it("auto-closes open tags safely", () => {

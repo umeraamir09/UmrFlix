@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server"
 import { env } from "@/lib/env"
 import { authenticate } from "@/lib/jellyfin"
-import { isValidItemId, isValidIndex } from "@/lib/validation"
+import { isValidItemId, isValidMediaSourceId, isValidIndex } from "@/lib/validation"
 
 export const dynamic = "force-dynamic"
 
@@ -25,7 +25,7 @@ export async function GET(
     const [itemId, mediaSourceId, streamIndex] = slug
     if (
       !isValidItemId(itemId) ||
-      !isValidItemId(mediaSourceId) ||
+      !isValidMediaSourceId(mediaSourceId) ||
       !isValidIndex(streamIndex)
     ) {
       return NextResponse.json({ error: "Invalid subtitle path" }, { status: 400 })
