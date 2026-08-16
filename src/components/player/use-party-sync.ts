@@ -60,6 +60,7 @@ export function usePartySync({
   const [serverOffset, setServerOffset] = useState<number>(0) // serverTime - localTime
   const [syncQuality, setSyncQuality] = useState<SyncQuality>("paused")
   const [syncDriftMs, setSyncDriftMs] = useState<number>(0)
+  const [localBuffering, setLocalBuffering] = useState<boolean>(false)
 
   const versionRef = useRef<number>(0)
   const partyStateRef = useRef<PartyState | null>(null)
@@ -71,6 +72,10 @@ export function usePartySync({
     timer: NodeJS.Timeout | null
     startedAt: number
   } | null>(null)
+  const membersRef = useRef<PartyMember[]>([])
+  const localBufferingRef = useRef<boolean>(false)
+  const bufferingStateRef = useRef<boolean | null>(null)
+  const segmentDurationRef = useRef<number | (() => number) | undefined>(segmentDurationSec)
   const prevMembersRef = useRef<PartyMember[]>([])
   const userIdRef = useRef<string | null>(null)
   const isOwnerRef = useRef<boolean>(false)
@@ -86,6 +91,10 @@ export function usePartySync({
     partyStateRef.current = partyState
     serverOffsetRef.current = serverOffset
   }, [partyState, serverOffset])
+
+  useEffect(() => {
+    segmentDurationRef.current = segmentDurationSec
+  }, [segmentDurationSec])
 
   // Immediately applies a peer's state to the local video (seek + play/pause parity).
   // Runs on SSE delivery rather than waiting for the periodic drift loop.
@@ -206,6 +215,8 @@ export function usePartySync({
       serverOffsetRef.current = smoothedOffset
       setIsOwner(snapshot.isOwner)
       isOwnerRef.current = snapshot.isOwner
+      membersRef.current = snapshot.members
+      bufferingStateRef.current = snapshot.members.some((member) => member.buffering)
       setMembers(snapshot.members)
       prevMembersRef.current = snapshot.members
 
@@ -316,9 +327,48 @@ export function usePartySync({
   )
 
   // Report buffering status to room
+  const updateLocalBuffering = useCallback(
+    (buffering: boolean) => {
+      localBufferingRef.current = buffering
+      setLocalBuffering(buffering)
+
+      const currentMembers = membersRef.current
+      const currentUserId = userIdRef.current
+      if (currentUserId) {
+        const nextMembers = currentMembers.map((member) =>
+          member.userId === currentUserId ? { ...member, buffering } : member
+        )
+        membersRef.current = nextMembers
+        prevMembersRef.current = nextMembers
+        bufferingStateRef.current = nextMembers.some((member) => member.buffering)
+        setMembers(nextMembers)
+      } else {
+        bufferingStateRef.current = buffering
+      }
+
+      if (buffering) {
+        setSyncQuality("buffering")
+      } else if (!bufferingStateRef.current) {
+        setSyncQuality(getSyncQuality(0, false, partyStateRef.current?.playing ?? false))
+      }
+    },
+    []
+  )
+
+  const applyBufferingStateReason = useCallback((state: PartyState) => {
+    if (state.reason === "buffer-pause") {
+      bufferingStateRef.current = true
+      setSyncQuality("buffering")
+    } else if (state.reason === "buffer-resume") {
+      bufferingStateRef.current = false
+      setSyncQuality(getSyncQuality(0, false, state.playing))
+    }
+  }, [])
+
   const sendStatus = useCallback(
     async (buffering: boolean, pos?: number) => {
       if (!partyId) return
+      updateLocalBuffering(buffering)
       try {
         const video = videoRef.current
         const positionSec = pos ?? (video ? video.currentTime : 0)
@@ -332,13 +382,14 @@ export function usePartySync({
           if (data.state && data.state.version > versionRef.current) {
             versionRef.current = data.state.version
             setPartyState(data.state)
+            applyBufferingStateReason(data.state)
           }
         }
       } catch (err) {
         console.error("[usePartySync] Status update failed:", err)
       }
     },
-    [partyId, videoRef]
+    [applyBufferingStateReason, partyId, updateLocalBuffering, videoRef]
   )
 
   // SSE event handling
@@ -346,13 +397,30 @@ export function usePartySync({
     if (!partyId) return
 
     const { es: eventSource, release } = acquireSharedEventSource(() => {
-      // 8.3 — SSE (re)connected: clear stale buffering flags in local member state
-      // so disconnects don't keep the client UI or room locked in a stale buffer-hold
-      setMembers((prev) => prev.map((m) => ({ ...m, buffering: false })))
-      bufferingReportedRef.current = false
-      // SSE (re)connected: re-sync the clock against the warm connection, then refresh
-      void syncServerClock()
-      void refreshSnapshot()
+      // Keep the local report alive across reconnects. A buffering member must
+      // remain attached to the server hold until recovery is confirmed.
+      void (async () => {
+        void syncServerClock()
+        const snapshot = await refreshSnapshot()
+        if (!snapshot) return
+
+        const member = snapshot.members.find((candidate) => candidate.userId === snapshot.userId)
+        if (!member) return
+
+        if (localBufferingRef.current) {
+          bufferingReportedRef.current = true
+          if (!member.buffering) {
+            void sendStatus(true)
+          }
+        } else if (member.buffering) {
+          // Recovery completed locally while the status request was lost.
+          // Reconcile the server instead of leaving the room held.
+          bufferingReportedRef.current = true
+          void sendStatus(false)
+        } else {
+          bufferingReportedRef.current = false
+        }
+      })()
     })
 
     const handlePartyState = (e: MessageEvent) => {
@@ -362,6 +430,7 @@ export function usePartySync({
 
         const state: PartyState = payload.state
         if (!state) return
+        applyBufferingStateReason(state)
 
         // Echo suppression: ignore if from this tab and drift is small
         if (state.senderClientId === clientId) {
@@ -422,6 +491,8 @@ export function usePartySync({
           }
 
           prevMembersRef.current = newMembers
+          membersRef.current = newMembers
+          bufferingStateRef.current = newMembers.some((member) => member.buffering)
           setMembers(newMembers)
         }
       } catch (err) {
@@ -470,7 +541,18 @@ export function usePartySync({
       eventSource.removeEventListener("party:item", handlePartyItem as EventListener)
       release()
     }
-  }, [partyId, clientId, onItemChange, onPartyEnded, refreshSnapshot, applyPartyState, toast, syncServerClock])
+  }, [
+    partyId,
+    clientId,
+    onItemChange,
+    onPartyEnded,
+    refreshSnapshot,
+    applyPartyState,
+    applyBufferingStateReason,
+    sendStatus,
+    toast,
+    syncServerClock,
+  ])
 
   // Heartbeat ping every 60s to keep presence alive
   useEffect(() => {
@@ -600,9 +682,9 @@ export function usePartySync({
           ? v.buffered.end(v.buffered.length - 1) - v.currentTime
           : 0
         const segDuration =
-          typeof segmentDurationSec === "function"
-            ? segmentDurationSec()
-            : segmentDurationSec
+          typeof segmentDurationRef.current === "function"
+            ? segmentDurationRef.current()
+            : segmentDurationRef.current
         const requiredBufferSec = computeRecoveryBufferAheadSec(segDuration)
         const playable =
           !v.paused ||
@@ -682,8 +764,9 @@ export function usePartySync({
         video.pause()
       }
 
-      const bufferingUsersList = members.filter((m) => m.buffering).map((m) => m.username)
-      const isBufferingNow = bufferingUsersList.length > 0
+      const isBufferingNow =
+        localBufferingRef.current ||
+        (bufferingStateRef.current ?? membersRef.current.some((member) => member.buffering))
 
       // When the room is paused (incl. buffer-holds) the target is static and
       // members were already aligned on state application — no corrections here.
@@ -743,10 +826,10 @@ export function usePartySync({
     }, 500)
 
     return () => clearInterval(interval)
-  }, [partyId, seekTo, videoRef, members])
+  }, [partyId, seekTo, videoRef])
 
   const bufferingUsers = members.filter((m) => m.buffering).map((m) => m.username)
-  const isBuffering = bufferingUsers.length > 0
+  const isBuffering = localBuffering || syncQuality === "buffering" || bufferingUsers.length > 0
 
   return {
     sendCommand,
