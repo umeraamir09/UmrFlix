@@ -1,3 +1,5 @@
+import { isIP } from "node:net"
+
 export type AuditEvent =
   | "session_created"
   | "session_revoked"
@@ -22,11 +24,16 @@ const auditLogBuckets = new Map<string, { count: number; resetAt: number }>()
 /**
  * Extracts client IP based on configured TRUSTED_PROXY or CLIENT_IP_HEADER rules.
  */
-export function getClientIp(req: Request): string {
+export function getClientIp(req: Request): string | null {
+  const normalize = (value: string | null): string | null => {
+    const candidate = value?.trim()
+    return candidate && isIP(candidate) !== 0 ? candidate : null
+  }
+
   const customHeader = process.env.CLIENT_IP_HEADER
   if (customHeader) {
-    const val = req.headers.get(customHeader.toLowerCase())
-    if (val) return val.trim()
+    const val = normalize(req.headers.get(customHeader.toLowerCase()))
+    if (val) return val
   }
 
   const trustedProxy = process.env.TRUSTED_PROXY ?? "1"
@@ -36,11 +43,12 @@ export function getClientIp(req: Request): string {
       const parts = xff.split(",").map((p) => p.trim())
       // Rightmost entry added by reverse proxy is verified
       const rightmost = parts[parts.length - 1]
-      if (rightmost) return rightmost
+      const val = normalize(rightmost ?? null)
+      if (val) return val
     }
   }
 
-  return "unknown"
+  return null
 }
 
 /**

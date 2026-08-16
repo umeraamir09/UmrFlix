@@ -4,6 +4,7 @@ import { getSession } from "@/lib/auth"
 import { checkRateLimit, PLAYBACK_RATE_LIMITS } from "@/lib/rate-limit"
 import { getClientIp } from "@/lib/audit"
 import { ingestPlaybackStopped } from "@/lib/discovery/ingest"
+import { invalidatePlaybackCache } from "@/app/api/jellyfin/playback/[id]/route"
 
 export const dynamic = "force-dynamic"
 
@@ -17,9 +18,17 @@ export const dynamic = "force-dynamic"
  */
 export async function POST(request: Request) {
   const session = await getSession()
+  const clientIp = getClientIp(request)
+  if (!session?.userId && !clientIp) {
+    return NextResponse.json(
+      { error: "Authentication or a trusted client IP is required" },
+      { status: 401 },
+    )
+  }
+
   const rateLimitKey = session?.userId
     ? `progress:${session.userId}`
-    : `progress:${getClientIp(request)}`
+    : `progress:${clientIp}`
 
   if (!checkRateLimit(rateLimitKey, PLAYBACK_RATE_LIMITS.PROGRESS)) {
     return NextResponse.json(
@@ -47,9 +56,8 @@ export async function POST(request: Request) {
 
   await reportPlaybackState(body)
 
-
   if (body.event === "stopped") {
-    const session = await getSession()
+    invalidatePlaybackCache(body.itemId)
     const userId = session?.userId ?? "default-user"
     void ingestPlaybackStopped({
       userId,

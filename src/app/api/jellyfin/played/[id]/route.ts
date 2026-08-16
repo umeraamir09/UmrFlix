@@ -17,9 +17,17 @@ export async function POST(
     }
 
     const session = await getSession()
+    const clientIp = getClientIp(request)
+    if (!session?.userId && !clientIp) {
+      return NextResponse.json(
+        { error: "Authentication or a trusted client IP is required" },
+        { status: 401 },
+      )
+    }
+
     const rateLimitKey = session?.userId
       ? `played:${session.userId}`
-      : `played:${getClientIp(request)}`
+      : `played:${clientIp}`
 
     if (!checkRateLimit(rateLimitKey, PLAYBACK_RATE_LIMITS.PLAYED)) {
       return NextResponse.json(
@@ -48,9 +56,17 @@ export async function DELETE(
     }
 
     const session = await getSession()
+    const clientIp = getClientIp(request)
+    if (!session?.userId && !clientIp) {
+      return NextResponse.json(
+        { error: "Authentication or a trusted client IP is required" },
+        { status: 401 },
+      )
+    }
+
     const rateLimitKey = session?.userId
       ? `played:${session.userId}`
-      : `played:${getClientIp(request)}`
+      : `played:${clientIp}`
 
     if (!checkRateLimit(rateLimitKey, PLAYBACK_RATE_LIMITS.PLAYED)) {
       return NextResponse.json(

@@ -24,8 +24,13 @@ export const dynamic = "force-dynamic"
 export type MarkerType = "intro" | "recap" | "outro" | "preview"
 export type SegmentMarker = { type: MarkerType; start: number; end: number } // seconds
 
+type StaticPlaybackMetadata = Pick<
+  PlaybackPayload,
+  "markers" | "chapters" | "trickplay" | "title" | "series"
+>
+
 type CacheEntry = {
-  payload: PlaybackPayload
+  metadata: StaticPlaybackMetadata
   timestamp: number
 }
 
@@ -132,9 +137,17 @@ export async function GET(
     }
 
     const session = await getSession()
+    const clientIp = getClientIp(request)
+    if (!session?.userId && !clientIp) {
+      return NextResponse.json(
+        { error: "Authentication or a trusted client IP is required" },
+        { status: 401 },
+      )
+    }
+
     const rateLimitKey = session?.userId
       ? `playback:${session.userId}`
-      : `playback:${getClientIp(request)}`
+      : `playback:${clientIp}`
 
     if (!checkRateLimit(rateLimitKey, PLAYBACK_RATE_LIMITS.PLAYBACK_INFO)) {
       return NextResponse.json(
@@ -151,17 +164,6 @@ export async function GET(
       cacheControl.includes("no-cache") ||
       cacheControl.includes("no-store") ||
       cacheControl.includes("max-age=0")
-
-    const cacheKey = `${session?.userId ?? "anon"}:${id}`
-    const now = Date.now()
-    if (!noCache) {
-      const cached = playbackCache.get(cacheKey)
-      if (cached && now - cached.timestamp < PLAYBACK_CACHE_TTL_MS) {
-        return NextResponse.json(cached.payload, {
-          headers: { "Cache-Control": "private, max-age=30" },
-        })
-      }
-    }
 
     const { token } = await authenticate()
 
@@ -218,38 +220,67 @@ export async function GET(
       })
 
     // ── Markers: native MediaSegments → Intro Skipper plugin → chapter heuristics ──
-    let markers: SegmentMarker[] = []
-    if (detail?.Type === "Episode" || detail?.Type === "Movie") {
-      const runtimeSeconds = ticksToSeconds(
-        detail.RunTimeTicks ?? mediaSource.RunTimeTicks ?? 0,
-      )
-      const [nativeSegments, pluginSegments] = await Promise.all([
-        getMediaSegments(id),
-        getIntroSkipperSegments(id),
-      ])
+    const cachedMetadata = !noCache ? playbackCache.get(id) : undefined
+    const metadataIsFresh =
+      cachedMetadata && Date.now() - cachedMetadata.timestamp < PLAYBACK_CACHE_TTL_MS
 
-      const pluginMarkers: SegmentMarker[] = []
-      if (pluginSegments) {
-        const typeMap: Record<string, MarkerType> = {
-          Introduction: "intro",
-          Recap: "recap",
-          Credits: "outro",
-          Preview: "preview",
+    // Session data and UserData are intentionally excluded from this cache.
+    let staticMetadata: StaticPlaybackMetadata
+    if (metadataIsFresh) {
+      staticMetadata = cachedMetadata.metadata
+    } else {
+      let markers: SegmentMarker[] = []
+      if (detail?.Type === "Episode" || detail?.Type === "Movie") {
+        const runtimeSeconds = ticksToSeconds(
+          detail.RunTimeTicks ?? mediaSource.RunTimeTicks ?? 0,
+        )
+        const [nativeSegments, pluginSegments] = await Promise.all([
+          getMediaSegments(id),
+          getIntroSkipperSegments(id),
+        ])
+
+        const pluginMarkers: SegmentMarker[] = []
+        if (pluginSegments) {
+          const typeMap: Record<string, MarkerType> = {
+            Introduction: "intro",
+            Recap: "recap",
+            Credits: "outro",
+            Preview: "preview",
+          }
+          for (const [key, seg] of Object.entries(pluginSegments)) {
+            const type = typeMap[key]
+            if (type) pluginMarkers.push({ type, start: seg.start, end: seg.end })
+          }
         }
-        for (const [key, seg] of Object.entries(pluginSegments)) {
-          const type = typeMap[key]
-          if (type) pluginMarkers.push({ type, start: seg.start, end: seg.end })
-        }
+
+        const chapterMarkers: SegmentMarker[] = detail?.Chapters?.length
+          ? chaptersToMarkers(detail.Chapters, detail.RunTimeTicks ?? 0)
+          : []
+
+        markers = mergeMarkerSources(
+          [nativeSegments ?? [], pluginMarkers, chapterMarkers],
+          runtimeSeconds,
+        )
       }
 
-      const chapterMarkers: SegmentMarker[] = detail?.Chapters?.length
-        ? chaptersToMarkers(detail.Chapters, detail.RunTimeTicks ?? 0)
-        : []
-
-      markers = mergeMarkerSources(
-        [nativeSegments ?? [], pluginMarkers, chapterMarkers],
-        runtimeSeconds,
-      )
+      staticMetadata = {
+        markers,
+        chapters: (detail?.Chapters ?? []).map((c) => ({
+          name: c.Name,
+          startSeconds: ticksToSeconds(c.StartPositionTicks),
+          imageTag: c.ImageTag || undefined,
+        })),
+        trickplay: pickTrickplayInfo(detail?.Trickplay, mediaSource.Id),
+        title: detail?.Name,
+        series: detail?.SeriesId
+          ? {
+              id: detail.SeriesId,
+              name: detail.SeriesName,
+              season: detail.ParentIndexNumber,
+              episode: detail.IndexNumber,
+            }
+          : null,
+      }
     }
 
     const container = (mediaSource.Container ?? "").toLowerCase()
@@ -311,33 +342,24 @@ export async function GET(
       audio,
       subtitles,
       defaultAudioIndex: mediaSource.DefaultAudioStreamIndex ?? audio.find((a) => a.isDefault)?.index ?? null,
-      markers,
-      chapters: (detail?.Chapters ?? []).map((c) => ({
-        name: c.Name,
-        startSeconds: ticksToSeconds(c.StartPositionTicks),
-        imageTag: c.ImageTag || undefined,
-      })),
-      trickplay: pickTrickplayInfo(detail?.Trickplay, mediaSource.Id),
-      title: detail?.Name,
-      series: detail?.SeriesId
-        ? {
-            id: detail.SeriesId,
-            name: detail.SeriesName,
-            season: detail.ParentIndexNumber,
-            episode: detail.IndexNumber,
-          }
-        : null,
+      markers: staticMetadata.markers,
+      chapters: staticMetadata.chapters,
+      trickplay: staticMetadata.trickplay,
+      title: staticMetadata.title,
+      series: staticMetadata.series,
       backdropUrl,
     })
 
-    if (playbackCache.size >= MAX_CACHE_ENTRIES) {
-      const oldestKey = playbackCache.keys().next().value
-      if (oldestKey) playbackCache.delete(oldestKey)
+    if (!noCache && !metadataIsFresh) {
+      if (playbackCache.size >= MAX_CACHE_ENTRIES) {
+        const oldestKey = playbackCache.keys().next().value
+        if (oldestKey) playbackCache.delete(oldestKey)
+      }
+      playbackCache.set(id, { metadata: staticMetadata, timestamp: Date.now() })
     }
-    playbackCache.set(cacheKey, { payload, timestamp: Date.now() })
 
     return NextResponse.json(payload, {
-      headers: { "Cache-Control": "private, max-age=30" },
+      headers: { "Cache-Control": "private, no-store" },
     })
   } catch (e) {
     const message = e instanceof Error ? e.message : "Failed to load playback info"

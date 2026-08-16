@@ -1,12 +1,38 @@
-import { describe, it, beforeEach } from "node:test"
+import { describe, it, beforeEach, afterEach } from "node:test"
 import assert from "node:assert/strict"
 import { checkRateLimit, resetRateLimit, PLAYBACK_RATE_LIMITS } from "../rate-limit"
+import { getClientIp } from "../audit"
 import {
   parsePlaybackPayload,
   isValidPlaybackPayload,
   type PlaybackPayload,
 } from "../playback-types"
 import { invalidatePlaybackCache } from "@/app/api/jellyfin/playback/[id]/route"
+import { GET as getPlayback } from "@/app/api/jellyfin/playback/[id]/route"
+import { POST as reportProgress } from "@/app/api/jellyfin/playback/progress/route"
+import { POST as markPlayed } from "@/app/api/jellyfin/played/[id]/route"
+
+const originalFetch = globalThis.fetch
+const originalTrustedProxy = process.env.TRUSTED_PROXY
+const originalClientIpHeader = process.env.CLIENT_IP_HEADER
+const originalJellyfinUrl = process.env.JELLYFIN_URL
+const originalJellyfinUsername = process.env.JELLYFIN_USERNAME
+const originalJellyfinPassword = process.env.JELLYFIN_PASSWORD
+
+afterEach(() => {
+  globalThis.fetch = originalFetch
+  if (originalTrustedProxy === undefined) delete process.env.TRUSTED_PROXY
+  else process.env.TRUSTED_PROXY = originalTrustedProxy
+  if (originalClientIpHeader === undefined) delete process.env.CLIENT_IP_HEADER
+  else process.env.CLIENT_IP_HEADER = originalClientIpHeader
+  if (originalJellyfinUrl === undefined) delete process.env.JELLYFIN_URL
+  else process.env.JELLYFIN_URL = originalJellyfinUrl
+  if (originalJellyfinUsername === undefined) delete process.env.JELLYFIN_USERNAME
+  else process.env.JELLYFIN_USERNAME = originalJellyfinUsername
+  if (originalJellyfinPassword === undefined) delete process.env.JELLYFIN_PASSWORD
+  else process.env.JELLYFIN_PASSWORD = originalJellyfinPassword
+  invalidatePlaybackCache()
+})
 
 describe("API & Server-Side Issues (Audit 9.1 - 9.3)", () => {
   // ── 9.1 Rate Limiting ──────────────────────────────────────────
@@ -78,6 +104,188 @@ describe("API & Server-Side Issues (Audit 9.1 - 9.3)", () => {
   })
 
   // ── 9.3 Runtime Payload Validation ───────────────────────────
+  describe("9.2b — Playback route integration", () => {
+    it("validates proxy identity instead of returning a shared unknown bucket", () => {
+      process.env.TRUSTED_PROXY = "1"
+      delete process.env.CLIENT_IP_HEADER
+
+      assert.equal(
+        getClientIp(new Request("http://localhost", {
+          headers: { "x-forwarded-for": "198.51.100.10, 203.0.113.10" },
+        })),
+        "203.0.113.10",
+      )
+      assert.equal(
+        getClientIp(new Request("http://localhost", {
+          headers: { "x-forwarded-for": "not-an-ip" },
+        })),
+        null,
+      )
+      assert.equal(getClientIp(new Request("http://localhost")), null)
+    })
+
+    it("negotiates a fresh Jellyfin session and playback state for every request", async () => {
+      process.env.JELLYFIN_URL = "http://jellyfin.test"
+      process.env.JELLYFIN_USERNAME = "test-user"
+      process.env.JELLYFIN_PASSWORD = "test-password"
+      process.env.TRUSTED_PROXY = "1"
+
+      let playbackInfoCalls = 0
+      let detailCalls = 0
+      let segmentCalls = 0
+      globalThis.fetch = async (input) => {
+        const url = String(input)
+        if (url.endsWith("/Users/AuthenticateByName")) {
+          return Response.json({ AccessToken: "test-token", User: { Id: "test-user" } })
+        }
+        if (url.includes("/PlaybackInfo")) {
+          playbackInfoCalls++
+          return Response.json({
+            PlaySessionId: `session-${playbackInfoCalls}`,
+            MediaSources: [{
+              Id: "source-1",
+              Container: "mp4",
+              Bitrate: 1_000_000,
+              RunTimeTicks: 1_000_000_000,
+              SupportsDirectPlay: true,
+              SupportsDirectStream: true,
+              SupportsTranscoding: true,
+              IsRemote: false,
+              MediaStreams: [{
+                Index: 0,
+                Type: "Video",
+                Codec: "h264",
+                IsDefault: true,
+                IsForced: false,
+                IsExternal: false,
+                Width: 1920,
+                Height: 1080,
+              }],
+            }],
+          })
+        }
+        if (url.includes("/Users/test-user/Items/item-123")) {
+          detailCalls++
+          return Response.json({
+            Id: "item-123",
+            Name: "Test movie",
+            Type: "Movie",
+            RunTimeTicks: 1_000_000_000,
+            UserData: {
+              PlaybackPositionTicks: detailCalls * 100_000_000,
+              Played: false,
+              PlayedPercentage: detailCalls,
+            },
+          })
+        }
+        if (url.includes("/MediaSegments/") || url.includes("/IntroSkipperSegments")) {
+          segmentCalls++
+          return new Response(null, { status: 404 })
+        }
+        throw new Error(`Unexpected test request: ${url}`)
+      }
+
+      invalidatePlaybackCache("item-123")
+      const makeRequest = () => new Request("http://localhost/api/jellyfin/playback/item-123", {
+        headers: { "x-forwarded-for": "203.0.113.20" },
+      })
+      const first = await getPlayback(makeRequest(), { params: Promise.resolve({ id: "item-123" }) })
+      const second = await getPlayback(makeRequest(), { params: Promise.resolve({ id: "item-123" }) })
+      const firstPayload = await first.json()
+      const secondPayload = await second.json()
+
+      assert.equal(first.status, 200)
+      assert.equal(second.status, 200)
+      assert.equal(first.headers.get("cache-control"), "private, no-store")
+      assert.equal(firstPayload.playSessionId, "session-1")
+      assert.equal(secondPayload.playSessionId, "session-2")
+      assert.equal(firstPayload.resumeTicks, 100_000_000)
+      assert.equal(secondPayload.resumeTicks, 200_000_000)
+      assert.equal(playbackInfoCalls, 2)
+      assert.equal(detailCalls, 2)
+      assert.equal(segmentCalls, 2)
+    })
+
+    it("invalidates static metadata after a stopped progress report", async () => {
+      process.env.JELLYFIN_URL = "http://jellyfin.test"
+      process.env.JELLYFIN_USERNAME = "test-user"
+      process.env.JELLYFIN_PASSWORD = "test-password"
+      process.env.TRUSTED_PROXY = "1"
+
+      let segmentCalls = 0
+      globalThis.fetch = async (input) => {
+        const url = String(input)
+        if (url.endsWith("/Users/AuthenticateByName")) {
+          return Response.json({ AccessToken: "test-token", User: { Id: "test-user" } })
+        }
+        if (url.includes("/PlaybackInfo")) {
+          return Response.json({
+            PlaySessionId: "session-1",
+            MediaSources: [{
+              Id: "source-1",
+              Container: "mp4",
+              SupportsDirectPlay: true,
+              SupportsDirectStream: true,
+              SupportsTranscoding: true,
+              IsRemote: false,
+              MediaStreams: [],
+            }],
+          })
+        }
+        if (url.includes("/Users/test-user/Items/item-456")) {
+          return Response.json({ Id: "item-456", Name: "Test movie", Type: "Movie" })
+        }
+        if (url.includes("/MediaSegments/") || url.includes("/IntroSkipperSegments")) {
+          segmentCalls++
+          return new Response(null, { status: 404 })
+        }
+        if (url.includes("/Sessions/Playing/Stopped")) return new Response(null, { status: 204 })
+        throw new Error(`Unexpected test request: ${url}`)
+      }
+
+      const request = () => new Request("http://localhost/api/jellyfin/playback/item-456", {
+        headers: { "x-forwarded-for": "203.0.113.21" },
+      })
+      await getPlayback(request(), { params: Promise.resolve({ id: "item-456" }) })
+      assert.equal(segmentCalls, 2)
+
+      const stopped = await reportProgress(new Request("http://localhost/api/jellyfin/playback/progress", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-forwarded-for": "203.0.113.21",
+        },
+        body: JSON.stringify({ itemId: "item-456", positionTicks: 500_000_000, event: "stopped" }),
+      }))
+      assert.equal(stopped.status, 200)
+
+      await getPlayback(request(), { params: Promise.resolve({ id: "item-456" }) })
+      assert.equal(segmentCalls, 4)
+    })
+
+    it("rejects playback mutations without authentication or a valid client identity", async () => {
+      process.env.TRUSTED_PROXY = "1"
+      delete process.env.CLIENT_IP_HEADER
+
+      const playback = await getPlayback(
+        new Request("http://localhost/api/jellyfin/playback/item-789"),
+        { params: Promise.resolve({ id: "item-789" }) },
+      )
+      const progress = await reportProgress(new Request("http://localhost/api/jellyfin/playback/progress", {
+        method: "POST",
+        body: JSON.stringify({ itemId: "item-789", positionTicks: 0, event: "progress" }),
+      }))
+      const played = await markPlayed(
+        new Request("http://localhost/api/jellyfin/played/item-789", { method: "POST" }),
+        { params: Promise.resolve({ id: "item-789" }) },
+      )
+
+      assert.equal(playback.status, 401)
+      assert.equal(progress.status, 401)
+      assert.equal(played.status, 401)
+    })
+  })
+
   describe("9.3 — Runtime PlaybackPayload Validation", () => {
     const validSamplePayload: PlaybackPayload = {
       itemId: "item123",
