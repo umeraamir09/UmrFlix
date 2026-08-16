@@ -1,7 +1,8 @@
 import { act, cleanup, renderHook } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
-import { useState, useRef, useEffect, useCallback } from "react"
-import { loadPlayerSettings, savePlayerSettings, updatePlayerSettings } from "@/lib/player-settings"
+import { loadPlayerSettings, updatePlayerSettings } from "@/lib/player-settings"
+import { useReportToast } from "../hooks/useReportToast"
+import { useReporterCleanup } from "../hooks/useReporterCleanup"
 
 describe("Code Quality & Maintainability Tests (Audit 10.1 - 10.5)", () => {
   beforeEach(() => {
@@ -16,84 +17,56 @@ describe("Code Quality & Maintainability Tests (Audit 10.1 - 10.5)", () => {
   })
 
   describe("10.1 — handleReport Timer Cleanup", () => {
-    it("clears the toast timer on unmount preventing memory leaks and state updates after unmount", () => {
-      const { result, unmount } = renderHook(() => {
-        const [reportToast, setReportToast] = useState(false)
-        const reportToastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-
-        useEffect(() => {
-          return () => {
-            if (reportToastTimerRef.current) clearTimeout(reportToastTimerRef.current)
-          }
-        }, [])
-
-        const handleReport = useCallback(() => {
-          if (reportToastTimerRef.current) clearTimeout(reportToastTimerRef.current)
-          setReportToast(true)
-          reportToastTimerRef.current = setTimeout(() => setReportToast(false), 3000)
-        }, [])
-
-        return { reportToast, handleReport, timerRef: reportToastTimerRef }
-      })
-
-      expect(result.current.reportToast).toBe(false)
+    it("clears the production toast timer on unmount", () => {
+      const clearTimeoutSpy = vi.spyOn(globalThis, "clearTimeout")
+      const { result, unmount } = renderHook(() => useReportToast())
 
       act(() => {
         result.current.handleReport()
       })
 
       expect(result.current.reportToast).toBe(true)
-      expect(result.current.timerRef.current).not.toBeNull()
-
-      // Unmount while timer is pending
       unmount()
 
-      // Advancing timer after unmount does not throw or log warnings
+      expect(clearTimeoutSpy).toHaveBeenCalledTimes(1)
       act(() => {
         vi.advanceTimersByTime(3000)
       })
     })
 
-    it("resets previous timeout on repeated clicks", () => {
-      const { result } = renderHook(() => {
-        const [reportToast, setReportToast] = useState(false)
-        const reportToastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-
-        useEffect(() => {
-          return () => {
-            if (reportToastTimerRef.current) clearTimeout(reportToastTimerRef.current)
-          }
-        }, [])
-
-        const handleReport = useCallback(() => {
-          if (reportToastTimerRef.current) clearTimeout(reportToastTimerRef.current)
-          setReportToast(true)
-          reportToastTimerRef.current = setTimeout(() => setReportToast(false), 3000)
-        }, [])
-
-        return { reportToast, handleReport, timerRef: reportToastTimerRef }
-      })
+    it("resets the previous production timeout on repeated reports", () => {
+      const clearTimeoutSpy = vi.spyOn(globalThis, "clearTimeout")
+      const { result } = renderHook(() => useReportToast())
 
       act(() => {
         result.current.handleReport()
       })
-      const firstTimer = result.current.timerRef.current
-
       act(() => {
         vi.advanceTimersByTime(1500)
         result.current.handleReport()
       })
-      const secondTimer = result.current.timerRef.current
-      expect(secondTimer).not.toBe(firstTimer)
+
+      expect(clearTimeoutSpy).toHaveBeenCalledTimes(1)
+      act(() => {
+        vi.advanceTimersByTime(1600)
+      })
+      expect(result.current.reportToast).toBe(true)
 
       act(() => {
-        vi.advanceTimersByTime(1600) // 3100ms from first click, 1600ms from second
+        vi.advanceTimersByTime(1500)
       })
-      expect(result.current.reportToast).toBe(true) // Still visible because second timer hasn't expired
+      expect(result.current.reportToast).toBe(false)
+    })
+
+    it("uses the supplied report callback instead of showing a toast", () => {
+      const onReport = vi.fn()
+      const { result } = renderHook(() => useReportToast(onReport))
 
       act(() => {
-        vi.advanceTimersByTime(1500) // 3100ms from second click
+        result.current.handleReport()
       })
+
+      expect(onReport).toHaveBeenCalledOnce()
       expect(result.current.reportToast).toBe(false)
     })
   })
@@ -105,7 +78,26 @@ describe("Code Quality & Maintainability Tests (Audit 10.1 - 10.5)", () => {
       updatePlayerSettings({ qualityPreference: "1080p" })
 
       expect(loadPlayerSettings().qualityPreference).toBe("1080p")
-      expect(loadPlayerSettings().subtitleMode).toBe("client") // Preserved
+      expect(loadPlayerSettings().subtitleMode).toBe("client")
+    })
+  })
+
+  describe("10.6 — Reporter cleanup stability", () => {
+    it("does not stop reporting on rerenders, but stops on item change and unmount", () => {
+      const stop = vi.fn()
+      const { rerender, unmount } = renderHook(
+        ({ itemId }: { itemId: string }) => useReporterCleanup(itemId, stop),
+        { initialProps: { itemId: "item-1" } },
+      )
+
+      rerender({ itemId: "item-1" })
+      expect(stop).not.toHaveBeenCalled()
+
+      rerender({ itemId: "item-2" })
+      expect(stop).toHaveBeenCalledOnce()
+
+      unmount()
+      expect(stop).toHaveBeenCalledTimes(2)
     })
   })
 })

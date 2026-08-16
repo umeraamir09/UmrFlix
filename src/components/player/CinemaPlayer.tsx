@@ -41,6 +41,8 @@ import { useAdaptiveBitrate } from "./hooks/useAdaptiveBitrate"
 import { useMediaSession } from "./hooks/useMediaSession"
 import { useFrozenPlaybackDetector } from "./hooks/useFrozenPlaybackDetector"
 import { useNetworkStatus } from "./hooks/useNetworkStatus"
+import { useReportToast } from "./hooks/useReportToast"
+import { useReporterCleanup } from "./hooks/useReporterCleanup"
 
 const TICKS_PER_SECOND = 10_000_000
 const NEXT_EPISODE_COUNTDOWN = 10
@@ -213,13 +215,7 @@ export function CinemaPlayer({
   const [debugOpen, setDebugOpen] = useState(false)
   const [lastStreamUrl, setLastStreamUrl] = useState("")
   const [playbackRate, setPlaybackRate] = useState(1)
-  const [reportToast, setReportToast] = useState(false)
-  const reportToastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  useEffect(() => {
-    return () => {
-      if (reportToastTimerRef.current) clearTimeout(reportToastTimerRef.current)
-    }
-  }, [])
+  const { reportToast, handleReport } = useReportToast(onReport)
   // 1.1 — shows "Switching to 720p…" (etc.) in the buffering overlay during a stream rebuild
   const [qualitySwitchToast, setQualitySwitchToast] = useState<string | null>(null)
   const [isTouchDevice, setIsTouchDevice] = useState(() => {
@@ -332,16 +328,6 @@ export function CinemaPlayer({
     },
     [party?.partyId, partySync]
   )
-
-  const handleReport = useCallback(() => {
-    if (onReport) {
-      onReport()
-    } else {
-      if (reportToastTimerRef.current) clearTimeout(reportToastTimerRef.current)
-      setReportToast(true)
-      reportToastTimerRef.current = setTimeout(() => setReportToast(false), 3000)
-    }
-  }, [onReport])
 
   // ── Fetch playback payload ──
   useEffect(() => {
@@ -564,9 +550,7 @@ export function CinemaPlayer({
   const reporter = usePlaybackReporter(getReporterState)
 
   // Stop reporting when leaving this item
-  useEffect(() => {
-    return () => reporter.stop()
-  }, [itemId, reporter])
+  useReporterCleanup(itemId, reporter.stop)
 
   // ── Stream setup — rebuilds whenever the resolved stream URL changes
   // (quality preset, audio track, burned-in subtitle track, subtitle mode) ──
