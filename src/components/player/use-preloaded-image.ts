@@ -14,6 +14,25 @@ function cacheAdd(url: string) {
   loadedImages.set(url, true)
 }
 
+/**
+ * Fire-and-forget preload that shares usePreloadedImage's module cache, so a
+ * completed preload makes the first hover render instantly instead of issuing
+ * a second, uncached Image request. Failed loads are not cached — a later
+ * hover retries. Callers dedupe per instance to avoid re-issuing in-flight
+ * requests on repeated triggers.
+ */
+export function preloadImages(urls: readonly string[]): void {
+  const seen = new Set<string>()
+  for (const url of urls) {
+    if (seen.has(url) || loadedImages.has(url)) continue
+    seen.add(url)
+    const img = new Image()
+    img.onload = () => cacheAdd(url)
+    img.onerror = () => {}
+    img.src = url
+  }
+}
+
 export function usePreloadedImage(url: string | null): boolean {
   const [loadedUrl, setLoadedUrl] = useState<string | null>(() =>
     url && loadedImages.has(url) ? url : null,

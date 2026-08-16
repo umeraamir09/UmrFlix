@@ -53,6 +53,28 @@ describe("findActiveCues (issue 4.2 — O(n) linear scan)", () => {
     assert.deepEqual(findActiveCues(cues, 25), [cues[3]])
   })
 
+  it("finds an old cue still active beyond the bounded scan window", () => {
+    // One long cue (index 0) with 40 short cues stacked on top — the 32-cue
+    // backward window ends inside the shorts, so only the prefix-max probe
+    // can recover the long cue.
+    const long = cue(0, 100, "long")
+    const shorts = Array.from({ length: 40 }, (_, i) => cue(i + 1, i + 2, `s${i}`))
+    const cues = [long, ...shorts]
+    for (const t of [1.5, 10, 50, 99]) {
+      assert.deepEqual(findActiveCues(cues, t), bruteForce(cues, t))
+    }
+  })
+
+  it("collects every still-active cue beyond the window, in file order", () => {
+    // Two long cues plus 40 shorts: the probe fires and the fallback must
+    // recover BOTH long cues, not just the one that triggered the probe.
+    const longs = [cue(0, 100, "a"), cue(1, 99, "b")]
+    const shorts = Array.from({ length: 40 }, (_, i) => cue(i + 2, i + 3, `s${i}`))
+    const cues = [...longs, ...shorts]
+    assert.deepEqual(findActiveCues(cues, 50), bruteForce(cues, 50))
+    assert.deepEqual(findActiveCues(cues, 98), bruteForce(cues, 98))
+  })
+
   it("agrees with the brute-force filter on random sorted tracks", () => {
     // Seeded RNG for determinism
     let seed = 42
@@ -78,7 +100,7 @@ describe("findActiveCues (issue 4.2 — O(n) linear scan)", () => {
     }
   })
 
-  it("uses binary search, not a full linear scan (perf guard)", () => {
+  it("uses binary search and a bounded scan per query, not a linear scan (perf guard)", () => {
     const cues = filmTrack(1500)
     // Wrap in a Proxy that counts property reads on cue objects
     let startReads = 0
@@ -91,13 +113,18 @@ describe("findActiveCues (issue 4.2 — O(n) linear scan)", () => {
       },
     })
 
+    findActiveCues(counted, 10) // warm the prefix-max cache (one O(n) pass)
+    startReads = 0
+    endReads = 0
+
     // Probe deep into the track (worst-case linear-scan territory)
     const t = 60 * 60 * 2 - 1 // 1h59m59s → last cue region
     findActiveCues(counted, t)
 
     // Binary search reads start ~log2(1500)≈11 times; the old filter would
-    // have read `start` on all 1500 elements. Bounded overlap scan reads
-    // `end` at most MAX_OVERLAP_SCAN (32) times.
+    // have read `start` on all 1500 elements. The bounded overlap scan reads
+    // `end` at most MAX_OVERLAP_SCAN (32) times; the prefix-max probe reads a
+    // cached Float64Array, not cue properties.
     assert.ok(
       startReads <= 20,
       `expected ~log2(n) start reads, got ${startReads} (linear scan regression?)`,

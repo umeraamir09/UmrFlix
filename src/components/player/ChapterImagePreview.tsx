@@ -31,17 +31,24 @@ export function chapterImageUrl(
   return `/api/jellyfin/chapter-image/${itemId}/${chapterIndex}${tag}`
 }
 
+/** Cap for seek-bar chapter-image preloading (trickplay parity). Chapters
+ *  beyond the cap still load on demand when hovered. */
+export const MAX_PRELOAD_CHAPTERS = 32
+
 /**
  * 4.6 — URLs of the chapter images to preload when the cursor enters the seek
  * bar (trickplay-less fallback), so the hover bubble never pops in with a
- * network stall. Only chapters with an imageTag produce a thumbnail.
+ * network stall. Only chapters with an imageTag produce a thumbnail; the list
+ * is capped at MAX_PRELOAD_CHAPTERS to avoid a request burst on
+ * chapter-heavy movies.
  */
 export function getChapterPreloadUrls(chapters: ChapterInfo[], itemId: string): string[] {
   const urls: string[] = []
-  chapters.forEach((ch, idx) => {
-    if (!ch.imageTag) return
+  for (const [idx, ch] of chapters.entries()) {
+    if (urls.length >= MAX_PRELOAD_CHAPTERS) break
+    if (!ch.imageTag) continue
     urls.push(chapterImageUrl(itemId, idx, ch.imageTag))
-  })
+  }
   return urls
 }
 

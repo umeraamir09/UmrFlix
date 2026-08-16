@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import type { ChapterInfo, TrickplayInfo } from "@/lib/playback-types"
 import { SeekBar } from "../PlayerControls"
 import { trickplayTileUrl, MAX_PRELOAD_TILES } from "../TrickplayPreview"
-import { chapterImageUrl } from "../ChapterImagePreview"
+import { chapterImageUrl, MAX_PRELOAD_CHAPTERS } from "../ChapterImagePreview"
 import { captureImageSrcs, installPointerEvents, stubBarGeometry } from "./helpers"
 
 const TRICKPLAY: TrickplayInfo = {
@@ -198,5 +198,33 @@ describe("SeekBar trickplay preloading (issue 4.6)", () => {
     expect(srcs).toContain(chapterImageUrl("item-1", 0, "abc"))
     expect(srcs).toContain(chapterImageUrl("item-1", 2, "xyz"))
     expect(srcs).not.toContain(chapterImageUrl("item-1", 1, ""))
+  })
+
+  it("caps chapter image preloading at MAX_PRELOAD_CHAPTERS", () => {
+    const srcs = captureImageSrcs()
+    const chapters: ChapterInfo[] = Array.from({ length: 40 }, (_, i) => ({
+      name: `Ch ${i}`,
+      startSeconds: i * 60,
+      imageTag: `tag${i}`,
+    }))
+    render(
+      <SeekBar
+        currentTime={0}
+        duration={100}
+        buffered={50}
+        chapters={chapters}
+        itemId="item-1"
+        trickplay={null}
+        onSeek={() => {}}
+      />,
+    )
+    const bar = document.querySelector(".group\\/seek") as HTMLElement
+    fireEvent.pointerEnter(bar)
+
+    const preloaded = new Set(srcs)
+    expect(preloaded.size).toBe(MAX_PRELOAD_CHAPTERS)
+    expect(preloaded.has(chapterImageUrl("item-1", 0, "tag0"))).toBe(true)
+    expect(preloaded.has(chapterImageUrl("item-1", MAX_PRELOAD_CHAPTERS - 1, `tag${MAX_PRELOAD_CHAPTERS - 1}`))).toBe(true)
+    expect(preloaded.has(chapterImageUrl("item-1", MAX_PRELOAD_CHAPTERS, `tag${MAX_PRELOAD_CHAPTERS}`))).toBe(false)
   })
 })

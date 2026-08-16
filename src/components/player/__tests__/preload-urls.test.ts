@@ -6,7 +6,7 @@ import {
   MAX_PRELOAD_TILES,
   trickplayTileUrl,
 } from "../TrickplayPreview"
-import { getChapterPreloadUrls, chapterImageUrl } from "../ChapterImagePreview"
+import { getChapterPreloadUrls, chapterImageUrl, MAX_PRELOAD_CHAPTERS } from "../ChapterImagePreview"
 
 const TRICKPLAY: TrickplayInfo = {
   interval: 10_000,
@@ -87,5 +87,37 @@ describe("getChapterPreloadUrls (issue 4.6 — trickplay-less fallback)", () => 
     )
     assert.strictEqual(urls[0], chapterImageUrl("item-1", 0, "a/b c"))
     assert.ok(urls[0].includes("tag=a%2Fb%20c"))
+  })
+
+  it("caps preloading at MAX_PRELOAD_CHAPTERS for chapter-heavy movies", () => {
+    const chapters: ChapterInfo[] = Array.from({ length: 40 }, (_, i) => ({
+      name: `Ch ${i}`,
+      startSeconds: i * 60,
+      imageTag: `tag${i}`,
+    }))
+    const urls = getChapterPreloadUrls(chapters, "item-1")
+    assert.strictEqual(urls.length, MAX_PRELOAD_CHAPTERS)
+    assert.strictEqual(urls[0], chapterImageUrl("item-1", 0, "tag0"))
+    assert.strictEqual(
+      urls[MAX_PRELOAD_CHAPTERS - 1],
+      chapterImageUrl("item-1", MAX_PRELOAD_CHAPTERS - 1, `tag${MAX_PRELOAD_CHAPTERS - 1}`),
+    )
+    assert.ok(
+      !urls.includes(chapterImageUrl("item-1", MAX_PRELOAD_CHAPTERS, `tag${MAX_PRELOAD_CHAPTERS}`)),
+      "chapters beyond the cap must not be preloaded",
+    )
+  })
+
+  it("counts only image-bearing chapters toward the cap", () => {
+    // 40 chapters, only odd ones have images → all 20 fit under the cap.
+    const chapters: ChapterInfo[] = Array.from({ length: 40 }, (_, i) => ({
+      name: `Ch ${i}`,
+      startSeconds: i * 60,
+      imageTag: i % 2 === 1 ? `tag${i}` : undefined,
+    }))
+    const urls = getChapterPreloadUrls(chapters, "item-1")
+    assert.strictEqual(urls.length, 20)
+    assert.strictEqual(urls[0], chapterImageUrl("item-1", 1, "tag1"))
+    assert.strictEqual(urls[urls.length - 1], chapterImageUrl("item-1", 39, "tag39"))
   })
 })

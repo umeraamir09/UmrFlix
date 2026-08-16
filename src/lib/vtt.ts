@@ -475,9 +475,31 @@ export function parseVtt(vtt: string): VttCue[] {
  * Binary search for the rightmost cue with start <= time, then a bounded
  * backward scan collects cues still in effect: O(log n + k), k capped at
  * MAX_OVERLAP_SCAN — a 2-hour movie (~1500 cues) costs ~11 comparisons and at
- * most 32 end checks instead of 1500.
+ * most 32 end checks instead of 1500. When the window is exhausted, a cached
+ * prefix-max end array proves in O(1) whether an older cue can still be
+ * active; only then does the scan extend over the remaining prefix, so
+ * pathological overlap chains stay correct without taxing normal tracks.
  */
 const MAX_OVERLAP_SCAN = 32
+
+/** prefixMaxEnds[i] = max(cues[0..i].end) — one O(n) pass per track array,
+ *  cached by array identity (callers memoize their sorted arrays). */
+const prefixEndCache = new WeakMap<readonly VttCue[], Float64Array>()
+
+function prefixMaxEnds(cues: readonly VttCue[]): Float64Array {
+  let ends = prefixEndCache.get(cues)
+  if (!ends) {
+    ends = new Float64Array(cues.length)
+    let max = -Infinity
+    for (let i = 0; i < cues.length; i++) {
+      const end = cues[i].end
+      if (end > max) max = end
+      ends[i] = max
+    }
+    prefixEndCache.set(cues, ends)
+  }
+  return ends
+}
 
 export function findActiveCues(cues: VttCue[], time: number): VttCue[] {
   if (cues.length === 0) return []
@@ -499,8 +521,17 @@ export function findActiveCues(cues: VttCue[], time: number): VttCue[] {
   // Every index <= idx has start <= time by construction, so the scan only
   // needs to check `end`; the cap bounds pathological overlap chains.
   const active: VttCue[] = []
-  for (let i = idx; i >= 0 && idx - i < MAX_OVERLAP_SCAN; i--) {
+  const windowStart = Math.max(0, idx - MAX_OVERLAP_SCAN + 1)
+  for (let i = idx; i >= windowStart; i--) {
     if (time < cues[i].end) active.push(cues[i])
+  }
+  // Cues before windowStart also have start <= time, so one of them is active
+  // iff the prefix max end over [0, windowStart) exceeds time. The probe is
+  // O(1) on the cached array; the rare true case scans the remaining prefix.
+  if (windowStart > 0 && prefixMaxEnds(cues)[windowStart - 1] > time) {
+    for (let i = windowStart - 1; i >= 0; i--) {
+      if (time < cues[i].end) active.push(cues[i])
+    }
   }
   // Restore ascending (file) order for overlapping stacks
   active.reverse()

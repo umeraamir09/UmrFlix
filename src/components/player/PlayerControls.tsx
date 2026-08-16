@@ -18,6 +18,7 @@ import type {
 } from "@/lib/playback-types"
 import { TrickplayPreview, trickplayPreviewDisplaySize, getTrickplayPreloadUrls } from "./TrickplayPreview"
 import { ChapterImagePreview, chapterPreviewDisplaySize, getChapterPreloadUrls } from "./ChapterImagePreview"
+import { preloadImages } from "./use-preloaded-image"
 import { EpisodeBrowser } from "./EpisodeBrowser"
 import { AudioSubtitlesMenu, SpeedQualityMenu } from "./player-menus"
 import type { EpisodeInfo, SeasonInfo } from "@/components/SeasonBrowser"
@@ -68,6 +69,8 @@ export function SeekBar({
 
   // 4.6 — preload trickplay sprite tiles (or chapter images) as soon as the
   // cursor enters the bar, so the hover bubble never pops in with a stall.
+  // preloadImages shares usePreloadedImage's cache, so a completed preload
+  // makes the first hover render instantly; the ref dedupes in-flight URLs.
   const preloadedTilesRef = useRef(new Set<string>())
   const preloadPreviews = () => {
     const urls = trickplay
@@ -75,13 +78,9 @@ export function SeekBar({
       : hasChapterImages
         ? getChapterPreloadUrls(chapters, itemId)
         : []
-    for (const url of urls) {
-      if (!preloadedTilesRef.current.has(url)) {
-        preloadedTilesRef.current.add(url)
-        const img = new window.Image()
-        img.src = url
-      }
-    }
+    const fresh = urls.filter((url) => !preloadedTilesRef.current.has(url))
+    for (const url of fresh) preloadedTilesRef.current.add(url)
+    if (fresh.length > 0) preloadImages(fresh)
   }
 
   const flushPointerMove = () => {
