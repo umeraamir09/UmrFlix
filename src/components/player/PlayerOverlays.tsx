@@ -103,9 +103,8 @@ export function NextEpisodeOverlay({
 }) {
   const dialogRef = useRef<HTMLDivElement>(null)
   // 5.5 — modal focus trap; Escape cancels the auto-play countdown.
-  // Focus is NOT restored on unmount: this overlay appears on its own (no
-  // trigger button) and the player remounts when the next episode starts.
-  useFocusTrap({ containerRef: dialogRef, onClose: onCancel, restoreFocus: false })
+  // Restores focus to the player surface or originating control on unmount.
+  useFocusTrap({ containerRef: dialogRef, onClose: onCancel, restoreFocus: true })
 
   return (
     <div

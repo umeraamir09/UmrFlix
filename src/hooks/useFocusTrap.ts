@@ -38,6 +38,9 @@ export function useFocusTrap({
     const container = containerRef.current
     if (!container) return
     const previouslyFocused = restoreFocus ? document.activeElement : null
+    const fallback = restoreFocus
+      ? (container.closest<HTMLElement>('[role="application"], [tabindex="0"]') ?? null)
+      : null
 
     // Move focus into the trap: first focusable element, or the container itself.
     const focusables = getFocusable(container)
@@ -67,12 +70,15 @@ export function useFocusTrap({
 
     return () => {
       window.removeEventListener("keydown", handleKeyDown, { capture: true })
+      if (!restoreFocus) return
       if (
-        restoreFocus &&
         previouslyFocused instanceof HTMLElement &&
-        previouslyFocused.isConnected
+        previouslyFocused.isConnected &&
+        previouslyFocused !== document.body
       ) {
         previouslyFocused.focus({ preventScroll: true })
+      } else if (fallback && fallback.isConnected && fallback !== container) {
+        fallback.focus({ preventScroll: true })
       }
     }
   }, [containerRef, restoreFocus])

@@ -93,6 +93,38 @@ function BrightnessRail({
     onChange(Math.min(1, Math.max(BRIGHTNESS_MIN, frac)))
   }
 
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    const step = e.shiftKey ? 0.1 : 0.05
+    let next: number | null = null
+    switch (e.key) {
+      case "ArrowUp":
+      case "ArrowRight":
+        next = value + step
+        break
+      case "ArrowDown":
+      case "ArrowLeft":
+        next = value - step
+        break
+      case "PageUp":
+        next = value + 0.2
+        break
+      case "PageDown":
+        next = value - 0.2
+        break
+      case "Home":
+        next = BRIGHTNESS_MIN
+        break
+      case "End":
+        next = 1
+        break
+      default:
+        return
+    }
+    e.preventDefault()
+    e.stopPropagation()
+    onChange(Math.min(1, Math.max(BRIGHTNESS_MIN, next)))
+  }
+
   return (
     <div
       className={`pointer-events-auto absolute ${EDGE_L} top-1/2 z-30 flex -translate-y-1/2 flex-col items-center gap-2 px-2 py-1 drop-shadow-[0_16px_48px_rgba(0,16,61,0.48)]`}
@@ -102,11 +134,14 @@ function BrightnessRail({
         ref={trackRef}
         role="slider"
         aria-label="Brightness"
+        aria-orientation="vertical"
         aria-valuemin={Math.round(BRIGHTNESS_MIN * 100)}
         aria-valuemax={100}
         aria-valuenow={Math.round(value * 100)}
         aria-valuetext={`${Math.round(value * 100)} percent`}
-        className="relative flex h-32 w-7 touch-none items-center justify-center"
+        tabIndex={0}
+        onKeyDown={handleKeyDown}
+        className="relative flex h-32 w-7 touch-none items-center justify-center cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-white/70 rounded"
         onPointerDown={(e) => {
           e.stopPropagation()
           e.currentTarget.setPointerCapture(e.pointerId)

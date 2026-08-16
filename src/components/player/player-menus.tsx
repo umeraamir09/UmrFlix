@@ -98,12 +98,21 @@ export function SelectionList({
   onSelect: (optionIndex: number) => void
 }) {
   const [cursor, setCursor] = useState(() => Math.max(0, selectedIndex))
+  const [prevSelectedIndex, setPrevSelectedIndex] = useState(selectedIndex)
+
+  if (selectedIndex !== prevSelectedIndex) {
+    setPrevSelectedIndex(selectedIndex)
+    setCursor(Math.max(0, selectedIndex))
+  }
 
   const move = (next: number) => {
     if (options.length === 0) return
     const clamped = ((next % options.length) + options.length) % options.length
     setCursor(clamped)
-    document.getElementById(`${id}-opt-${clamped}`)?.scrollIntoView({ block: "nearest" })
+    const el = document.getElementById(`${id}-opt-${clamped}`)
+    if (typeof el?.scrollIntoView === "function") {
+      el.scrollIntoView({ block: "nearest" })
+    }
   }
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -150,7 +159,10 @@ export function SelectionList({
           label={opt.label}
           value={opt.value}
           selected={opt.selected}
-          onClick={() => onSelect(idx)}
+          onClick={() => {
+            setCursor(idx)
+            onSelect(idx)
+          }}
           className={idx === cursor ? "bg-white/10" : ""}
         />
       ))}
