@@ -19,7 +19,7 @@ test.describe("Home Page (/)", () => {
     await expect(header.getByRole("link", { name: /Series|Tv Shows/i })).toBeVisible()
     await expect(header.getByRole("link", { name: "Movies", exact: true })).toBeVisible()
     await expect(header.getByRole("link", { name: "Library", exact: true })).toBeVisible()
-    await expect(header.getByRole("link", { name: "My List", exact: true })).toBeVisible()
+    await expect(header.getByRole("link", { name: /My List/i })).toBeVisible()
     await expect(header.getByRole("button", { name: /Browse by Genre/i })).toBeVisible()
 
     // Search and Notifications
@@ -31,8 +31,8 @@ test.describe("Home Page (/)", () => {
     const hero = page.locator("[data-testid='hero-billboard'], .relative.h-\\[65vh\\], .relative.min-h-\\[70vh\\], section:first-of-type").first()
     await expect(hero).toBeVisible()
 
-    // Action buttons (Watch / Play and Info)
-    const actionBtn = page.locator("a:has-text('START WATCHING'), a:has-text('More Info'), a:has-text('WATCH NOW'), button:has-text('Play'), [data-testid='hero-action']").first()
+    // Action buttons (Play, Request, Watch Party, etc.)
+    const actionBtn = page.locator("[data-testid='hero-action'], button:has-text('Play'), button:has-text('Request'), a:has-text('Play'), a:has-text('More Info'), a:has-text('START WATCHING')").first()
     await expect(actionBtn).toBeVisible()
   })
 

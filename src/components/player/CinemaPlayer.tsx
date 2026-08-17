@@ -363,9 +363,41 @@ export function CinemaPlayer({
 
     fetch(`/api/jellyfin/playback/${itemId}`)
       .then(async (r) => {
-        const raw = await r.json()
-        if (!r.ok || (raw && typeof raw === "object" && raw.error && !raw.itemId)) {
-          throw new Error(raw?.error ?? "Failed to load stream")
+        const contentType = r.headers.get("content-type") || ""
+        if (!r.ok) {
+          let errorMsg = `Playback error (HTTP ${r.status})`
+          if (contentType.includes("application/json")) {
+            try {
+              const errData = await r.json()
+              if (errData && typeof errData === "object" && errData.error) {
+                errorMsg = errData.error
+              }
+            } catch {
+              /* non-fatal JSON parse error */
+            }
+          } else if (r.status === 401) {
+            errorMsg = "Unauthorized. Please log in again."
+          } else if (r.status === 404) {
+            errorMsg = "Media item not found in your library."
+          } else if (r.status === 502 || r.status === 503 || r.status === 504) {
+            errorMsg = "Media server is currently unreachable. Please try again later."
+          }
+          throw new Error(errorMsg)
+        }
+
+        if (!contentType.includes("application/json")) {
+          throw new Error("Invalid response received from media server.")
+        }
+
+        let raw: unknown
+        try {
+          raw = await r.json()
+        } catch {
+          throw new Error("Malformed playback data received from server.")
+        }
+
+        if (!raw || (typeof raw === "object" && "error" in raw && !("itemId" in raw))) {
+          throw new Error((raw as { error?: string })?.error ?? "Failed to load stream")
         }
         return parsePlaybackPayload(raw)
       })
