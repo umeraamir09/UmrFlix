@@ -15,8 +15,12 @@ export type ButtonVariant =
   | "danger"
   | "accent"
   | "muted"
+  | "circle-glass"
+  | "circle-active"
+  | "circle-primary"
+  | "circle-white"
 
-export type ButtonSize = "sm" | "md" | "lg" | "icon" | "icon-sm"
+export type ButtonSize = "sm" | "md" | "lg" | "icon" | "icon-sm" | "icon-md" | "icon-lg"
 
 export interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: ButtonVariant
@@ -67,6 +71,18 @@ export const buttonVariants = ({
     // Muted / Disabled state container
     muted:
       "bg-penpot-surface text-penpot-neutral-200 border border-penpot-border opacity-90",
+    // Circular Glass Action Button (Penpot Add To List / Watch Party / Request More)
+    "circle-glass":
+      "rounded-full bg-black/20 hover:bg-white/20 active:bg-white/30 text-white border border-white backdrop-blur-md shadow-lg",
+    // Circular Active State
+    "circle-active":
+      "rounded-full bg-penpot-primary-500/40 hover:bg-penpot-primary-500/60 active:bg-penpot-primary-500/80 text-penpot-primary-100 border border-penpot-primary-300 backdrop-blur-md shadow-lg shadow-penpot-primary-400/20",
+    // Circular Primary Blue
+    "circle-primary":
+      "rounded-full bg-penpot-primary-400 hover:bg-penpot-primary-300 active:bg-penpot-primary-500 text-white shadow-lg shadow-penpot-primary-400/20 border border-transparent",
+    // Circular White
+    "circle-white":
+      "rounded-full bg-white hover:bg-penpot-neutral-200 active:bg-penpot-neutral-300 text-penpot-neutral-600 shadow-xl border border-transparent",
   }
 
   const sizeStyles: Record<ButtonSize, string> = {
@@ -75,6 +91,8 @@ export const buttonVariants = ({
     lg: "h-14 min-h-[56px] px-7 sm:px-8 py-3.5 text-base sm:text-lg rounded-[4px] gap-3",
     icon: "size-11 min-h-[44px] min-w-[44px] sm:size-12 sm:min-h-[48px] sm:min-w-[48px] p-0 rounded-[4px] flex items-center justify-center",
     "icon-sm": "size-9 min-h-[36px] min-w-[36px] p-0 rounded-[4px] flex items-center justify-center",
+    "icon-md": "size-10 min-h-[40px] min-w-[40px] p-0 rounded-full flex items-center justify-center",
+    "icon-lg": "size-12 min-h-[48px] min-w-[48px] p-0 rounded-full flex items-center justify-center",
   }
 
   return cn(

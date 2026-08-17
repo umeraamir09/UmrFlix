@@ -1,23 +1,14 @@
 "use client"
 
-import Image from "next/image"
-import { useRouter } from "next/navigation"
 import { useMemo, useState, useEffect } from "react"
+import { useRouter } from "next/navigation"
 import useSWR, { useSWRConfig } from "swr"
-import {
-  Calendar,
-  CheckCircle2,
-  ChevronDown,
-  Download,
-  Play,
-  Info,
-  MoreVertical,
-  ArrowUpDown,
-  Plus,
-  Layers,
-} from "lucide-react"
-import { getImageUrl, formatDate } from "@/lib/utils"
+import { ArrowUpDown, Plus, Layers } from "lucide-react"
+import { EpisodeCard } from "@/components/EpisodeCard"
+import { Tooltip } from "@/components/ui/tooltip"
 import { useToast } from "@/components/Toast"
+import { getImageUrl } from "@/lib/utils"
+import { cn } from "@/lib/utils"
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json())
 
@@ -74,32 +65,6 @@ type TmdbSeasonResponse = {
   }[]
 }
 
-function statusBadge(status: EpisodeStatus, downloadProgress?: number) {
-  switch (status) {
-    case "in_library":
-      return (
-        <span className="flex items-center gap-1 bg-success/90 backdrop-blur-md px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wider text-white shadow-md">
-          <CheckCircle2 className="size-2.5" /> In Library
-        </span>
-      )
-    case "downloading":
-      return (
-        <span className="flex items-center gap-1 bg-warning/90 backdrop-blur-md px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wider text-black shadow-md">
-          <Download className="size-2.5 animate-pulse" />
-          {downloadProgress != null ? `${Math.round(downloadProgress)}%` : "Downloading"}
-        </span>
-      )
-    case "unaired":
-      return (
-        <span className="bg-black/80 backdrop-blur-md px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wider text-gray-300 shadow-md">
-          Unaired
-        </span>
-      )
-    default:
-      return null
-  }
-}
-
 interface SeasonBrowserProps {
   tmdbId?: number
   showName: string
@@ -131,6 +96,10 @@ export function SeasonBrowser({
   onRequestSeason,
   onSeasonsStateChange,
 }: SeasonBrowserProps) {
+  const router = useRouter()
+  const { toast } = useToast()
+  const { mutate } = useSWRConfig()
+
   // Jellyfin Episodes SWR
   const { data: jellyfinData, mutate: mutateEpisodes } = useSWR<JellyfinEpisodesResponse>(
     seriesId ? `/api/jellyfin/series/${seriesId}/episodes${tvdbId ? `?tvdbId=${tvdbId}` : ""}` : null,
@@ -160,7 +129,7 @@ export function SeasonBrowser({
   const [selectedSeason, setSelectedSeason] = useState<number | null>(null)
   const currentSeason = selectedSeason ?? seasons[0]?.seasonNumber ?? 1
 
-  const [isSeasonMenuOpen, setIsSeasonMenuOpen] = useState(false)
+  const [selectedEpisodeId, setSelectedEpisodeId] = useState<string | null>(null)
   const [isSortAscending, setIsSortAscending] = useState(true)
 
   // Calculate downloaded vs missing seasons across all TMDB seasons
@@ -216,8 +185,6 @@ export function SeasonBrowser({
     fetcher
   )
 
-  const router = useRouter()
-
   // Combined Season Episodes List
   const seasonEpisodes = useMemo(() => {
     const jEpMap = new Map<number, EpisodeInfo>()
@@ -235,7 +202,7 @@ export function SeasonBrowser({
       list = tmdbSeasonData.episodes.map((tmdbEp) => {
         const jEp = jEpMap.get(tmdbEp.episode_number)
         const isUnaired = tmdbEp.air_date ? new Date(tmdbEp.air_date) > new Date() : false
-        
+
         const status: EpisodeStatus = jEp
           ? jEp.status
           : isUnaired
@@ -262,8 +229,7 @@ export function SeasonBrowser({
         }
       })
     } else if (jellyfinData?.episodes) {
-      list = jellyfinData.episodes
-        .filter((e) => e.seasonNumber === currentSeason)
+      list = jellyfinData.episodes.filter((e) => e.seasonNumber === currentSeason)
     }
 
     return list.sort((a, b) =>
@@ -271,310 +237,173 @@ export function SeasonBrowser({
     )
   }, [tmdbSeasonData, jellyfinData, currentSeason, isSortAscending])
 
-  // Current active season info
-  const activeSeasonInfo = seasons.find((s) => s.seasonNumber === currentSeason) || seasons[0]
   const isCurrentSeasonMissing = missingSeasons.includes(currentSeason)
 
   // User authorization
   const { data: meData } = useSWR("/api/auth/me", fetcher)
   const isAdmin = Boolean(meData?.user?.isAdmin)
 
-  // Options menu states
-  const [openMenuEpisodeId, setOpenMenuEpisodeId] = useState<string | null>(null)
   const [actionLoadingId, setActionLoadingId] = useState<string | null>(null)
-  const { toast } = useToast()
 
-  // Handle outside clicks to close the dropdown menu
-  useEffect(() => {
-    if (!openMenuEpisodeId) return
-    const handleOutsideClick = (e: MouseEvent) => {
-      const target = e.target as HTMLElement
-      if (!target.closest(".episode-options-container")) {
-        setOpenMenuEpisodeId(null)
-      }
+  const handlePlayEpisode = (ep: EpisodeInfo) => {
+    if (ep.jellyfinItemId) {
+      router.push(`/watch?id=${ep.jellyfinItemId}`)
     }
-    document.addEventListener("click", handleOutsideClick)
-    return () => document.removeEventListener("click", handleOutsideClick)
-  }, [openMenuEpisodeId])
+  }
 
   const handleTogglePlayed = async (ep: EpisodeInfo) => {
     if (!ep.jellyfinItemId) return
     setActionLoadingId(ep.id)
     try {
-      const method = ep.played ? "DELETE" : "POST"
-      const res = await fetch(`/api/jellyfin/played/${ep.jellyfinItemId}`, { method })
+      const nextPlayed = !ep.played
+      const res = await fetch(`/api/jellyfin/items/${ep.jellyfinItemId}/played`, {
+        method: nextPlayed ? "POST" : "DELETE",
+      })
       if (res.ok) {
-        toast(
-          ep.played
-            ? `Marked "${ep.title}" as unwatched`
-            : `Marked "${ep.title}" as watched`,
-          "success"
-        )
-        await mutateEpisodes()
+        toast(`Episode marked as ${nextPlayed ? "watched" : "unwatched"}`, "success")
+        mutateEpisodes()
       } else {
-        toast(`Failed to update watched status for "${ep.title}"`, "error")
+        toast("Failed to update episode played status", "error")
       }
     } catch {
-      toast("Error updating watched status", "error")
+      toast("Error updating played status", "error")
     } finally {
       setActionLoadingId(null)
-      setOpenMenuEpisodeId(null)
     }
   }
 
   const handleRequestEpisode = async (ep: EpisodeInfo) => {
-    if (!tvdbId) {
-      toast("Cannot request: TVDB ID is missing", "error")
-      return
-    }
+    if (!tmdbId) return
     setActionLoadingId(ep.id)
     try {
-      const res = await fetch("/api/library/episode", {
+      const res = await fetch("/api/requests", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          tvdbId,
+          mediaType: "tv",
+          tmdbId,
+          title: showName,
           seasonNumber: ep.seasonNumber,
           episodeNumber: ep.episodeNumber,
+          tvdbId,
         }),
       })
       if (res.ok) {
-        toast(`Requested Episode E${ep.episodeNumber}. Search triggered in Sonarr.`, "success")
-        await mutateEpisodes()
+        toast(`Episode ${ep.episodeNumber} requested successfully`, "success")
+        mutate(`/api/availability?tmdbId=${tmdbId}&type=tv`)
       } else {
-        const errData = await res.json().catch(() => ({}))
-        toast(errData.error || "Failed to request episode", "error")
+        toast("Failed to request episode", "error")
       }
     } catch {
       toast("Error requesting episode", "error")
     } finally {
       setActionLoadingId(null)
-      setOpenMenuEpisodeId(null)
     }
   }
 
-  const { mutate: globalMutate } = useSWRConfig()
-
   const handleDeleteEpisode = async (ep: EpisodeInfo) => {
-    const confirmed = window.confirm(
-      `Are you sure you want to delete Episode E${ep.episodeNumber} – "${ep.title}"?\n\nThis will permanently delete the file from Jellyfin and unmonitor it in Sonarr.`
-    )
-    if (!confirmed) return
+    if (!ep.jellyfinItemId || !isAdmin) return
+    if (!window.confirm(`Are you sure you want to delete "${ep.title}" from disk?`)) return
     setActionLoadingId(ep.id)
     try {
-      const res = await fetch("/api/library/episode", {
+      const res = await fetch(`/api/jellyfin/items/${ep.jellyfinItemId}`, {
         method: "DELETE",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          jellyfinId: ep.jellyfinItemId,
-          tvdbId,
-          seasonNumber: ep.seasonNumber,
-          episodeNumber: ep.episodeNumber,
-        }),
       })
       if (res.ok) {
-        toast(`Deleted Episode E${ep.episodeNumber} from Jellyfin & unmonitored in Sonarr`, "success")
-        // Optimistically update local episode data so UI reflects removal immediately
-        await mutateEpisodes(
-          (current) => {
-            if (!current) return current
-            return {
-              ...current,
-              episodes: current.episodes.filter(
-                (e) => !(e.seasonNumber === ep.seasonNumber && e.episodeNumber === ep.episodeNumber)
-              ),
-            }
-          },
-          { revalidate: false }
-        )
-        // Trigger global SWR mutation for library, availability & Jellyfin endpoints
-        await globalMutate(
-          (key) =>
-            typeof key === "string" &&
-            (key.includes("/api/jellyfin") ||
-              key.includes("/api/library") ||
-              key.includes("/api/availability") ||
-              key.includes("/api/tmdb/tv")),
-          undefined,
-          { revalidate: true }
-        )
-        await mutateEpisodes()
+        toast("Episode deleted successfully", "success")
+        mutateEpisodes()
+        mutate(`/api/availability?tmdbId=${tmdbId}&type=tv`)
       } else {
-        const errData = await res.json().catch(() => ({}))
-        toast(errData.error || "Failed to delete episode", "error")
+        toast("Failed to delete episode", "error")
       }
     } catch {
       toast("Error deleting episode", "error")
     } finally {
       setActionLoadingId(null)
-      setOpenMenuEpisodeId(null)
     }
   }
 
-  const renderDropdownMenu = (ep: EpisodeInfo) => {
-    const isEpisodeInLibrary = ep.status === "in_library"
-    const isLoading = actionLoadingId === ep.id
-    const isShowInSonarr =
-      availabilityStatus === "in_sonarr" ||
-      availabilityStatus === "in_library" ||
-      availabilityStatus === "downloading"
-
-    return (
-      <div
-        onClick={(e) => e.stopPropagation()}
-        className="absolute bottom-full mb-1 right-0 z-50 w-44 bg-[#181a20] border border-border shadow-2xl py-1 rounded-none text-left"
-      >
-        {isLoading ? (
-          <div className="px-4 py-2.5 text-xs text-gray-400 flex items-center gap-2">
-            <span className="animate-spin border border-accent border-t-transparent rounded-full size-3" />
-            <span>Processing...</span>
-          </div>
-        ) : (
-          <>
-            {isEpisodeInLibrary && (
-              <button
-                onClick={() => handleTogglePlayed(ep)}
-                className="w-full text-left px-4 py-2 text-xs font-bold uppercase tracking-wider text-gray-300 hover:bg-surface hover:text-white transition-colors"
-              >
-                {ep.played ? "Mark Unplayed" : "Mark Played"}
-              </button>
-            )}
-
-            {!isEpisodeInLibrary && (
-              <button
-                disabled={!isShowInSonarr}
-                onClick={() => handleRequestEpisode(ep)}
-                className={`w-full text-left px-4 py-2 text-xs font-bold uppercase tracking-wider transition-colors ${
-                  isShowInSonarr
-                    ? "text-accent hover:bg-surface hover:text-white"
-                    : "text-gray-600 cursor-not-allowed"
-                }`}
-                title={!isShowInSonarr ? "Please request the TV show first" : undefined}
-              >
-                Request Episode
-              </button>
-            )}
-
-            {isEpisodeInLibrary && isAdmin && (
-              <button
-                onClick={() => handleDeleteEpisode(ep)}
-                className="w-full text-left px-4 py-2 text-xs font-bold uppercase tracking-wider text-red-500 hover:bg-red-500/10 transition-colors"
-              >
-                Delete Episode
-              </button>
-            )}
-          </>
-        )}
-      </div>
-    )
-  }
-
-  const playEpisode = (ep: EpisodeInfo) => {
-    if (ep.jellyfinItemId) router.push(`/watch?id=${ep.jellyfinItemId}`)
-  }
+  const isShowInSonarr =
+    availabilityStatus === "in_library" ||
+    availabilityStatus === "in_sonarr" ||
+    availabilityStatus === "downloading"
 
   return (
     <section className="mt-8 space-y-6">
-      {/* ── Top Header Control Bar ── */}
-      <div className="relative flex flex-wrap items-center justify-between border-b border-border/80 pb-3 gap-3">
-        {/* Left Side: Season Dropdown Selector Button */}
-        <div className="relative">
-          <button
-            onClick={() => setIsSeasonMenuOpen(!isSeasonMenuOpen)}
-            className="flex items-center gap-2 text-base font-bold text-accent hover:text-accent-light transition-colors group focus:outline-none"
-          >
-            <ChevronDown className={`size-5 text-accent transition-transform duration-200 ${isSeasonMenuOpen ? "rotate-180" : ""}`} />
-            <span className="font-extrabold uppercase tracking-tight text-accent">
-              {activeSeasonInfo?.name || `Season ${currentSeason}`}
-            </span>
-          </button>
+      {/* ── Penpot Top Header Control Bar ── */}
+      <div className="flex flex-wrap items-center justify-between gap-4 pb-2 border-b border-penpot-border/60">
+        {/* Left Side: "Seasons" Label + Numbered Season Toggle Buttons (Penpot Frame 13) */}
+        <div className="flex items-center gap-4">
+          <h3 className="text-lg sm:text-xl font-bold uppercase tracking-tight text-white">
+            Seasons
+          </h3>
 
-          {/* Crunchyroll Dark Dropdown Menu Overlay */}
-          {isSeasonMenuOpen && (
-            <>
-              <div
-                className="fixed inset-0 z-30"
-                onClick={() => setIsSeasonMenuOpen(false)}
-              />
-              <div className="absolute left-0 top-full mt-2 z-40 w-[calc(100vw-2rem)] max-w-xs sm:w-80 bg-[#181a20] border border-border shadow-2xl divide-y divide-border/40 py-1 rounded-none animate-in fade-in slide-in-from-top-2 duration-150">
-                {seasons.map((s) => {
-                  const isSelected = s.seasonNumber === currentSeason
-                  const isMissing = missingSeasons.includes(s.seasonNumber)
-                  return (
-                    <button
-                      key={s.id}
-                      onClick={() => {
-                        setSelectedSeason(s.seasonNumber)
-                        setIsSeasonMenuOpen(false)
-                      }}
-                      className={`w-full flex items-center justify-between px-4 py-3 text-left transition-colors min-h-[44px] ${
-                        isSelected
-                          ? "bg-accent/15 text-accent font-extrabold"
-                          : "text-gray-300 hover:bg-surface hover:text-white"
-                      }`}
-                    >
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-bold uppercase tracking-wider">{s.name}</span>
-                        {isMissing ? (
-                          <span className="text-[9px] font-extrabold uppercase px-1.5 py-0.5 bg-amber-500/20 text-amber-400 border border-amber-500/30">
-                            Missing
-                          </span>
-                        ) : (
-                          <span className="text-[9px] font-extrabold uppercase px-1.5 py-0.5 bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
-                            In Library
-                          </span>
-                        )}
-                      </div>
-                      <span className="text-xs font-medium text-gray-500">
-                        {s.episodeCount || 0} Episodes
-                      </span>
-                    </button>
-                  )
-                })}
-              </div>
-            </>
-          )}
+          {/* Numbered Toggle Buttons Row */}
+          <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-1">
+            {seasons.map((s) => {
+              const isSelected = s.seasonNumber === currentSeason
+              return (
+                <button
+                  key={s.id}
+                  onClick={() => setSelectedSeason(s.seasonNumber)}
+                  aria-label={`Season ${s.seasonNumber}`}
+                  aria-pressed={isSelected}
+                  className={cn(
+                    "size-10 sm:size-11 rounded-[4px] font-black text-sm sm:text-base flex items-center justify-center transition-all duration-200 cursor-pointer shadow-md shrink-0",
+                    isSelected
+                      ? "bg-penpot-primary-400 text-white shadow-lg ring-1 ring-white/20"
+                      : "bg-white/[0.08] hover:bg-white/[0.15] text-penpot-text-medium hover:text-white border border-white/10"
+                  )}
+                >
+                  {s.seasonNumber}
+                </button>
+              )
+            })}
+          </div>
         </div>
 
-        {/* Right Side: Sort & Request Button */}
-        <div className="flex items-center gap-3 text-xs font-extrabold tracking-wider text-gray-400 uppercase">
-          {onRequestSeason && (
+        {/* Right Side: Sort Order & Request Season Options */}
+        <div className="flex items-center gap-3 text-xs font-bold tracking-wider text-penpot-text-medium uppercase">
+          {onRequestSeason && isCurrentSeasonMissing && (
             <button
-              onClick={() => onRequestSeason()}
-              className="flex min-h-[44px] items-center gap-1.5 px-3 py-1.5 bg-surface hover:bg-card border border-border text-accent hover:text-white transition-colors"
+              onClick={() => onRequestSeason(currentSeason)}
+              className="flex min-h-[38px] items-center gap-1.5 px-3 py-1.5 bg-penpot-primary-500/20 hover:bg-penpot-primary-500/30 border border-penpot-primary-300/40 text-penpot-primary-100 rounded-[4px] transition-colors cursor-pointer"
             >
               <Plus className="size-3.5" />
-              <span>REQUEST MORE SEASONS</span>
+              <span>Request Season {currentSeason}</span>
             </button>
           )}
-          <button
-            onClick={() => setIsSortAscending(!isSortAscending)}
-            className="flex min-h-[44px] items-center gap-1.5 hover:text-white transition-colors"
-          >
-            <ArrowUpDown className="size-3.5 text-gray-500" />
-            <span>{isSortAscending ? "OLDEST" : "NEWEST"}</span>
-          </button>
+
+          <Tooltip content={isSortAscending ? "Sort by latest episode first" : "Sort by first episode first"}>
+            <button
+              onClick={() => setIsSortAscending((prev) => !prev)}
+              className="flex min-h-[38px] items-center gap-1.5 px-3 py-1.5 hover:text-white bg-black/20 hover:bg-white/10 border border-white/20 rounded-[4px] transition-colors cursor-pointer"
+            >
+              <ArrowUpDown className="size-3.5 text-penpot-text-subtle" />
+              <span>{isSortAscending ? "Oldest First" : "Newest First"}</span>
+            </button>
+          </Tooltip>
         </div>
       </div>
 
       {/* Missing Season Notice Banner */}
       {isCurrentSeasonMissing && (
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 bg-accent/10 border border-accent/30 rounded-none mb-4 animate-in fade-in duration-200">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 bg-penpot-primary-500/10 border border-penpot-primary-300/30 rounded-[4px] animate-in fade-in duration-200">
           <div className="flex items-center gap-3">
-            <Layers className="size-5 text-accent shrink-0" />
+            <Layers className="size-5 text-penpot-primary-200 shrink-0" />
             <div>
-              <p className="text-sm font-bold text-white uppercase tracking-wider">
-                Season {currentSeason} is not fully in your Jellyfin library
+              <p className="text-xs sm:text-sm font-bold text-white uppercase tracking-wider">
+                Season {currentSeason} is missing episodes in your library
               </p>
-              <p className="text-xs text-gray-400">
-                Request Season {currentSeason} to monitor and download its missing episodes.
+              <p className="text-xs text-penpot-text-medium">
+                Request missing episodes or the entire season to monitor and download automatically.
               </p>
             </div>
           </div>
           {onRequestSeason && (
             <button
               onClick={() => onRequestSeason(currentSeason)}
-              className="px-3.5 py-1.5 bg-accent hover:bg-accent/90 text-white font-bold text-xs uppercase tracking-wider flex items-center gap-1.5 shrink-0 transition-colors shadow-lg min-h-[44px]"
+              className="px-3.5 py-1.5 bg-penpot-primary-400 hover:bg-penpot-primary-300 text-white font-bold text-xs uppercase tracking-wider flex items-center gap-1.5 shrink-0 rounded-[4px] transition-colors shadow-md min-h-[38px] cursor-pointer"
             >
               <Plus className="size-4" />
               Request Season {currentSeason}
@@ -583,165 +412,45 @@ export function SeasonBrowser({
         </div>
       )}
 
-      {/* ── Episodes Loading Skeleton ── */}
+      {/* ── Loading Skeleton ── */}
       {isTmdbLoading && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
-          {[...Array(10)].map((_, i) => (
-            <div key={i} className="space-y-2 border border-border/30 bg-surface p-2 animate-pulse">
-              <div className="aspect-video w-full bg-card" />
-              <div className="h-3 w-1/2 bg-card" />
-              <div className="h-3.5 w-3/4 bg-card" />
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
+          {[...Array(6)].map((_, i) => (
+            <div
+              key={i}
+              className="h-32 rounded-lg bg-white/[0.05] border border-white/5 animate-pulse flex items-center p-3 gap-4"
+            >
+              <div className="w-48 h-full bg-white/10 rounded" />
+              <div className="flex-1 space-y-2.5">
+                <div className="h-4 w-3/4 bg-white/10 rounded" />
+                <div className="h-3 w-full bg-white/5 rounded" />
+                <div className="h-3 w-1/2 bg-white/5 rounded" />
+              </div>
             </div>
           ))}
         </div>
       )}
 
-      {/* ── Crunchyroll Style Episode Grid ── */}
+      {/* ── Penpot 2-Column Episode Grid (Episodes //Episodes) ── */}
       {!isTmdbLoading && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 sm:gap-5">
-          {seasonEpisodes.map((ep) => {
-            const playable = ep.status === "in_library" && Boolean(ep.jellyfinItemId)
-
-            return (
-              <div
-                key={ep.id}
-                className="group relative flex flex-col justify-between transition-all duration-200 border-border/50 hover:border-accent/80"
-              >
-                {/* ── 1. Regular Card State ── */}
-                <div>
-                  {/* Widescreen Thumbnail */}
-                  <div
-                    onClick={() => {
-                      if (playable) playEpisode(ep)
-                    }}
-                    className={`relative aspect-video w-full overflow-hidden bg-card ${playable ? "cursor-pointer" : ""}`}
-                  >
-                    <Image
-                      src={ep.thumbUrl}
-                      alt={ep.title}
-                      fill
-                      sizes="(max-width: 640px) 100vw, (max-width: 1024px) 33vw, 20vw"
-                      className="object-cover transition-transform duration-500"
-                      unoptimized
-                    />
-
-                    {/* Top Left Status Badge */}
-                    {ep.status !== "missing" && (
-                      <div className="absolute left-2 top-2 z-10">
-                        {statusBadge(ep.status, ep.downloadProgress)}
-                      </div>
-                    )}
-
-                    {/* Crunchyroll Duration Badge (Bottom Right 23m) */}
-                    {ep.runtimeMinutes != null && ep.runtimeMinutes > 0 && (
-                      <div className="absolute right-1.5 bottom-1.5 z-10 bg-black/85 border border-white/10 px-1.5 py-0.5 text-[11px] font-mono font-bold text-white shadow-md">
-                        {ep.runtimeMinutes}m
-                      </div>
-                    )}
-
-                    {/* Watch Progress Bar */}
-                    {ep.playedPercentage > 0 && !ep.played && (
-                      <div className="absolute inset-x-0 bottom-0 z-10 h-1 bg-gray-900">
-                        <div
-                          className="h-full bg-accent"
-                          style={{ width: `${Math.min(100, ep.playedPercentage)}%` }}
-                        />
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Below Thumbnail Info */}
-                  <div className="p-3 space-y-1">
-                    {/* Show Name Header (Tiny uppercase font) */}
-                    <p className="text-[10px] font-extrabold uppercase tracking-widest text-gray-400 line-clamp-1">
-                      {showName}
-                    </p>
-
-                    {/* Episode Number & Title */}
-                    <h4 className="text-xs sm:text-sm font-bold text-white leading-snug line-clamp-1 group-hover:text-accent transition-colors">
-                      E{ep.episodeNumber} – {ep.title}
-                    </h4>
-
-                    {/* Footer Row: Dub | Sub & Options */}
-                    <div className="flex items-center justify-between text-[11px] text-gray-500 font-medium pt-1 relative episode-options-container">
-                      <span>Dub | Sub</span>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          setOpenMenuEpisodeId(openMenuEpisodeId === ep.id ? null : ep.id)
-                        }}
-                        className="min-h-[44px] min-w-[44px] flex items-center justify-end hover:text-white transition-colors"
-                        aria-label="Options"
-                      >
-                        <MoreVertical className="size-3.5 text-gray-400" />
-                      </button>
-                      {openMenuEpisodeId === ep.id && renderDropdownMenu(ep)}
-                    </div>
-                  </div>
-                </div>
-
-                {/* ── 2. Crunchyroll Hover/Active Overview Overlay Card ── */}
-                <div className="absolute inset-0 z-20 bg-[#16181f]/95 backdrop-blur-sm p-3.5 flex flex-col justify-between opacity-0 group-hover:opacity-100 transition-all duration-200 shadow-2xl pointer-events-none group-hover:pointer-events-auto">
-                  <div className="space-y-1.5">
-
-                    {/* Episode Title */}
-                    <h4 className="text-base font-bold text-white line-clamp-1">
-                      E{ep.episodeNumber} – {ep.title}
-                    </h4>
-
-                    {/* Air Date */}
-                    {ep.airDate && (
-                      <p className="flex items-center gap-1 text-xs font-medium text-gray-400">
-                        <Calendar className="size-3 text-gray-400" />
-                        {formatDate(ep.airDate)}
-                      </p>
-                    )}
-
-                    {/* Overview Paragraph */}
-                    <p className="text-sm leading-relaxed text-gray-300 line-clamp-4 pt-1">
-                      {ep.overview}
-                    </p>
-                  </div>
-
-                  {/* Bottom Play Action CTA Button & Options */}
-                  <div className="pt-3 border-t border-border/50 mt-auto flex items-center justify-between relative episode-options-container">
-                    {playable ? (
-                      <button
-                        onClick={() => playEpisode(ep)}
-                        className="flex min-h-[44px] items-center gap-2 text-xs font-black uppercase tracking-wider text-accent hover:text-accent-light transition-colors active:scale-95"
-                      >
-                        <Play className="size-4 fill-accent text-accent" />
-                        PLAY E{ep.episodeNumber}
-                      </button>
-                    ) : (
-                      <div className="flex min-h-[44px] items-center gap-1.5 text-[10px] font-extrabold uppercase tracking-wider text-gray-400">
-                        <Info className="size-3.5 text-gray-500" />
-                        {ep.status === "unaired" ? "UNAIRED" : "NOT STREAMABLE YET"}
-                      </div>
-                    )}
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        setOpenMenuEpisodeId(openMenuEpisodeId === ep.id ? null : ep.id)
-                      }}
-                      className="min-h-[44px] min-w-[44px] flex items-center justify-end hover:text-white text-gray-400 transition-colors"
-                      aria-label="Options"
-                    >
-                      <MoreVertical className="size-4" />
-                    </button>
-                    {openMenuEpisodeId === ep.id && renderDropdownMenu(ep)}
-                  </div>
-                </div>
-              </div>
-            )
-          })}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
+          {seasonEpisodes.map((ep) => (
+            <EpisodeCard
+              key={ep.id}
+              episode={ep}
+              showName={showName}
+              isSelected={selectedEpisodeId === ep.id}
+              onSelect={(e) => setSelectedEpisodeId(e.id)}
+              onPlay={handlePlayEpisode}
+              onTogglePlayed={handleTogglePlayed}
+              onRequestEpisode={handleRequestEpisode}
+              onDeleteEpisode={handleDeleteEpisode}
+              isAdmin={isAdmin}
+              isShowInSonarr={isShowInSonarr}
+              actionLoading={actionLoadingId === ep.id}
+            />
+          ))}
         </div>
-      )}
-
-      {seasonEpisodes.length === 0 && !isTmdbLoading && (
-        <p className="text-sm text-gray-400 py-8 text-center border border-dashed border-border/60">
-          No episode details available for this season.
-        </p>
       )}
     </section>
   )

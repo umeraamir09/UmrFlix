@@ -1,3 +1,5 @@
+"use client"
+
 import React from "react"
 
 export interface IconProps extends React.SVGProps<SVGSVGElement> {
@@ -7,7 +9,10 @@ export interface IconProps extends React.SVGProps<SVGSVGElement> {
 export function IconAdd({ className = "size-5", ...props }: IconProps) {
   return (
     <svg viewBox="0 0 24 24" fill="none" className={className} xmlns="http://www.w3.org/2000/svg" {...props}>
-      <path fillRule="evenodd" clipRule="evenodd" d="M11 11L11 2H13L13 11L22 11V13L13 13L13 22H11L11 13L2 13V11L11 11Z" fill="currentColor" />
+      <path
+        d="M18 13H13V18C13 18.55 12.55 19 12 19C11.45 19 11 18.55 11 18V13H6C5.45 13 5 12.55 5 12C5 11.45 5.45 11 6 11H11V6C11 5.45 11.45 5 12 5C12.55 5 13 5.45 13 6V11H18C18.55 11 19 11.45 19 12C19 12.55 18.55 13 18 13Z"
+        fill="currentColor"
+      />
     </svg>
   )
 }
@@ -278,8 +283,31 @@ export function IconExpandMore({ className = "size-5", ...props }: IconProps) {
 export function IconPlus({ className = "size-5", ...props }: IconProps) {
   return (
     <svg viewBox="0 0 24 24" fill="none" className={className} xmlns="http://www.w3.org/2000/svg" {...props}>
-      <path d="M19 13H13V19H11V13H5V11H11V5H13V11H19V13Z" fill="currentColor" />
+      <path
+        d="M18.567 10.066h-4.634V5.434c0-.514-.204-1.004-.566-1.368C12.996 3.703 12.505 3.5 12 3.5s-.996.203-1.367.566c-.363.364-.566.854-.566 1.368v4.633H5.433c-.513 0-1.005.203-1.367.566C3.704 11.996 3.5 12.486 3.5 13s.204 1.004.566 1.367c.362.363.854.566 1.367.566h4.634v4.634c0 .513.203 1.004.566 1.367.371.363.863.566 1.367.566s.996-.203 1.367-.566c.362-.363.566-.854.566-1.367v-4.634h4.634c.513 0 1.004-.203 1.367-.566.363-.363.566-.854.566-1.367s-.203-1.004-.566-1.367c-.363-.363-.854-.567-1.367-.567z"
+        fill="currentColor"
+      />
     </svg>
   )
 }
+
+export function IconGroup({ className = "size-5", ...props }: IconProps) {
+  return (
+    <svg viewBox="0 0 16 16" fill="none" className={className} xmlns="http://www.w3.org/2000/svg" {...props}>
+      <path
+        d="M11.295 8.963c.018.09.304 3.047.2 3.617-.15.828-1.182 1.42-3.394 1.42-2.13 0-3.219-.711-3.428-1.56-.2-.807.195-3.53.214-3.62.482-2.257 2.419-2.376 3.088-2.38h.208c.625 0 2.616.217 3.11 2.523zM3.365 7.031c.197 0 .543.01.916.131-.25.414-.438.887-.552 1.422-.006.028-.485 3-.208 4.127.002.008.007.012.009.018-.173-.012-.353-.037-.54-.082-1.665-.398-2.297-1.185-2.319-1.619-.034-.668.16-2.008.176-2.08.396-1.857 1.88-1.917 2.383-1.917h.135zm9.443 0c.535 0 1.958.102 2.344.916.016.072.211 1.412.177 2.08-.021.434-.654 1.221-2.319 1.619-.116.027-.229.049-.339.062.118-.894-.194-3.869-.218-3.982-.133-.625-.361-1.15-.653-1.59.341-.097.652-.105.834-.105h.174zM12.685 3.461c.864 0 1.565.684 1.565 1.53 0 .845-.701 1.529-1.565 1.529-.865 0-1.567-.684-1.567-1.53 0-.845.702-1.529 1.567-1.529zm-9.369 0c.865 0 1.566.684 1.566 1.53 0 .845-.701 1.529-1.566 1.529-.864 0-1.564-.684-1.564-1.53 0-.845.7-1.529 1.564-1.529zm4.809-1.461c1.075 0 1.947.852 1.947 1.902 0 1.051-.872 1.903-1.947 1.903-1.076 0-1.948-.852-1.948-1.903 0-1.05 1.072-1.902 1.948-1.902z"
+        fill="currentColor"
+      />
+    </svg>
+  )
+}
+
+export function IconCheck({ className = "size-5", ...props }: IconProps) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" className={className} xmlns="http://www.w3.org/2000/svg" {...props}>
+      <path d="M9 16.2L4.8 12L3.4 13.4L9 19L21 7L19.6 5.6L9 16.2Z" fill="currentColor" />
+    </svg>
+  )
+}
+
 

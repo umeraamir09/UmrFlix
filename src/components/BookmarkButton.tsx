@@ -17,7 +17,7 @@ export type BookmarkButtonProps = {
   overview?: string
   releaseYear?: string
   initialBookmarked?: boolean
-  variant?: "button" | "icon" | "pill" | "menu-item"
+  variant?: "button" | "icon" | "pill" | "menu-item" | "circle" | "circle-sm"
   className?: string
 }
 
@@ -129,6 +129,33 @@ export function BookmarkButton({
     }
   }
 
+  if (variant === "circle" || variant === "circle-sm") {
+    const isSm = variant === "circle-sm"
+    return (
+      <button
+        onClick={handleToggle}
+        disabled={loading}
+        aria-label={bookmarked ? "Remove from My List" : "Add to My List"}
+        className={cn(
+          "rounded-full flex items-center justify-center backdrop-blur-md transition-all duration-200 active:scale-95 cursor-pointer shadow-lg shrink-0",
+          isSm ? "size-10 min-h-[40px] min-w-[40px]" : "size-11 sm:size-12 min-h-[44px] min-w-[44px] sm:min-h-[48px] sm:min-w-[48px]",
+          bookmarked
+            ? "bg-penpot-primary-500/40 hover:bg-penpot-primary-500/60 active:bg-penpot-primary-500/80 text-penpot-primary-100 border border-penpot-primary-300 shadow-penpot-primary-400/20"
+            : "bg-black/20 hover:bg-white/20 active:bg-white/30 text-white border border-white",
+          className
+        )}
+      >
+        {loading ? (
+          <Loader2 className={cn(isSm ? "size-4" : "size-5", "animate-spin text-penpot-neutral-300")} />
+        ) : bookmarked ? (
+          <Check className={cn(isSm ? "size-4" : "size-5", "text-penpot-primary-100 stroke-[2.5]")} />
+        ) : (
+          <Bookmark className={cn(isSm ? "size-4" : "size-5", "text-white")} />
+        )}
+      </button>
+    )
+  }
+
   if (variant === "menu-item") {
     return (
       <button
@@ -231,3 +258,4 @@ export function BookmarkButton({
     </button>
   )
 }
+
