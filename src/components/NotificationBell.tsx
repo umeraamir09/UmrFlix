@@ -170,48 +170,48 @@ export function NotificationBell() {
   const renderIcon = (notif: UserNotification) => {
     if (notif.type === "party_invite") {
       return (
-        <span className="p-1 rounded bg-accent/20 text-accent inline-block">
+        <span className="p-2 rounded-[6px] bg-penpot-secondary-200/15 text-penpot-secondary-200 inline-block">
           <ShieldCheck className="size-4" />
         </span>
       )
     }
     if (notif.type === "approved") {
       return (
-        <span className="p-1 rounded bg-emerald-500/20 text-emerald-400 inline-block">
+        <span className="p-2 rounded-[6px] bg-emerald-500/15 text-emerald-400 inline-block">
           <Check className="size-4" />
         </span>
       )
     }
     if (notif.type === "denied") {
       return (
-        <span className="p-1 rounded bg-red-500/20 text-red-400 inline-block">
+        <span className="p-2 rounded-[6px] bg-rose-500/15 text-rose-400 inline-block">
           <XCircle className="size-4" />
         </span>
       )
     }
     if (notif.type === "admin_request") {
       return (
-        <span className="p-1 rounded bg-blue-500/20 text-blue-400 inline-block">
+        <span className="p-2 rounded-[6px] bg-penpot-link/15 text-penpot-link inline-block">
           <Inbox className="size-4" />
         </span>
       )
     }
     if (notif.type === "download_update") {
       return (
-        <span className="p-1 rounded bg-amber-500/20 text-amber-400 inline-block">
+        <span className="p-2 rounded-[6px] bg-amber-500/15 text-amber-400 inline-block">
           <Download className="size-4" />
         </span>
       )
     }
     if (notif.type === "available") {
       return (
-        <span className="p-1 rounded bg-emerald-500/20 text-emerald-400 inline-block">
+        <span className="p-2 rounded-[6px] bg-emerald-500/15 text-emerald-400 inline-block">
           <Play className="size-4" />
         </span>
       )
     }
     return (
-      <span className="p-1 rounded bg-accent/20 text-accent inline-block">
+      <span className="p-2 rounded-[6px] bg-penpot-secondary-200/15 text-penpot-secondary-200 inline-block">
         <Bell className="size-4" />
       </span>
     )
@@ -220,21 +220,21 @@ export function NotificationBell() {
   const renderActions = (notif: UserNotification) => {
     if (notif.type === "party_invite" && notif.partyId) {
       return (
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-3">
           <Link
             href={`/party/join/${notif.partyId}`}
             onClick={() => {
               markAsRead(notif.id)
               setOpen(false)
             }}
-            className="rounded bg-accent px-3 py-1 text-[11px] font-bold text-white transition-colors hover:bg-accent-hover"
+            className="rounded-[6px] bg-penpot-secondary-200 px-3.5 py-1 text-xs font-semibold text-black transition-opacity hover:opacity-90"
           >
             Join Party
           </Link>
           {!notif.read && (
             <button
               onClick={() => markAsRead(notif.id)}
-              className="text-[10px] text-gray-400 hover:text-white underline"
+              className="text-xs text-white/50 hover:text-white transition-colors cursor-pointer"
             >
               Decline
             </button>
@@ -249,16 +249,16 @@ export function NotificationBell() {
           <Link
             href={`/watch?id=${notif.jellyfinItemId}&type=${notif.mediaType ?? "movie"}`}
             onClick={() => setOpen(false)}
-            className="inline-flex items-center gap-1 rounded bg-emerald-600 px-3 py-1 text-[11px] font-bold text-white transition-colors hover:bg-emerald-500"
+            className="inline-flex items-center gap-1.5 rounded-[6px] bg-emerald-600/90 px-3.5 py-1 text-xs font-medium text-white transition-colors hover:bg-emerald-500"
           >
-            <Play className="size-3" /> Watch Now
+            <Play className="size-3.5" /> Watch Now
           </Link>
           {!notif.read && (
             <button
               onClick={() => markAsRead(notif.id)}
-              className="flex items-center gap-1 text-[10px] text-gray-400 hover:text-white underline"
+              className="flex items-center gap-1 text-xs text-white/50 hover:text-white transition-colors cursor-pointer"
             >
-              <Check className="size-3" /> Mark as read
+              <Check className="size-3.5" /> Mark read
             </button>
           )}
         </div>
@@ -271,16 +271,16 @@ export function NotificationBell() {
           <Link
             href="/admin/requests"
             onClick={() => setOpen(false)}
-            className="inline-flex items-center gap-1 text-[11px] font-semibold text-accent hover:underline"
+            className="inline-flex items-center gap-1 text-xs font-normal text-white hover:text-penpot-secondary-200 transition-colors"
           >
             Review Request &rarr;
           </Link>
           {!notif.read && (
             <button
               onClick={() => markAsRead(notif.id)}
-              className="flex items-center gap-1 text-[10px] text-gray-400 hover:text-white underline"
+              className="flex items-center gap-1 text-xs text-white/50 hover:text-white transition-colors cursor-pointer"
             >
-              <Check className="size-3" /> Mark as read
+              <Check className="size-3.5" /> Mark read
             </button>
           )}
         </div>
@@ -292,16 +292,16 @@ export function NotificationBell() {
         <Link
           href="/requests"
           onClick={() => setOpen(false)}
-          className="text-[11px] font-semibold text-accent hover:underline flex items-center gap-1"
+          className="text-xs font-normal text-white hover:text-penpot-secondary-200 transition-colors flex items-center gap-1"
         >
           View My Requests &rarr;
         </Link>
         {!notif.read && (
           <button
             onClick={() => markAsRead(notif.id)}
-            className="flex items-center gap-1 text-[10px] text-gray-400 hover:text-white underline"
+            className="flex items-center gap-1 text-xs text-white/50 hover:text-white transition-colors cursor-pointer"
           >
-            <Check className="size-3" /> Mark as read
+            <Check className="size-3.5" /> Mark read
           </button>
         )}
       </div>
@@ -312,13 +312,13 @@ export function NotificationBell() {
     <div className="relative h-full flex items-center" ref={menuRef}>
       <button
         onClick={() => setOpen((o) => !o)}
-        className="relative flex min-h-[44px] min-w-[44px] items-center justify-center p-2.5 text-grey-100 hover:text-white transition-colors rounded-[4px]"
+        className="relative flex h-10 w-10 items-center justify-center text-penpot-text-medium hover:text-white hover:bg-penpot-opacity-white-10 transition-colors rounded-full cursor-pointer"
         title="Notifications"
         aria-label="View Notifications"
       >
         <Bell className="size-5" />
         {unreadCount > 0 && (
-          <span className="absolute top-1 right-1 flex size-4 items-center justify-center rounded-full bg-accent text-[10px] font-bold text-white shadow-md animate-pulse motion-reduce:animate-none">
+          <span className="absolute top-1.5 right-1.5 flex size-4 items-center justify-center rounded-full bg-penpot-secondary-200 text-[10px] font-bold text-black shadow-md animate-pulse motion-reduce:animate-none">
             {unreadCount > 9 ? "9+" : unreadCount}
           </span>
         )}
@@ -332,103 +332,131 @@ export function NotificationBell() {
             onClick={() => setOpen(false)}
           />
 
-          {/* Notification Menu: Centered popover on mobile, right-aligned dropdown on desktop */}
-          <div className="fixed left-1/2 -translate-x-1/2 top-16 sm:absolute sm:left-auto sm:right-0 sm:top-full sm:translate-x-0 w-[calc(100vw-2rem)] max-w-sm sm:w-96 border border-grey-600 bg-grey-900 shadow-2xl backdrop-blur-xl rounded-[6px] z-50 text-xs text-grey-10 animate-in fade-in zoom-in-95 sm:slide-in-from-top-1 duration-150">
-          <div className="p-3.5 border-b border-grey-750 bg-grey-850 flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Bell className="size-4 text-accent" />
-              <span className="text-sm font-bold text-white uppercase tracking-wider">Notifications</span>
-              {unreadCount > 0 && (
-                <span className="px-1.5 py-0.5 rounded-[4px] bg-accent/20 text-accent font-bold text-[10px]">
-                  {unreadCount} NEW
-                </span>
-              )}
-            </div>
-            {unreadCount > 0 && (
-              <button
-                onClick={markAllAsRead}
-                className="flex items-center gap-1 text-[11px] font-semibold text-accent hover:underline"
+          {/* Notification Menu (Cohesive Penpot MenuUser Card Design) */}
+          <div className="fixed left-1/2 -translate-x-1/2 top-20 sm:absolute sm:left-auto sm:right-0 sm:top-[calc(100%+8px)] sm:translate-x-0 w-[calc(100vw-2rem)] max-w-sm sm:w-[360px] z-50 animate-in fade-in slide-in-from-top-1 duration-150">
+            {/* Pointer Triangle (matching MenuUser Vector 2 & 3) */}
+            <div className="relative">
+              <svg
+                className="hidden sm:block absolute -top-3 right-3.5 w-4 h-3 z-10 drop-shadow-sm pointer-events-none"
+                viewBox="0 0 18 14"
+                fill="none"
               >
-                <CheckCheck className="size-3.5" />
-                Mark all read
-              </button>
-            )}
-          </div>
+                <path
+                  d="M9 1L17 13H1L9 1Z"
+                  className="fill-penpot-neutral-700 stroke-penpot-border"
+                  strokeWidth="1.5"
+                  strokeLinejoin="round"
+                />
+                <line x1="1.5" y1="13.5" x2="16.5" y2="13.5" className="stroke-penpot-neutral-700" strokeWidth="2" />
+              </svg>
 
-          <div className="max-h-80 overflow-y-auto divide-y divide-grey-750">
-            {notifications.length === 0 ? (
-              <div className="p-8 text-center text-grey-100">
-                <Clock className="size-8 mx-auto mb-2 opacity-40 text-grey-200" />
-                <p className="font-medium text-xs text-white">No notifications</p>
-                <p className="text-[11px] text-grey-200 mt-1">Updates about your requests will appear here.</p>
-              </div>
-            ) : (
-              visibleNotifications.map((notif) => {
-                const live = notif.type === "download_update" ? progressByRequestId.get(notif.requestId ?? "") : undefined
-                const message = live
-                  ? `"${live.title}" is downloading — ${Math.min(100, Math.max(0, Math.round(live.progress)))}% complete.`
-                  : notif.message
-                return (
-                  <div
-                    key={notif.id}
-                    className={`p-3.5 transition-colors flex items-start gap-3 ${notif.read ? "bg-transparent hover:bg-grey-850" : "bg-grey-850"}`}
-                  >
-                    <div className="pt-0.5 shrink-0">{renderIcon(notif)}</div>
-                    <div className="flex-1 space-y-1">
-                      <div className="flex items-center justify-between">
-                        <h4 className="font-bold text-white text-xs tracking-tight">{notif.title}</h4>
-                        <span className="text-[10px] text-grey-200">
-                          {new Date(notif.createdAt).toLocaleDateString(undefined, {
-                            month: "short",
-                            day: "numeric",
-                          })}
-                        </span>
-                      </div>
-                      <p className="text-grey-100 text-[11px] leading-relaxed">{message}</p>
+              {/* Main Container */}
+              <div className="w-full bg-penpot-neutral-700 border border-penpot-border rounded-[8px] shadow-2xl backdrop-blur-xl overflow-hidden">
+                
+                {/* Header (Penpot Typography: 16px font-normal) */}
+                <div className="p-5 border-b border-penpot-border/60 flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <span className="text-base font-normal text-penpot-text-high/90">Notifications</span>
+                    {unreadCount > 0 && (
+                      <span className="px-2 py-0.5 rounded-[4px] bg-penpot-secondary-200/15 text-penpot-secondary-200 font-normal text-xs">
+                        {unreadCount} new
+                      </span>
+                    )}
+                  </div>
+                  {unreadCount > 0 && (
+                    <button
+                      onClick={markAllAsRead}
+                      className="flex items-center gap-1 text-xs font-normal text-penpot-secondary-200 hover:underline cursor-pointer"
+                    >
+                      <CheckCheck className="size-3.5" />
+                      Mark all read
+                    </button>
+                  )}
+                </div>
 
-                      {notif.type === "download_update" && live && (
-                        <div className="mt-1.5">
-                          <div className="h-1.5 w-full bg-grey-750 border border-grey-600 overflow-hidden rounded-[2px]">
-                            <div
-                              className="h-full bg-accent transition-all duration-500"
-                              style={{
-                                width: `${Math.min(100, Math.max(0, live.progress))}%`,
-                              }}
-                            />
-                          </div>
-                          <div className="flex items-center justify-between text-[10px] text-grey-200 mt-1">
-                            <span>{Math.min(100, Math.max(0, Math.round(live.progress)))}%</span>
-                            <span>
-                              {formatSpeed(live.dlspeed)}
-                              {formatSpeed(live.dlspeed) && live.eta != null ? " · " : ""}
-                              {live.eta != null ? `ETA ${formatEta(live.eta)}` : ""}
-                            </span>
+                {/* Notifications List */}
+                <div className="max-h-80 overflow-y-auto divide-y divide-penpot-border/40">
+                  {notifications.length === 0 ? (
+                    <div className="p-8 text-center text-penpot-text-subtle">
+                      <Clock className="size-8 mx-auto mb-2 opacity-40 text-penpot-text-subtle" />
+                      <p className="text-base font-normal text-white">No notifications</p>
+                      <p className="text-xs font-normal text-white/50 mt-1">Updates about your requests will appear here.</p>
+                    </div>
+                  ) : (
+                    visibleNotifications.map((notif) => {
+                      const live = notif.type === "download_update" ? progressByRequestId.get(notif.requestId ?? "") : undefined
+                      const message = live
+                        ? `"${live.title}" is downloading — ${Math.min(100, Math.max(0, Math.round(live.progress)))}% complete.`
+                        : notif.message
+                      return (
+                        <div
+                          key={notif.id}
+                          className={`p-4 transition-colors flex items-start gap-3.5 ${
+                            notif.read ? "bg-transparent hover:bg-penpot-neutral-800" : "bg-penpot-neutral-800 hover:bg-penpot-surface"
+                          }`}
+                        >
+                          <div className="pt-0.5 shrink-0">{renderIcon(notif)}</div>
+                          <div className="flex-1 space-y-1.5">
+                            <div className="flex items-center justify-between">
+                              <h4 className="text-sm font-normal text-white tracking-normal">{notif.title}</h4>
+                              <span className="text-xs font-normal text-white/40">
+                                {new Date(notif.createdAt).toLocaleDateString(undefined, {
+                                  month: "short",
+                                  day: "numeric",
+                                })}
+                              </span>
+                            </div>
+                            <p className="text-xs font-normal text-white/70 leading-relaxed">{message}</p>
+
+                            {notif.type === "download_update" && live && (
+                              <div className="mt-2">
+                                <div className="h-1.5 w-full bg-penpot-neutral-800 border border-penpot-border overflow-hidden rounded-[2px]">
+                                  <div
+                                    className="h-full bg-penpot-secondary-200 transition-all duration-500"
+                                    style={{
+                                      width: `${Math.min(100, Math.max(0, live.progress))}%`,
+                                    }}
+                                  />
+                                </div>
+                                <div className="flex items-center justify-between text-xs font-normal text-white/50 mt-1">
+                                  <span>{Math.min(100, Math.max(0, Math.round(live.progress)))}%</span>
+                                  <span>
+                                    {formatSpeed(live.dlspeed)}
+                                    {formatSpeed(live.dlspeed) && live.eta != null ? " · " : ""}
+                                    {live.eta != null ? `ETA ${formatEta(live.eta)}` : ""}
+                                  </span>
+                                </div>
+                              </div>
+                            )}
+
+                            <div className="flex items-center justify-between pt-1">
+                              {renderActions(notif)}
+                            </div>
                           </div>
                         </div>
-                      )}
+                      )
+                    })
+                  )}
+                </div>
 
-                      <div className="flex items-center justify-between pt-1.5">
-                        {renderActions(notif)}
-                      </div>
-                    </div>
-                  </div>
-                )
-              })
-            )}
-          </div>
+                {/* Footer Link (Matching MenuUser Item Style: regular 16px / 14px text-white hover:text-penpot-secondary-200) */}
+                <div className="p-4 border-t border-penpot-border/60 bg-penpot-neutral-700 text-center">
+                  <Link
+                    href="/requests"
+                    onClick={() => setOpen(false)}
+                    className="text-sm font-normal text-white hover:text-penpot-secondary-200 transition-colors inline-block py-0.5"
+                  >
+                    Go to My Requests
+                  </Link>
+                </div>
 
-          <div className="p-2.5 border-t border-grey-750 bg-grey-850 text-center">
-            <Link
-              href="/requests"
-              onClick={() => setOpen(false)}
-              className="text-xs font-semibold text-grey-100 hover:text-white uppercase tracking-wider inline-block py-1"
-            >
-              Go to My Requests Page
-            </Link>
+              </div>
+            </div>
           </div>
-        </div>
-      </>
+        </>
       )}
     </div>
   )
 }
+
+

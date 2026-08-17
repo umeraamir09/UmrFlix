@@ -14,11 +14,13 @@ test.describe("Home Page (/)", () => {
     // Logo / Home link
     await expect(page.locator("header a[href='/']").first()).toBeVisible()
 
-    // Navigation links
-    await expect(header.getByRole("link", { name: "Popular", exact: true })).toBeVisible()
+    // Navigation links (Penpot Navbar items)
+    await expect(header.getByRole("link", { name: "Home", exact: true })).toBeVisible()
+    await expect(header.getByRole("link", { name: /Series|Tv Shows/i })).toBeVisible()
     await expect(header.getByRole("link", { name: "Movies", exact: true })).toBeVisible()
-    await expect(header.getByRole("link", { name: "Tv Shows", exact: true })).toBeVisible()
+    await expect(header.getByRole("link", { name: "Library", exact: true })).toBeVisible()
     await expect(header.getByRole("link", { name: "My List", exact: true })).toBeVisible()
+    await expect(header.getByRole("button", { name: /Browse by Genre/i })).toBeVisible()
 
     // Search and Notifications
     await expect(page.locator("input[placeholder*='Search'], button:has-text('Search'), [aria-label*='Search']").first()).toBeVisible()
