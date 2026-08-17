@@ -3,7 +3,7 @@
 import { useMemo, useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import useSWR, { useSWRConfig } from "swr"
-import { ArrowUpDown, Plus, Layers } from "lucide-react"
+import { ArrowUpDown, Plus, Layers, ChevronDown } from "lucide-react"
 import { EpisodeCard } from "@/components/EpisodeCard"
 import { Tooltip } from "@/components/ui/tooltip"
 import { useToast } from "@/components/Toast"
@@ -131,6 +131,9 @@ export function SeasonBrowser({
 
   const [selectedEpisodeId, setSelectedEpisodeId] = useState<string | null>(null)
   const [isSortAscending, setIsSortAscending] = useState(true)
+  const [expandedSeason, setExpandedSeason] = useState<number | null>(null)
+
+  const showAllEpisodes = expandedSeason === currentSeason
 
   // Calculate downloaded vs missing seasons across all TMDB seasons
   const { downloadedSeasons, missingSeasons, hasMissingSeasons } = useMemo(() => {
@@ -236,6 +239,11 @@ export function SeasonBrowser({
       isSortAscending ? a.episodeNumber - b.episodeNumber : b.episodeNumber - a.episodeNumber
     )
   }, [tmdbSeasonData, jellyfinData, currentSeason, isSortAscending])
+
+  // Show up to 18 when collapsed so the 17th & 18th create depth behind the bottom fade
+  const displayedEpisodes = useMemo(() => {
+    return showAllEpisodes ? seasonEpisodes : seasonEpisodes.slice(0, 18)
+  }, [seasonEpisodes, showAllEpisodes])
 
   const isCurrentSeasonMissing = missingSeasons.includes(currentSeason)
 
@@ -433,23 +441,64 @@ export function SeasonBrowser({
 
       {/* ── Penpot 2-Column Episode Grid (Episodes //Episodes) ── */}
       {!isTmdbLoading && (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
-          {seasonEpisodes.map((ep) => (
-            <EpisodeCard
-              key={ep.id}
-              episode={ep}
-              showName={showName}
-              isSelected={selectedEpisodeId === ep.id}
-              onSelect={(e) => setSelectedEpisodeId(e.id)}
-              onPlay={handlePlayEpisode}
-              onTogglePlayed={handleTogglePlayed}
-              onRequestEpisode={handleRequestEpisode}
-              onDeleteEpisode={handleDeleteEpisode}
-              isAdmin={isAdmin}
-              isShowInSonarr={isShowInSonarr}
-              actionLoading={actionLoadingId === ep.id}
-            />
-          ))}
+        <div className="relative space-y-6">
+          {/* Episode Grid with Bottom Depth Fade for rows past 16 */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
+            {displayedEpisodes.map((ep, index) => {
+              const isFading = !showAllEpisodes && index >= 16
+              return (
+                <div
+                  key={ep.id}
+                  className={cn(
+                    "transition-opacity duration-300",
+                    isFading && "opacity-40 select-none pointer-events-none"
+                  )}
+                >
+                  <EpisodeCard
+                    episode={ep}
+                    showName={showName}
+                    isSelected={selectedEpisodeId === ep.id}
+                    onSelect={(e) => setSelectedEpisodeId(e.id)}
+                    onPlay={handlePlayEpisode}
+                    onTogglePlayed={handleTogglePlayed}
+                    onRequestEpisode={handleRequestEpisode}
+                    onDeleteEpisode={handleDeleteEpisode}
+                    isAdmin={isAdmin}
+                    isShowInSonarr={isShowInSonarr}
+                    actionLoading={actionLoadingId === ep.id}
+                  />
+                </div>
+              )
+            })}
+          </div>
+
+          {/* Depth Gradient Overlay & "Show More" Button (When Collapsed) */}
+          {!showAllEpisodes && seasonEpisodes.length > 16 && (
+            <div className="absolute inset-x-0 bottom-0 h-44 bg-gradient-to-t from-penpot-bg via-penpot-bg/85 to-transparent flex items-end justify-center pb-2 pointer-events-none">
+              <button
+                type="button"
+                onClick={() => setExpandedSeason(currentSeason)}
+                className="pointer-events-auto flex items-center gap-2 px-7 py-3 rounded-[4px] bg-black/60 hover:bg-black/80 active:bg-black text-white font-bold text-xs sm:text-sm uppercase tracking-wider border border-white/30 hover:border-white/60 backdrop-blur-md transition-all duration-200 cursor-pointer shadow-2xl min-h-[44px]"
+              >
+                <span>Show More ({seasonEpisodes.length - 16} more episodes)</span>
+                <ChevronDown className="size-4 text-penpot-text-medium" />
+              </button>
+            </div>
+          )}
+
+          {/* "Show Less" Button (When Expanded) */}
+          {showAllEpisodes && seasonEpisodes.length > 16 && (
+            <div className="flex justify-center pt-2">
+              <button
+                type="button"
+                onClick={() => setExpandedSeason(null)}
+                className="flex items-center gap-2 px-6 py-3 rounded-[4px] bg-white/[0.08] hover:bg-white/[0.14] active:bg-white/20 text-white font-bold text-xs sm:text-sm uppercase tracking-wider border border-white/10 hover:border-penpot-primary-400/50 transition-all duration-200 cursor-pointer shadow-md min-h-[44px]"
+              >
+                <span>Show Less</span>
+                <ChevronDown className="size-4 text-penpot-text-medium rotate-180" />
+              </button>
+            </div>
+          )}
         </div>
       )}
     </section>

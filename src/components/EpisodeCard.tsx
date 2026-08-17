@@ -101,7 +101,7 @@ export function EpisodeCard({
       onClick={handleCardClick}
       onKeyDown={handleKeyDown}
       className={cn(
-        "group relative flex flex-row items-center w-full min-h-[112px] sm:min-h-[128px] max-h-[140px]",
+        "group relative flex flex-row items-stretch w-full min-h-[112px] sm:min-h-[128px] max-h-[140px]",
         "bg-white/[0.07] hover:bg-white/[0.12] border border-white/5 hover:border-penpot-primary-400/40 rounded-lg transition-all duration-200 shadow-md",
         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-4 focus-visible:ring-offset-penpot-bg",
         isSelected && "ring-2 ring-white ring-offset-4 ring-offset-penpot-bg bg-white/[0.14] border-white/20",
@@ -110,7 +110,7 @@ export function EpisodeCard({
       )}
     >
       {/* ── Left Thumbnail Cover (Penpot 221px width) ── */}
-      <div className="relative w-36 sm:w-48 md:w-52 lg:w-56 h-full shrink-0 overflow-hidden rounded-l-lg bg-penpot-surface flex items-center justify-center">
+      <div className="relative w-36 sm:w-48 md:w-52 lg:w-56 self-stretch min-h-[112px] sm:min-h-[128px] shrink-0 overflow-hidden rounded-l-lg bg-penpot-surface flex items-center justify-center">
         <Image
           src={episode.thumbUrl}
           alt={showName ? `${showName} - ${episode.title}` : episode.title}
