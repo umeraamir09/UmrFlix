@@ -7,6 +7,7 @@ import { sanitizeRedirectUrl } from "@/lib/url-sanitize"
 const PUBLIC_PATHS = [
   "/login",
   "/api/auth/login",
+  "/api/auth/test-session",
   "/api/health",
   "/favicon.ico",
   "/logo_header.png",

@@ -137,6 +137,49 @@ src/
     └── env.ts          # Validated environment variables
 ```
 
+## Testing & Visual Verification
+
+UmrFlix includes a production-grade testing and visual verification suite with live server execution and Penpot design comparison:
+
+### 1. Playwright E2E Tests (Live Server)
+```bash
+# Run all E2E test suites against live server
+npm run test:e2e
+
+# Run specific suite
+npm run test:e2e -- e2e/auth.spec.ts
+npm run test:e2e -- e2e/home.spec.ts
+npm run test:e2e -- e2e/catalog.spec.ts
+npm run test:e2e -- e2e/details.spec.ts
+npm run test:e2e -- e2e/search.spec.ts
+npm run test:e2e -- e2e/player.spec.ts
+npm run test:e2e -- e2e/touch-responsive.spec.ts
+
+# Interactive UI test runner
+npm run test:e2e:ui
+```
+
+### 2. Interactive Penpot Visual Verification CLI
+Used by LLMs and engineers to inspect UI work against the reference Penpot design file and capture pixel-diff artifacts:
+```bash
+# Verify a single target
+npm run penpot:verify -- --target login
+
+# Verify all mapped targets
+npm run penpot:verify -- --all
+
+# Update visual baselines
+npm run penpot:verify -- --all --update-baselines
+npm run penpot:sync
+```
+
+### 3. Unit, Component, and Party Tests
+```bash
+npm run test:lib          # Pure-logic library tests (node:test)
+npm run test:party        # Watch party synchronization tests
+npm run test:components   # Player & UI component tests (Vitest + JSDOM)
+```
+
 ## Deployment
 
 ### Build

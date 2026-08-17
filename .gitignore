@@ -12,6 +12,12 @@
 
 # testing
 /coverage
+/e2e/.auth/
+/e2e/.report/
+/e2e/.results/
+/e2e/visual/diffs/
+/e2e/visual/**/-snapshots/
+/e2e/visual/baselines/visual/
 
 # next.js
 /.next/
