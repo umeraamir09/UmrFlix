@@ -13,7 +13,7 @@
   - reusable UI: src/components/**
   - server integration helpers: src/lib/**
 - Client-side data fetching generally uses SWR. Match the existing pattern used in components like MovieRow, TvDetail, SearchResults, and LibraryPage.
-- UI styling is Tailwind CSS v4. Prefer existing UI primitives in src/components/ui/** and utility classes instead of introducing new styling systems.
+- UI styling is Tailwind CSS v4. Always use tokens available in the Tailwind v4 `@theme` configuration in `src/app/globals.css` (e.g. Penpot design tokens `bg-penpot-bg`, `bg-penpot-surface`, `text-penpot-text-medium`, `bg-penpot-primary-300`, etc.) instead of hardcoded hex values (`#...`). Prefer existing UI primitives in `src/components/ui/**` and utility classes instead of introducing new styling systems.
 - The player stack lives under src/components/player/** and uses hls.js plus subtitle helpers. When changing playback behavior, keep compatibility with the current player architecture.
 - Player controls split: CinemaPlayer renders src/components/player/touch/TouchControls.tsx (Figma-referenced touch layout) + touch/use-touch-gestures.ts (pointer-event tap/double-tap-skip/lock recognizer) on (pointer: coarse) devices, and PlayerControls.tsx on desktop. Shared popovers (Audio/Subtitles, Speed/Quality) live in player-menus.tsx; SeekBar is exported from PlayerControls.tsx. All ±10s skip paths (double-tap, transport, keyboard) must route through CinemaPlayer's seekTo/skipBy so watch-party seek coalescing stays intact — never write video.currentTime directly.
 

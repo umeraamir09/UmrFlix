@@ -120,6 +120,49 @@
   --color-trans-black-60: rgba(0, 0, 0, 0.60);
   --color-trans-black-90: rgba(0, 0, 0, 0.90);
 
+  /* ==========================================================================
+     Penpot Design System Color Tokens (Colors Page & Library)
+     ========================================================================== */
+
+  /* Penpot Primary Scale (Blue) */
+  --color-penpot-primary-100: #67BDFF;
+  --color-penpot-primary-200: #068DFF;
+  --color-penpot-primary-300: #037AEB;
+  --color-penpot-primary-400: #0063E5;
+  --color-penpot-primary-500: #00386C;
+
+  /* Penpot Secondary / Accent */
+  --color-penpot-secondary-200: #02E7F5;
+  --color-penpot-accent-100: #FFFFFF;
+
+  /* Penpot Neutral Scale */
+  --color-penpot-neutral-100: #F9F9F9;
+  --color-penpot-neutral-200: #C8C9CB;
+  --color-penpot-neutral-300: #74757D;
+  --color-penpot-neutral-400: #5F6169;
+  --color-penpot-neutral-500: #30333E;
+  --color-penpot-neutral-550: #31343E;
+  --color-penpot-neutral-600: #1A1D29;
+  --color-penpot-neutral-700: #101116;
+  --color-penpot-neutral-800: #181B26;
+
+  /* Penpot Semantic UI Colors */
+  --color-penpot-bg: #1A1D29;
+  --color-penpot-surface: #31343E;
+  --color-penpot-border: #353843;
+  --color-penpot-disabled: #5F6169;
+  --color-penpot-text-high: #F9F9F9;
+  --color-penpot-text-medium: #C8C9CB;
+  --color-penpot-text-subtle: #74757D;
+  --color-penpot-link: #67BDFF;
+
+  /* Penpot Opacity Overlays */
+  --color-penpot-opacity-white-10: rgba(255, 255, 255, 0.10);
+  --color-penpot-opacity-white-12: rgba(255, 255, 255, 0.12);
+  --color-penpot-opacity-white-30: rgba(255, 255, 255, 0.30);
+  --color-penpot-opacity-white-40: rgba(249, 249, 249, 0.40);
+  --color-penpot-opacity-black-10: rgba(0, 0, 0, 0.10);
+
   /* App Semantic Mappings */
   --color-background: #000;
   --color-surface: #141519;
