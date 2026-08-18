@@ -40,10 +40,10 @@ const NAV_ITEMS = [
     matchPrefixes: ["/movies", "/movie"],
   },
   {
-    href: "/library",
-    label: "Library",
-    icon: IconVideoLibrary,
-    matchPrefixes: ["/library"],
+    href: "/my-list",
+    label: "My List",
+    icon: IconPlus,
+    matchPrefixes: ["/my-list"],
   },
 ]
 
@@ -301,17 +301,17 @@ export function Navbar() {
 
           {/* Quick Action: My List / Watchlist (Penpot icon/plus) */}
           <Link
-            href="/my-list"
+            href="/library"
             className={`h-10 px-3 flex items-center gap-2 rounded-[4px] transition-all ${
               pathname === "/my-list"
                 ? "bg-penpot-opacity-white-10 text-white"
                 : "text-penpot-text-medium hover:text-white hover:bg-penpot-opacity-white-10"
             }`}
-            title="My List"
-            aria-label="View My List"
+            title="Library"
+            aria-label="View My Library"
           >
-            <IconPlus className="size-5 text-penpot-text-medium hover:text-penpot-secondary-200" />
-            <span className="text-xs font-medium hidden xl:inline-block">My List</span>
+            <IconVideoLibrary className="size-5 text-penpot-text-medium hover:text-penpot-secondary-200" />
+            <span className="text-xs font-medium hidden xl:inline-block">Library</span>
           </Link>
 
           {/* Notifications Dropdown (Cohesive with MenuUser Penpot standards) */}
