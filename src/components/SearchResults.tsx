@@ -367,7 +367,7 @@ export function SearchResults() {
           : "Browse"
 
   return (
-    <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6 md:px-8 space-y-10">
+    <div className="mx-auto max-w-[1600px] 2xl:max-w-[1920px] 3xl:max-w-[2300px] 4xl:max-w-[2700px] px-4 py-8 sm:px-6 md:px-8 lg:px-12 2xl:px-16 space-y-10">
       {/* Search Bar Header */}
       <div className="relative w-full pt-2">
         <form onSubmit={handleSearchSubmit} className="relative flex items-center">
@@ -547,7 +547,7 @@ export function SearchResults() {
                   <h2 className="text-base sm:text-lg font-bold uppercase tracking-wider text-white">
                     {isBrowseMode ? browseTitle : "Top Results"}
                   </h2>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-5">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-5 3xl:grid-cols-6 gap-5">
                     {topResults.map((item) => {
                       const isTv = Boolean(item.media_type === "tv" || (!item.title && item.name))
                       const title = item.title || item.name || "Untitled"
@@ -600,7 +600,7 @@ export function SearchResults() {
                   <h2 className="text-base sm:text-lg font-bold uppercase tracking-wider text-white">
                     Series
                   </h2>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-5">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-5 3xl:grid-cols-6 gap-5">
                     {visibleSeries.map((item) => {
                       const title = item.name || item.title || "Untitled"
                       const backdrop = getPosterUrl(item, true)
@@ -664,7 +664,7 @@ export function SearchResults() {
                   <h2 className="text-base sm:text-lg font-bold uppercase tracking-wider text-white">
                     Movies
                   </h2>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-5">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-5 3xl:grid-cols-6 gap-5">
                     {visibleMovies.map((item) => {
                       const title = item.title || item.name || "Untitled"
                       const backdrop = getPosterUrl(item, false)

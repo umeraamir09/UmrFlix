@@ -82,8 +82,8 @@ export default async function GenrePage({
       {heroItems.length > 0 && <HeroBillboard items={heroItems} />}
 
       <div
-        className={`mx-auto max-w-[1600px] px-4 sm:px-6 md:px-8 space-y-12 relative z-20 ${
-          heroItems.length > 0 ? "-mt-28 sm:-mt-36 md:-mt-44" : ""
+        className={`mx-auto max-w-[1600px] 2xl:max-w-[1920px] 3xl:max-w-[2300px] 4xl:max-w-[2700px] px-4 sm:px-6 md:px-8 lg:px-12 2xl:px-16 space-y-12 relative z-20 ${
+          heroItems.length > 0 ? "-mt-28 sm:-mt-36 md:-mt-44 2xl:-mt-52" : ""
         }`}
       >
         {/* Header & Genre Switcher */}

@@ -270,10 +270,10 @@ export function MovieRow({
       </div>
 
       {/* ── Row Carousel Container (RowContent) ── */}
-      <div className="relative w-[calc(100%+(100vw-100%)/2)] overflow-visible">
+      <div className="relative w-full overflow-visible">
         {/* Left Navigation Button */}
         <div
-          className={`absolute left-0 top-0 bottom-0 z-30 pointer-events-none flex items-center justify-start pl-1 sm:pl-2 transition-opacity duration-300 ${
+          className={`absolute -left-2 sm:-left-4 top-0 bottom-0 z-30 pointer-events-none flex items-center justify-start transition-opacity duration-300 ${
             canScrollLeft ? "opacity-100" : "opacity-0"
           }`}
         >
@@ -288,7 +288,7 @@ export function MovieRow({
 
         {/* Right Navigation Button */}
         <div
-          className={`absolute right-0 top-0 bottom-0 z-30 pointer-events-none flex items-center justify-end pr-2 sm:pr-4 transition-opacity duration-300 ${
+          className={`absolute -right-2 sm:-right-4 top-0 bottom-0 z-30 pointer-events-none flex items-center justify-end transition-opacity duration-300 ${
             canScrollRight ? "opacity-100" : "opacity-0"
           }`}
         >
@@ -301,14 +301,14 @@ export function MovieRow({
           </button>
         </div>
 
-        {/* Scrollable Track with 20px gap (gap-5) */}
+        {/* Scrollable Track with responsive gap */}
         <div
           ref={scrollRef}
           className={`grid grid-flow-col ${
             cardVariant === "large"
-              ? "auto-cols-[180px] sm:auto-cols-[210px] md:auto-cols-[250px] lg:auto-cols-[285px] xl:auto-cols-[305px]"
-              : "auto-cols-[280px] sm:auto-cols-[310px] md:auto-cols-[340px] lg:auto-cols-[375px]"
-          } gap-5 overflow-x-auto no-scrollbar py-3 px-1 scroll-smooth pr-12 sm:pr-16 md:pr-24`}
+              ? "auto-cols-[130px] sm:auto-cols-[165px] md:auto-cols-[250px] lg:auto-cols-[285px] xl:auto-cols-[305px] 3xl:auto-cols-[330px]"
+              : "auto-cols-[130px] sm:auto-cols-[165px] md:auto-cols-[340px] lg:auto-cols-[375px] 3xl:auto-cols-[410px]"
+          } gap-3.5 sm:gap-4 md:gap-5 overflow-x-auto no-scrollbar py-3 px-1 scroll-smooth`}
         >
           {isLoading
             ? Array.from({ length: 6 }).map((_, i) => (
@@ -316,8 +316,8 @@ export function MovieRow({
                   key={i}
                   className={`${
                     cardVariant === "large"
-                      ? "aspect-[240/136] md:aspect-[240/361]"
-                      : "aspect-[240/136]"
+                      ? "aspect-[240/361]"
+                      : "aspect-[240/361] md:aspect-[240/136]"
                   } w-full rounded-[8px] bg-penpot-surface/60 border border-penpot-border/40 animate-pulse`}
                 />
               ))

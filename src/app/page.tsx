@@ -189,7 +189,7 @@ export default async function HomePage() {
       {/* 1. Hero Spotlight Carousel */}
       {heroItems.length > 0 && <HeroBillboard items={heroItems} />}
 
-      <div className="mx-auto max-w-[1600px] px-4 sm:px-6 md:px-8 space-y-12 relative z-20 -mt-28 sm:-mt-36 md:-mt-44">
+      <div className="mx-auto max-w-[1600px] 2xl:max-w-[1920px] 3xl:max-w-[2300px] 4xl:max-w-[2700px] px-4 sm:px-6 md:px-8 lg:px-12 2xl:px-16 space-y-12 relative z-20 -mt-28 sm:-mt-36 md:-mt-44 2xl:-mt-52">
         {/* 2. Personalized Discovery Feed: Top Picks For You at row 1, Continue Watching at row 2, followed by remaining personalized rows */}
         <PersonalizedFeed includeContinueWatching />
 
@@ -236,7 +236,7 @@ export default async function HomePage() {
               Recently Added to your Library
             </h2>
             <p className="text-xs text-penpot-text-medium font-medium">Newly downloaded shows and movies in Jellyfin</p>
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4 pt-2">
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 3xl:grid-cols-8 gap-4 pt-2">
               {recentlyAddedItems.slice(0, 6).map((item: JellyfinApiItem) => {
                 const tmdbId = item.ProviderIds?.Tmdb ? parseInt(item.ProviderIds.Tmdb) : null
                 const mediaType = item.Type === "Series" ? "tv" : "movie"

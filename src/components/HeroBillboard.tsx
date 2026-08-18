@@ -93,7 +93,7 @@ export function HeroBillboard({ items }: { items: BillboardItem[] }) {
   return (
     <div
       data-testid="hero-billboard"
-      className="relative w-full h-[75dvh] min-h-[520px] sm:h-[80dvh] sm:min-h-[640px] md:h-[88dvh] md:min-h-[750px] lg:h-[980px] overflow-hidden bg-penpot-bg group"
+      className="relative w-full h-[75dvh] min-h-[520px] sm:h-[80dvh] sm:min-h-[640px] md:h-[88dvh] md:min-h-[750px] lg:h-[980px] 2xl:h-[1050px] 3xl:h-[1150px] overflow-hidden bg-penpot-bg group"
     >
       {/* Background Image with Swiping & Subtle Zoom Animation */}
       <div className="absolute inset-0 overflow-hidden">
@@ -119,7 +119,7 @@ export function HeroBillboard({ items }: { items: BillboardItem[] }) {
       </div>
 
       {/* Hero Content Container with Swiping Text Animation */}
-      <div className="relative z-10 mx-auto flex h-full max-w-[1600px] items-center px-4 sm:px-6 md:px-10 lg:px-14 pb-28 sm:pb-36 md:pb-44">
+      <div className="relative z-10 mx-auto flex h-full max-w-[1600px] 2xl:max-w-[1920px] 3xl:max-w-[2300px] 4xl:max-w-[2700px] items-center px-4 sm:px-6 md:px-8 lg:px-12 2xl:px-16 pb-28 sm:pb-36 md:pb-44 2xl:pb-52">
         <div
           key={`${currentIndex}-${direction}`}
           className={`w-full max-w-2xl md:max-w-3xl space-y-4 sm:space-y-6 pt-12 ${

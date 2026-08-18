@@ -84,11 +84,13 @@ export function MovieCard({
 
   const isLarge = cardVariant === "large"
 
-  // For large cards, prioritize vertical poster; for default cards, prioritize English title-treated horizontal poster
-  const effectiveBackdropPath = isLarge
-    ? item.poster_path || horizontalPosterPath || item.backdrop_path
-    : horizontalPosterPath || item.backdrop_path || item.poster_path
-  const backdropUrl = getImageUrl(effectiveBackdropPath, "w780")
+  // Vertical poster URL (for mobile cards & desktop large cards)
+  const posterPath = item.poster_path || horizontalPosterPath || item.backdrop_path
+  const posterUrl = getImageUrl(posterPath, "w780")
+
+  // Horizontal backdrop URL (for desktop default 16:9 cards)
+  const backdropPath = horizontalPosterPath || item.backdrop_path || item.poster_path
+  const backdropUrl = getImageUrl(backdropPath, "w780")
 
   const cardRef = useRef<HTMLDivElement>(null)
   const cardRank = ranking ?? item.ranking
@@ -162,26 +164,39 @@ export function MovieCard({
         onMouseEnter={handleMouseEnter}
         onMouseLeave={handleMouseLeave}
       >
-        {/* ── Card Container (Penpot card/movie/large or card/movie/default) ── */}
+        {/* ── Card Container (Vertical 2:3 on mobile, 16:9 or Large on desktop) ── */}
         <Link
           href={disabled ? "#" : href}
           aria-label={title}
           className={`block relative ${
             isLarge
-              ? "aspect-[240/136] md:aspect-[240/361]"
-              : "aspect-[240/136]"
+              ? "aspect-[240/361]"
+              : "aspect-[240/361] md:aspect-[240/136]"
           } w-full overflow-hidden rounded-[8px] bg-penpot-surface shadow-md transition-transform duration-200 group-hover:scale-[1.03] group-hover:border-penpot-primary-300/50 ${
             disabled ? "pointer-events-none" : ""
           }`}
         >
+          {/* Mobile Image: Vertical poster */}
           <Image
-            src={backdropUrl}
+            src={posterUrl}
             alt={title}
             fill
-            sizes={isLarge ? "(max-width: 640px) 240px, (max-width: 1024px) 320px, 400px" : "(max-width: 640px) 320px, (max-width: 1024px) 400px, 500px"}
-            unoptimized={backdropUrl.startsWith("/api/")}
-            className="object-cover transition-transform duration-300"
+            sizes="(max-width: 768px) 180px, 320px"
+            unoptimized={posterUrl.startsWith("/api/")}
+            className={`${isLarge ? "block" : "block md:hidden"} object-cover transition-transform duration-300`}
           />
+
+          {/* Desktop Image: Horizontal backdrop (only for default non-large cards) */}
+          {!isLarge && (
+            <Image
+              src={backdropUrl}
+              alt={title}
+              fill
+              sizes="(max-width: 1024px) 400px, 500px"
+              unoptimized={backdropUrl.startsWith("/api/")}
+              className="hidden md:block object-cover transition-transform duration-300"
+            />
+          )}
 
           {/* Top-10 Ranking Badge (Penpot card/movie/top) */}
           {cardRank ? (
@@ -217,7 +232,7 @@ export function MovieCard({
           <MediaCardFlyout
             item={{
               ...item,
-              backdrop_path: effectiveBackdropPath,
+              backdrop_path: isLarge ? posterPath : backdropPath,
               ranking: cardRank,
             }}
             rect={standaloneRect}
