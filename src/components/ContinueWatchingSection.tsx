@@ -18,6 +18,7 @@ type ApiContinueWatchingItem = {
   episodeNumber?: string
   overview?: string
   imageUrl: string
+  primaryUrl?: string
   logoUrl?: string
   mediaType: "movie" | "tv"
   progressPercent: number
@@ -33,9 +34,6 @@ export function ContinueWatchingSection() {
   const [items, setItems] = useState<ContinueWatchingItem[]>([])
   const [loading, setLoading] = useState(true)
   const [markingId, setMarkingId] = useState<string | null>(null)
-  const [viewportWidth, setViewportWidth] = useState(() =>
-    typeof window !== "undefined" ? window.innerWidth : 1024
-  )
   const scrollRef = useRef<HTMLDivElement>(null)
   const [canScrollLeft, setCanScrollLeft] = useState(false)
   const [canScrollRight, setCanScrollRight] = useState(true)
@@ -102,11 +100,6 @@ export function ContinueWatchingSection() {
   const username = authData?.user?.username
   const headingText = username ? `Continue Watching for ${username}` : "Continue Watching"
 
-  useEffect(() => {
-    const onResize = () => setViewportWidth(window.innerWidth)
-    window.addEventListener("resize", onResize)
-    return () => window.removeEventListener("resize", onResize)
-  }, [])
 
   useEffect(() => {
     async function load() {
@@ -127,6 +120,7 @@ export function ContinueWatchingSection() {
           timeLeft: item.timeLeft,
           jellyfinItemId: item.jellyfinItemId,
           jellyfinImageUrl: item.imageUrl,
+          jellyfinPrimaryUrl: item.primaryUrl,
           jellyfinLogoUrl: item.logoUrl,
           isNextUp: item.isNextUp,
         }))
@@ -261,12 +255,12 @@ export function ContinueWatchingSection() {
             {headingText}
           </h2>
         </div>
-        <div className="relative w-[calc(100%+(100vw-100%)/2)] overflow-hidden">
-          <div className="grid grid-flow-col auto-cols-[270px] sm:auto-cols-[290px] md:auto-cols-[320px] lg:auto-cols-[350px] gap-5 overflow-x-hidden py-3 px-1">
+        <div className="relative w-full overflow-hidden">
+          <div className="grid grid-flow-col auto-cols-[130px] sm:auto-cols-[165px] md:auto-cols-[340px] lg:auto-cols-[375px] 3xl:auto-cols-[410px] gap-3.5 sm:gap-4 md:gap-5 overflow-x-hidden py-3 px-1">
             {Array.from({ length: 6 }).map((_, i) => (
               <div
                 key={i}
-                className="aspect-[240/136] w-full rounded-[8px] bg-penpot-surface/60 border border-penpot-border/40 animate-pulse"
+                className="aspect-[240/361] md:aspect-[240/136] w-full rounded-[8px] bg-penpot-surface/60 border border-penpot-border/40 animate-pulse"
               />
             ))}
           </div>
@@ -278,8 +272,6 @@ export function ContinueWatchingSection() {
   if (items.length === 0) {
     return null
   }
-
-  const carousel = viewportWidth >= 640
 
   return (
     <section className="relative my-8 space-y-3 group/row">
@@ -295,77 +287,62 @@ export function ContinueWatchingSection() {
         </div>
       </div>
 
-      {carousel ? (
-        <div className="relative w-[calc(100%+(100vw-100%)/2)] overflow-visible">
-          {/* Left Navigation Button */}
-          <div
-            className={`absolute left-0 top-0 bottom-0 z-30 pointer-events-none flex items-center justify-start pl-1 sm:pl-2 transition-opacity duration-300 ${
-              canScrollLeft ? "opacity-100" : "opacity-0"
-            }`}
+      {/* ── Always render horizontal scrolling/swiping carousel ── */}
+      <div className="relative w-full overflow-visible">
+        {/* Left Navigation Button */}
+        <div
+          className={`absolute -left-2 sm:-left-4 top-0 bottom-0 z-30 pointer-events-none flex items-center justify-start transition-opacity duration-300 ${
+            canScrollLeft ? "opacity-100" : "opacity-0"
+          }`}
+        >
+          <button
+            onClick={() => scroll("left")}
+            className="pointer-events-auto rounded-[4px] bg-penpot-surface/90 hover:bg-penpot-primary-300 border border-penpot-border hover:border-penpot-primary-300 p-2.5 sm:p-3 text-white shadow-2xl transition-all duration-200 hover:scale-110 active:scale-95 group-hover/row:opacity-100 hidden sm:block focus:outline-none cursor-pointer"
+            aria-label="Scroll left"
           >
-            <button
-              onClick={() => scroll("left")}
-              className="pointer-events-auto rounded-[4px] bg-penpot-surface/90 hover:bg-penpot-primary-300 border border-penpot-border hover:border-penpot-primary-300 p-2.5 sm:p-3 text-white shadow-2xl transition-all duration-200 hover:scale-110 active:scale-95 group-hover/row:opacity-100 hidden sm:block focus:outline-none cursor-pointer"
-              aria-label="Scroll left"
-            >
-              <ChevronLeft className="size-5 sm:size-6 stroke-[2.5]" />
-            </button>
-          </div>
-
-          {/* Right Navigation Button */}
-          <div
-            className={`absolute right-0 top-0 bottom-0 z-30 pointer-events-none flex items-center justify-end pr-2 sm:pr-4 transition-opacity duration-300 ${
-              canScrollRight ? "opacity-100" : "opacity-0"
-            }`}
-          >
-            <button
-              onClick={() => scroll("right")}
-              className="pointer-events-auto rounded-[4px] bg-penpot-surface/90 hover:bg-penpot-primary-300 border border-penpot-border hover:border-penpot-primary-300 p-2.5 sm:p-3 text-white shadow-2xl transition-all duration-200 hover:scale-110 active:scale-95 group-hover/row:opacity-100 hidden sm:block focus:outline-none cursor-pointer"
-              aria-label="Scroll right"
-            >
-              <ChevronRight className="size-5 sm:size-6 stroke-[2.5]" />
-            </button>
-          </div>
-
-          {/* Scrollable Track (20px gap) */}
-          <div
-            ref={scrollRef}
-            className="grid grid-flow-col auto-cols-[280px] sm:auto-cols-[310px] md:auto-cols-[340px] lg:auto-cols-[375px] gap-5 overflow-x-auto no-scrollbar py-3 px-1 scroll-smooth pr-12 sm:pr-16 md:pr-24"
-          >
-            {items.map((item) => {
-              const itemKey = item.jellyfinItemId ?? String(item.id)
-              const isOutOfView = visibleItemKeys.size > 0 && !visibleItemKeys.has(itemKey)
-              return (
-                <div key={itemKey} data-watching-key={itemKey} className="h-full">
-                  <ContinueWatchingCard
-                    item={item}
-                    onHoverEnter={(el) => handleHoverEnter(item, el)}
-                    onHoverLeave={handleHoverLeave}
-                    onMarkWatched={() => markWatched(item)}
-                    marking={markingId === item.jellyfinItemId}
-                    dimmed={open && flyout?.item === item}
-                    disabled={isOutOfView}
-                  />
-                </div>
-              )
-            })}
-          </div>
+            <ChevronLeft className="size-5 sm:size-6 stroke-[2.5]" />
+          </button>
         </div>
-      ) : (
-        <div className="grid grid-cols-1 gap-4">
-          {items.map((item) => (
-            <ContinueWatchingCard
-              key={item.jellyfinItemId ?? item.id}
-              item={item}
-              onHoverEnter={(el) => handleHoverEnter(item, el)}
-              onHoverLeave={handleHoverLeave}
-              onMarkWatched={() => markWatched(item)}
-              marking={markingId === item.jellyfinItemId}
-              dimmed={open && flyout?.item === item}
-            />
-          ))}
+
+        {/* Right Navigation Button */}
+        <div
+          className={`absolute -right-2 sm:-right-4 top-0 bottom-0 z-30 pointer-events-none flex items-center justify-end transition-opacity duration-300 ${
+            canScrollRight ? "opacity-100" : "opacity-0"
+          }`}
+        >
+          <button
+            onClick={() => scroll("right")}
+            className="pointer-events-auto rounded-[4px] bg-penpot-surface/90 hover:bg-penpot-primary-300 border border-penpot-border hover:border-penpot-primary-300 p-2.5 sm:p-3 text-white shadow-2xl transition-all duration-200 hover:scale-110 active:scale-95 group-hover/row:opacity-100 hidden sm:block focus:outline-none cursor-pointer"
+            aria-label="Scroll right"
+          >
+            <ChevronRight className="size-5 sm:size-6 stroke-[2.5]" />
+          </button>
         </div>
-      )}
+
+        {/* Scrollable Track */}
+        <div
+          ref={scrollRef}
+          className="grid grid-flow-col auto-cols-[130px] sm:auto-cols-[165px] md:auto-cols-[340px] lg:auto-cols-[375px] 3xl:auto-cols-[410px] gap-3.5 sm:gap-4 md:gap-5 overflow-x-auto no-scrollbar py-3 px-1 scroll-smooth"
+        >
+          {items.map((item) => {
+            const itemKey = item.jellyfinItemId ?? String(item.id)
+            const isOutOfView = visibleItemKeys.size > 0 && !visibleItemKeys.has(itemKey)
+            return (
+              <div key={itemKey} data-watching-key={itemKey} className="h-full">
+                <ContinueWatchingCard
+                  item={item}
+                  onHoverEnter={(el) => handleHoverEnter(item, el)}
+                  onHoverLeave={handleHoverLeave}
+                  onMarkWatched={() => markWatched(item)}
+                  marking={markingId === item.jellyfinItemId}
+                  dimmed={open && flyout?.item === item}
+                  disabled={isOutOfView}
+                />
+              </div>
+            )
+          })}
+        </div>
+      </div>
 
       {/* ── Portaled Hover Flyout Modal ── */}
       {flyout && typeof document !== "undefined" &&

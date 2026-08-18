@@ -47,6 +47,7 @@ function mapItem(item: JellyfinResumeItem, isNextUp: boolean) {
 
   const episodeTitle = item.Type === "Episode" ? item.Name : undefined
   const imageUrl = buildJellyfinImageUrl(item, "Backdrop")
+  const primaryUrl = buildJellyfinImageUrl(item, "Primary")
   const logoUrl = buildJellyfinImageUrl(item, "Logo")
 
   return {
@@ -56,6 +57,7 @@ function mapItem(item: JellyfinResumeItem, isNextUp: boolean) {
     episodeNumber,
     overview: item.Overview,
     imageUrl,
+    primaryUrl,
     logoUrl,
     mediaType: item.Type === "Episode" ? "tv" : "movie",
     progressPercent,
