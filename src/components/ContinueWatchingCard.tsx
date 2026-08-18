@@ -153,7 +153,7 @@ export function ContinueWatchingCard({
       data-testid="movie-card"
       className={`group relative block w-full shrink-0 transition-all duration-300 ease-out ${
         disabled
-          ? "cursor-default opacity-40 pointer-events-none"
+          ? "cursor-pointer md:cursor-default opacity-100 md:opacity-40 pointer-events-auto md:pointer-events-none"
           : "cursor-pointer opacity-100"
       } ${dimmed ? "opacity-0" : ""}`}
       onMouseEnter={() => {
@@ -168,7 +168,7 @@ export function ContinueWatchingCard({
         <Link
           href={playHref}
           aria-label={`Play ${item.title}`}
-          className="absolute inset-0 z-0 cursor-pointer block touch-manipulation"
+          className={`absolute inset-0 z-0 cursor-pointer block touch-manipulation ${disabled ? "md:pointer-events-none" : ""}`}
         >
           {/* Mobile Image: Vertical poster */}
           <Image

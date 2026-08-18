@@ -159,21 +159,23 @@ export function MovieCard({
         ref={cardRef}
         data-testid="movie-card"
         className={`group relative block w-full shrink-0 transition-all duration-300 ${
-          disabled ? "cursor-default opacity-40 pointer-events-none" : "cursor-pointer opacity-100"
+          disabled
+            ? "cursor-pointer md:cursor-default opacity-100 md:opacity-40 pointer-events-auto md:pointer-events-none"
+            : "cursor-pointer opacity-100"
         } ${dimmed ? "opacity-0" : ""}`}
         onMouseEnter={handleMouseEnter}
         onMouseLeave={handleMouseLeave}
       >
         {/* ── Card Container (Vertical 2:3 on mobile, 16:9 or Large on desktop) ── */}
         <Link
-          href={disabled ? "#" : href}
+          href={href}
           aria-label={title}
           className={`block relative ${
             isLarge
               ? "aspect-[240/361]"
               : "aspect-[240/361] md:aspect-[240/136]"
           } w-full overflow-hidden rounded-[8px] bg-penpot-surface shadow-md transition-transform duration-200 group-hover:scale-[1.03] group-hover:border-penpot-primary-300/50 ${
-            disabled ? "pointer-events-none" : ""
+            disabled ? "md:pointer-events-none" : ""
           }`}
         >
           {/* Mobile Image: Vertical poster */}

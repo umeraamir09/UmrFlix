@@ -155,6 +155,12 @@ export function MovieRow({
   }, [])
 
   const updateVisibleCards = useCallback(() => {
+    // On mobile (< 768px), horizontal touch swiping is fluid without chevron bounds
+    if (typeof window !== "undefined" && window.innerWidth < 768) {
+      setVisibleItemIds(new Set())
+      return
+    }
+
     const container = scrollRef.current
     if (!container) return
     const containerRect = container.getBoundingClientRect()
