@@ -5,6 +5,7 @@ import Image from "next/image"
 import Link from "next/link"
 import { ChevronLeft, ChevronRight, Play, Plus, Info, Loader2, Clock } from "lucide-react"
 import { Button, buttonVariants } from "@/components/ui/button"
+import { MoleculeBullets } from "@/components/ui/bullets"
 import { RequestModal } from "@/components/RequestModal"
 import { useAvailability } from "@/lib/use-availability"
 import { useToast } from "@/components/Toast"
@@ -238,20 +239,13 @@ export function HeroBillboard({ items }: { items: BillboardItem[] }) {
             <ChevronRight className="size-6" />
           </button>
 
-          {/* Bottom Slide Indicators / Bullets */}
-          <div className="absolute bottom-28 sm:bottom-36 md:bottom-40 left-1/2 -translate-x-1/2 z-30 flex items-center gap-2">
-            {items.map((_, idx) => (
-              <button
-                key={idx}
-                onClick={() => handleIndicatorClick(idx)}
-                className={`h-1.5 rounded-full transition-all ${
-                  idx === currentIndex
-                    ? "w-8 bg-penpot-primary-400"
-                    : "w-2 bg-penpot-neutral-400/50 hover:bg-penpot-neutral-200"
-                }`}
-                aria-label={`Go to slide ${idx + 1}`}
-              />
-            ))}
+          {/* Bottom Slide Indicators / Bullets (molecule/bullets) */}
+          <div className="absolute bottom-28 sm:bottom-36 md:bottom-40 left-1/2 -translate-x-1/2 z-30">
+            <MoleculeBullets
+              total={items.length}
+              activeIndex={currentIndex}
+              onSelect={handleIndicatorClick}
+            />
           </div>
         </>
       )}

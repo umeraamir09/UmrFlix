@@ -22,36 +22,36 @@ export function SpotlightBanner({ item }: { item: SpotlightItem }) {
     : "https://image.tmdb.org/t/p/w1280/muth4OYamv31pG2LX2jU2u2vY1n.jpg"
 
   return (
-    <div className="relative w-full aspect-[21/9] min-h-[360px] max-h-[500px] overflow-hidden rounded-none border border-border/80 shadow-2xl bg-card">
+    <div className="relative w-full aspect-[21/9] min-h-[340px] max-h-[480px] overflow-hidden rounded-[8px] border border-penpot-border shadow-2xl bg-penpot-surface">
       <Image
         src={backdropUrl}
         alt={item.title}
         fill
         priority
-        className="object-cover object-top opacity-60"
+        className="object-cover object-top opacity-70"
         unoptimized
       />
-      <div className="absolute inset-0 bg-gradient-to-t from-background via-background/60 to-transparent" />
-      <div className="absolute inset-0 bg-gradient-to-r from-background via-background/40 to-transparent" />
+      <div className="absolute inset-0 bg-gradient-to-t from-penpot-bg via-penpot-bg/70 to-transparent" />
+      <div className="absolute inset-0 bg-gradient-to-r from-penpot-bg via-penpot-bg/50 to-transparent" />
 
       <div className="absolute inset-0 p-6 sm:p-10 flex flex-col justify-end max-w-2xl z-10">
         <div className="space-y-3">
-          <span className="inline-block rounded-none bg-accent/90 px-2.5 py-0.5 text-[10px] font-black uppercase tracking-widest text-white backdrop-blur">
+          <span className="inline-block rounded-[4px] bg-penpot-primary-300 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-white backdrop-blur">
             SPOTLIGHT
           </span>
 
-          <h2 className="text-2xl sm:text-4xl font-black uppercase tracking-tight text-white drop-shadow-md">
+          <h2 className="text-2xl sm:text-4xl font-bold tracking-tight text-white drop-shadow-md">
             {item.title}
           </h2>
 
-          <p className="text-xs sm:text-sm text-gray-300 line-clamp-3 leading-relaxed">
+          <p className="text-xs sm:text-sm text-penpot-text-medium line-clamp-3 leading-relaxed font-normal">
             {item.overview}
           </p>
 
           <div className="flex flex-wrap items-center gap-3 pt-2">
             <Link
               href={`/watch?tmdb=${item.id}&type=${item.media_type}`}
-              className="flex items-center gap-2 rounded-none bg-accent px-5 py-2.5 text-xs font-bold uppercase tracking-wider text-white shadow-lg hover:bg-accent-hover transition-all hover:scale-105 active:scale-95"
+              className="flex items-center gap-2 rounded-[4px] bg-penpot-primary-300 hover:bg-penpot-primary-400 px-5 py-2.5 text-xs font-bold uppercase tracking-wider text-white shadow-lg transition-all hover:scale-105 active:scale-95 cursor-pointer"
             >
               <IconPlay className="size-4 fill-white" />
               START WATCHING
@@ -59,20 +59,20 @@ export function SpotlightBanner({ item }: { item: SpotlightItem }) {
 
             <button
               onClick={() => setBookmarked(!bookmarked)}
-              className={`flex items-center gap-2 rounded-none border px-4 py-2.5 text-xs font-bold uppercase tracking-wider transition-all hover:scale-105 active:scale-95 ${
+              className={`flex items-center gap-2 rounded-[4px] border px-4 py-2.5 text-xs font-bold uppercase tracking-wider transition-all hover:scale-105 active:scale-95 cursor-pointer ${
                 bookmarked
-                  ? "border-accent bg-accent/20 text-accent"
-                  : "border-gray-500 bg-transparent text-white hover:border-white hover:bg-white/10"
+                  ? "border-penpot-primary-300 bg-penpot-primary-500/30 text-white"
+                  : "border-penpot-border bg-penpot-surface hover:bg-penpot-neutral-500 text-white"
               }`}
             >
               {bookmarked ? (
                 <>
-                  <Check className="size-3.5 text-accent" />
+                  <Check className="size-3.5 text-penpot-primary-100" />
                   IN WATCHLIST
                 </>
               ) : (
                 <>
-                  <IconDownloadNav className="size-3.5" />
+                  <IconDownloadNav className="size-3.5 text-white" />
                   ADD TO WATCHLIST
                 </>
               )}

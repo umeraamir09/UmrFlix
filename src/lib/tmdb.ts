@@ -162,14 +162,14 @@ export function searchTv(query: string, page = 1) {
 export function movieDetail(id: number) {
   return tmdbFetch<TmdbMovieDetail>(`/movie/${id}`, {
     append_to_response: "credits,videos,images,recommendations,similar,external_ids",
-    include_image_language: "en,null",
+    include_image_language: "en",
   })
 }
 
 export function tvDetail(id: number) {
   return tmdbFetch<TmdbTvDetail>(`/tv/${id}`, {
     append_to_response: "credits,videos,images,recommendations,similar,external_ids,content_ratings",
-    include_image_language: "en,null",
+    include_image_language: "en",
   })
 }
 
@@ -189,7 +189,7 @@ export async function getItemLogo(type: "movie" | "tv", id: number): Promise<str
   try {
     const res = await tmdbFetch<{ logos?: { file_path: string; iso_639_1: string }[] }>(
       `/${type}/${id}/images`,
-      { include_image_language: "en,null" }
+      { include_image_language: "en" }
     )
     if (res.logos && res.logos.length > 0) {
       const enLogo = res.logos.find((l) => l.iso_639_1 === "en") || res.logos[0]
@@ -200,4 +200,32 @@ export async function getItemLogo(type: "movie" | "tv", id: number): Promise<str
   }
   return null
 }
+
+export async function getHorizontalPoster(type: "movie" | "tv", id: number): Promise<string | null> {
+  try {
+    const res = await tmdbFetch<{
+      backdrops?: {
+        file_path: string
+        iso_639_1: string | null
+        vote_average: number
+        vote_count: number
+      }[]
+    }>(`/${type}/${id}/images`, { include_image_language: "en" })
+
+    const enBackdrops = (res.backdrops || []).filter((b) => b.iso_639_1 === "en")
+    if (enBackdrops.length > 0) {
+      enBackdrops.sort((a, b) => {
+        if (b.vote_count !== a.vote_count) {
+          return b.vote_count - a.vote_count
+        }
+        return (b.vote_average || 0) - (a.vote_average || 0)
+      })
+      return enBackdrops[0]?.file_path ?? null
+    }
+  } catch (err) {
+    console.error(`Failed to fetch horizontal poster for ${type} ${id}:`, err)
+  }
+  return null
+}
+
 

@@ -30,7 +30,7 @@ export function TvDetail({ params }: { params: Promise<{ id: string }> }) {
 
   const { data, error, isLoading } = useSWR<TmdbTvDetail>(
     id
-      ? `/api/tmdb/tv/${id}?append_to_response=credits,videos,images,recommendations,similar,external_ids,content_ratings&include_image_language=en,null`
+      ? `/api/tmdb/tv/${id}?append_to_response=credits,videos,images,recommendations,similar,external_ids,content_ratings&include_image_language=en`
       : null,
     fetcher
   )

@@ -26,16 +26,16 @@ export function getContinueWatchingMedia(item: ContinueWatchingItem) {
   const playHref = item.jellyfinItemId
     ? `/watch?id=${item.jellyfinItemId}`
     : item.id
-      ? `/${item.media_type}/${item.id}`
-      : "#"
+    ? `/${item.media_type}/${item.id}`
+    : "#"
 
   const detailHref = item.id ? `/${item.media_type}/${item.id}` : playHref
 
   const backdropUrl = item.jellyfinImageUrl
     ? item.jellyfinImageUrl
     : item.backdrop_path
-      ? `https://image.tmdb.org/t/p/w500${item.backdrop_path}`
-      : "https://image.tmdb.org/t/p/w500/muth4OYamv31pG2LX2jU2u2vY1n.jpg"
+    ? `https://image.tmdb.org/t/p/w780${item.backdrop_path}`
+    : "/placeholder-poster.svg"
 
   const logoUrl = item.jellyfinLogoUrl || null
 
@@ -53,6 +53,7 @@ export function ContinueWatchingCard({
   onMarkWatched,
   marking,
   dimmed,
+  disabled = false,
 }: {
   item: ContinueWatchingItem
   onHoverEnter?: (el: HTMLElement) => void
@@ -62,9 +63,10 @@ export function ContinueWatchingCard({
   marking?: boolean
   /** Fades the base card out while the (portaled) flyout takes over its exact position. */
   dimmed?: boolean
+  disabled?: boolean
 }) {
   const cardRef = useRef<HTMLDivElement>(null)
-  const { playHref, backdropUrl } = getContinueWatchingMedia(item)
+  const { playHref, backdropUrl, displayEpisodeInfo } = getContinueWatchingMedia(item)
 
   // Hover flyout only makes sense on devices with a real pointer
   const hoverCapable = () =>
@@ -74,85 +76,101 @@ export function ContinueWatchingCard({
   return (
     <div
       ref={cardRef}
-      className={`group relative block w-full shrink-0 transition-opacity duration-10 ease-out ${
-        dimmed ? "opacity-0" : "opacity-100"
-      }`}
+      data-testid="movie-card"
+      className={`group relative block w-full shrink-0 transition-all duration-300 ease-out ${
+        disabled
+          ? "cursor-default opacity-40 pointer-events-none"
+          : "cursor-pointer opacity-100"
+      } ${dimmed ? "opacity-0" : ""}`}
       onMouseEnter={() => {
-        if (hoverCapable() && cardRef.current) onHoverEnter?.(cardRef.current)
+        if (!disabled && hoverCapable() && cardRef.current) onHoverEnter?.(cardRef.current)
       }}
       onMouseLeave={() => {
-        if (hoverCapable()) onHoverLeave?.()
+        if (!disabled && hoverCapable()) onHoverLeave?.()
       }}
     >
-      {/* ── Base Compact Card (Normal View) ── */}
-      {/* 16:9 Thumbnail — play link + always-visible mark-as-watched overlay.
-          The button is always shown (no hover) so touch/keyboard users can use it
-          without the pointer-only hover flyout. */}
-      <div className="relative aspect-video w-full overflow-hidden rounded-[4px] bg-grey-850 border border-grey-750 shadow-md transition-all duration-10">
+      {/* ── Base Penpot Continue Watching Card (card/movie/watching) ── */}
+      <div className="relative aspect-[240/136] w-full overflow-hidden rounded-[8px] bg-penpot-surface border border-penpot-border shadow-md transition-transform duration-200 group-hover:scale-[1.03] group-hover:border-penpot-primary-300/50">
         <Link
           href={playHref}
           aria-label={`Play ${item.title}`}
-          className="absolute inset-0 z-0 cursor-pointer"
+          className="absolute inset-0 z-0 cursor-pointer block"
         >
           <Image
             src={backdropUrl}
             alt={item.title}
             fill
-            sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 25vw"
-            className="object-cover transition-transform duration-10"
-            unoptimized
+            sizes="(max-width: 640px) 320px, (max-width: 1024px) 400px, 500px"
+            className="object-cover transition-transform duration-300"
+            unoptimized={backdropUrl.startsWith("/api/")}
           />
+
+          {/* Bottom Gradient Overlay (overlay) */}
+          <div className="absolute inset-0 bg-gradient-to-t from-black/95 via-black/40 to-transparent pointer-events-none" />
+
+          {/* Top Badges */}
+          <div className="absolute top-2.5 inset-x-2.5 z-10 flex items-center justify-between pointer-events-none">
+            {/* NEXT UP Badge */}
+            {item.isNextUp && (
+              <div className="rounded-[4px] bg-penpot-primary-300 px-2 py-0.5 text-[10px] font-bold text-white shadow uppercase tracking-wider">
+                Next Up
+              </div>
+            )}
+
+            {/* Time Remaining Badge */}
+            {item.timeLeft && !item.isNextUp && (
+              <div className="ml-auto rounded-[4px] bg-black/70 px-2 py-0.5 text-[10px] font-medium text-white backdrop-blur-sm">
+                {item.timeLeft}
+              </div>
+            )}
+          </div>
+
+          {/* Title and Episode Details (Details) */}
+          <div className="absolute bottom-4.5 left-3 right-11 z-10 space-y-0.5 pointer-events-none">
+            <h4 className="text-sm font-bold text-white leading-tight truncate">
+              {item.title}
+            </h4>
+            {displayEpisodeInfo && (
+              <p className="text-xs font-medium text-penpot-text-medium truncate">
+                {displayEpisodeInfo}
+              </p>
+            )}
+          </div>
+
+          {/* Progress Bar (Penpot progress: height 5px, track bg-white/50, fill #02E7F5 cyan, inset-x-3 bottom-2) */}
+          {!item.isNextUp && (
+            <div className="absolute bottom-2 inset-x-3 z-10 h-[5px] rounded-full bg-white/50 overflow-hidden pointer-events-none">
+              <div
+                className="h-full bg-penpot-primary-100 rounded-full transition-all duration-300"
+                style={{ width: `${Math.min(100, Math.max(0, item.progressPercent))}%` }}
+              />
+            </div>
+          )}
         </Link>
 
-        {/* NEXT UP Badge (Top-Left) */}
-        {item.isNextUp && (
-          <div className="absolute top-2 left-2 z-10 rounded-[3px] bg-accent px-2 py-0.5 text-[10px] font-bold text-white shadow uppercase tracking-wide">
-            Next Up
-          </div>
-        )}
-
-        {/* Time Remaining Badge (Top-Right) */}
-        {item.timeLeft && !item.isNextUp && (
-          <div className="absolute top-2 right-2 z-10 rounded-[3px] bg-black/80 px-2 py-0.5 text-[10px] font-medium text-white backdrop-blur-sm">
-            {item.timeLeft}
-          </div>
-        )}
-
-        {/* Mark Watched (Bottom-Right) */}
+        {/* Mark Watched Button */}
         {item.jellyfinItemId && (
           <button
-            onClick={onMarkWatched}
+            onClick={(e) => {
+              e.preventDefault()
+              e.stopPropagation()
+              onMarkWatched?.()
+            }}
             disabled={marking}
             title="Mark as watched"
             aria-label={`Mark ${item.title} as watched`}
-            className="absolute bottom-1 right-1 z-10 flex min-h-[44px] min-w-[44px] items-center justify-center rounded-full text-white transition-all hover:scale-110 active:scale-95 disabled:opacity-50 cursor-pointer"
+            className="absolute bottom-3.5 right-2.5 z-20 flex size-7 items-center justify-center rounded-full text-white transition-all hover:scale-110 active:scale-95 disabled:opacity-50 cursor-pointer"
           >
-            <div className="flex size-7 items-center justify-center rounded-full border border-white/25 bg-black/60 backdrop-blur-sm">
+            <div className="flex size-7 items-center justify-center rounded-full border border-white/30 bg-black/60 backdrop-blur-sm hover:bg-black/80">
               {marking ? (
-                <Loader2 className="size-3.5 animate-spin" />
+                <Loader2 className="size-3.5 animate-spin text-white" />
               ) : (
-                <Check className="size-3.5 stroke-[2.5]" />
+                <Check className="size-3.5 stroke-[2.5] text-white" />
               )}
             </div>
           </button>
         )}
       </div>
-
-      {/* Standalone Progress Bar Below Thumbnail — still a play target */}
-      {!item.isNextUp && (
-        <Link
-          href={playHref}
-          aria-label={`Play ${item.title}`}
-          className="mt-2 block w-[85%] mx-auto cursor-pointer"
-        >
-          <div className="h-[3px] bg-grey-400 rounded-full overflow-hidden flex">
-            <div
-              className="h-full bg-accent rounded-full transition-all duration-300"
-              style={{ width: `${Math.min(100, Math.max(0, item.progressPercent))}%` }}
-            />
-          </div>
-        </Link>
-      )}
     </div>
   )
 }

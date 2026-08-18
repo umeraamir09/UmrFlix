@@ -38,6 +38,19 @@ export async function GET(
       search.set(key, value)
     }
 
+    if (search.has("include_image_language")) {
+      const langs = search
+        .get("include_image_language")
+        ?.split(",")
+        .map((s) => s.trim())
+        .filter((s) => s && s.toLowerCase() !== "null")
+      if (langs && langs.length > 0) {
+        search.set("include_image_language", langs.join(","))
+      } else {
+        search.set("include_image_language", "en")
+      }
+    }
+
     const res = await tmdbProxyFetch(`${path}?${search.toString()}`)
 
     const bodyText = await res.text()

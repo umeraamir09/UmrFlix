@@ -38,7 +38,7 @@ export function MovieDetail({ params }: { params: Promise<{ id: string }> }) {
 
   const { data, error, isLoading } = useSWR<TmdbMovieDetail>(
     id
-      ? `/api/tmdb/movie/${id}?append_to_response=credits,videos,images,recommendations,similar,external_ids&include_image_language=en,null`
+      ? `/api/tmdb/movie/${id}?append_to_response=credits,videos,images,recommendations,similar,external_ids&include_image_language=en`
       : null,
     fetcher
   )

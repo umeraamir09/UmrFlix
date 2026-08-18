@@ -199,6 +199,7 @@ export default async function HomePage() {
           subtitle="What everyone is watching this week"
           type="tv"
           endpoint="/api/tmdb/trending/all/week"
+          cardVariant="large"
         />
 
         {/* 5. Mid-Page Featured Spotlight Banner 1 */}
@@ -231,12 +232,12 @@ export default async function HomePage() {
         {/* 9. Recently Added to Your Library */}
         {recentlyAddedItems.length > 0 && (
           <section className="space-y-3">
-            <h2 className="text-xl sm:text-2xl font-black tracking-tight text-white flex items-center gap-2">
+            <h2 className="text-xl sm:text-2xl font-bold tracking-tight text-white flex items-center gap-2">
               Recently Added to your Library
             </h2>
-            <p className="text-xs text-gray-400 font-medium">Newly downloaded shows and movies in Jellyfin</p>
-            <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-3 pt-2">
-              {recentlyAddedItems.slice(0, 8).map((item: JellyfinApiItem) => {
+            <p className="text-xs text-penpot-text-medium font-medium">Newly downloaded shows and movies in Jellyfin</p>
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4 pt-2">
+              {recentlyAddedItems.slice(0, 6).map((item: JellyfinApiItem) => {
                 const tmdbId = item.ProviderIds?.Tmdb ? parseInt(item.ProviderIds.Tmdb) : null
                 const mediaType = item.Type === "Series" ? "tv" : "movie"
 
@@ -246,16 +247,16 @@ export default async function HomePage() {
                     href={tmdbId ? `/${mediaType}/${tmdbId}` : "#"}
                     className="block group"
                   >
-                    <div className="relative aspect-[2/3] w-full bg-card rounded-none flex items-center justify-center overflow-hidden border border-border group-hover:border-accent transition-colors">
+                    <div className="relative aspect-[240/136] w-full bg-penpot-surface rounded-[8px] flex items-center justify-center overflow-hidden border border-penpot-border shadow-md group-hover:border-penpot-primary-300/50 group-hover:scale-[1.02] transition-all duration-200">
                       <Image
-                        src={`/api/jellyfin/image/${item.Id}?type=Primary`}
+                        src={`/api/jellyfin/image/${item.Id}?type=Backdrop`}
                         alt={item.Name}
                         fill
                         unoptimized
                         className="object-cover group-hover:scale-105 transition-transform duration-300"
                       />
                     </div>
-                    <h3 className="text-xs font-bold text-white mt-1 truncate group-hover:text-accent transition-colors">{item.Name}</h3>
+                    <h3 className="text-xs font-bold text-white mt-2 truncate group-hover:text-penpot-primary-100 transition-colors">{item.Name}</h3>
                   </a>
                 )
               })}

@@ -165,25 +165,26 @@
   --color-penpot-opacity-black-10: rgba(0, 0, 0, 0.10);
 
   /* App Semantic Mappings */
-  --color-background: #000;
-  --color-surface: #141519;
-  --color-surface-hover: #151515;
-  --color-surface-hover-alt: #191919;
-  --color-card: #1a1c23;
-  --color-card-hover: #232630;
-  --color-foreground: #ffffff;
-  --color-foreground-muted: #b5b5b5;
-  --color-muted: #6c7284;
-  --color-accent: #e50914;
-  --color-accent-hover: #b80710;
-  --color-accent-light: #ff2a34;
-  --color-border: #282c37;
-  --color-border-subtle: #23252b;
-  --color-separator: #3e424e;
-  --color-nav-bg: #272727;
-  --color-cyan: #54B9C5;
+  --color-background: #1A1D29;
+  --color-surface: #31343E;
+  --color-surface-hover: #3A3D50;
+  --color-surface-hover-alt: #30333E;
+  --color-card: #31343E;
+  --color-card-hover: #3A3D50;
+  --color-foreground: #F9F9F9;
+  --color-foreground-muted: #C8C9CB;
+  --color-muted: #74757D;
+  --color-accent: #037AEB;
+  --color-accent-hover: #0063E5;
+  --color-accent-light: #67BDFF;
+  --color-border: #353843;
+  --color-border-subtle: #3A3D50;
+  --color-separator: #353843;
+  --color-nav-bg: #0E1012;
+  --color-cyan: #02E7F5;
   --color-success: #22c55e;
   --color-warning: #f59e0b;
+  --color-penpot-footer: #090B13;
 }
 
 * {

@@ -2,30 +2,27 @@
 
 import Link from "next/link"
 import Image from "next/image"
-import { useRouter } from "next/navigation"
-import useSWR from "swr"
-import { getImageUrl, formatYear, formatRating } from "@/lib/utils"
+import { getImageUrl } from "@/lib/utils"
 import { AvailabilityBadge } from "@/components/AvailabilityBadge"
-import { BookmarkButton } from "@/components/BookmarkButton"
-import { useState, useRef, useEffect, type ElementType } from "react"
-import { Star, Trash2, Check, CheckCheck, MoreVertical } from "lucide-react"
-import { IconPlay, IconAdd } from "@/components/ui/icons"
+import { useState, useRef, useEffect } from "react"
+import { createPortal } from "react-dom"
+import { MediaCardFlyout } from "@/components/MediaCardFlyout"
 import type { AvailabilityResult } from "@/app/api/availability/route"
-
-const fetcher = (url: string) => fetch(url).then((r) => r.json())
 
 export type MovieCardItem = {
   id: number
   title?: string
   name?: string
   poster_path?: string | null
+  backdrop_path?: string | null
   release_date?: string
   first_air_date?: string
   vote_average?: number
   overview?: string
   media_type?: string
-  // Server-computed availability (e.g. the genre "Available Now" row).
-  // When present the client skips its own availability round-trip.
+  runtime?: number
+  numberOfSeasons?: number
+  // Server-computed availability
   availabilityStatus?: {
     status: string
     progress?: number
@@ -33,21 +30,22 @@ export type MovieCardItem = {
   }
   // Smart badges
   badge?: string | { type: "new" | "airing" | "popular" | "top10" | "liked"; label: string }
-  airingLabel?: string // e.g., "New Episode Friday"
+  airingLabel?: string
+  ranking?: number
 }
 
 function Badge({ label, variant }: { label: string; variant?: "new" | "airing" | "popular" | "top10" | "liked" }) {
   const colors = {
-    new: "bg-green-600 text-white",
-    airing: "bg-blue-600 text-white",
-    popular: "bg-orange-500 text-white",
-    top10: "bg-red-600 text-white",
-    liked: "bg-amber-500 text-white",
+    new: "bg-[#abfab3] text-[#00710b]",
+    airing: "bg-penpot-primary-300 text-white",
+    popular: "bg-amber-500 text-white",
+    top10: "bg-penpot-primary-300 text-white",
+    liked: "bg-penpot-primary-400 text-white",
   }
   const colorClass = colors[variant || "new"]
-  
+
   return (
-    <span className={`${colorClass} text-[10px] font-bold px-1.5 py-0.5 rounded-sm uppercase tracking-wide`}>
+    <span className={`${colorClass} text-[10px] font-bold px-2 py-0.5 rounded-[4px] uppercase tracking-wider shadow-sm`}>
       {label}
     </span>
   )
@@ -57,10 +55,15 @@ export function MovieCard({
   item,
   type,
   availabilityState,
-  onDelete,
   onMarkWatched,
   isWatched = false,
   disabled = false,
+  ranking,
+  horizontalPosterPath,
+  onHoverEnter,
+  onHoverLeave,
+  dimmed = false,
+  cardVariant = "default",
 }: {
   item: MovieCardItem
   type: "movie" | "tv"
@@ -69,247 +72,176 @@ export function MovieCard({
   onMarkWatched?: (item: MovieCardItem, type: "movie" | "tv") => void
   isWatched?: boolean
   disabled?: boolean
+  ranking?: number
+  horizontalPosterPath?: string | null
+  onHoverEnter?: (el: HTMLElement) => void
+  onHoverLeave?: () => void
+  dimmed?: boolean
+  cardVariant?: "default" | "large"
 }) {
   const href = type === "movie" ? `/movie/${item.id}` : `/tv/${item.id}`
-  const router = useRouter()
   const title = item.title ?? item.name ?? "Unknown Title"
-  const dateStr = item.release_date ?? item.first_air_date ?? ""
-  const year = formatYear(dateStr)
-  const posterUrl = getImageUrl(item.poster_path, "w342")
-  const Wrapper = (disabled ? "div" : Link) as ElementType
 
-  const [menuOpen, setMenuOpen] = useState(false)
-  const menuRef = useRef<HTMLDivElement>(null)
+  const isLarge = cardVariant === "large"
+
+  // For large cards, prioritize vertical poster; for default cards, prioritize English title-treated horizontal poster
+  const effectiveBackdropPath = isLarge
+    ? item.poster_path || horizontalPosterPath || item.backdrop_path
+    : horizontalPosterPath || item.backdrop_path || item.poster_path
+  const backdropUrl = getImageUrl(effectiveBackdropPath, "w780")
+
+  const cardRef = useRef<HTMLDivElement>(null)
+  const cardRank = ranking ?? item.ranking
+
+  // Standalone hover flyout state when no parent row manager is attached
+  const [standaloneFlyout, setStandaloneFlyout] = useState(false)
+  const [standaloneRect, setStandaloneRect] = useState<DOMRect | null>(null)
+  const standaloneTimerRef = useRef<number | null>(null)
+
+  const hoverCapable = () =>
+    typeof window !== "undefined" && window.matchMedia("(hover: hover) and (pointer: fine)").matches
+
+  const handleMouseEnter = () => {
+    if (!hoverCapable() || disabled) return
+    if (onHoverEnter && cardRef.current) {
+      onHoverEnter(cardRef.current)
+      return
+    }
+    // Standalone fallback
+    if (cardRef.current) {
+      const rect = cardRef.current.getBoundingClientRect()
+      setStandaloneRect(rect)
+      setStandaloneFlyout(true)
+    }
+  }
+
+  const handleMouseLeave = () => {
+    if (!hoverCapable() || disabled) return
+    if (onHoverLeave) {
+      onHoverLeave()
+      return
+    }
+    if (standaloneTimerRef.current !== null) {
+      window.clearTimeout(standaloneTimerRef.current)
+      standaloneTimerRef.current = null
+    }
+    setStandaloneFlyout(false)
+  }
 
   useEffect(() => {
-    if (!menuOpen) return
-    const handleClickOutside = (event: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
-        setMenuOpen(false)
+    if (!standaloneFlyout) return
+    const onWindowScroll = () => {
+      if (standaloneTimerRef.current !== null) {
+        window.clearTimeout(standaloneTimerRef.current)
+        standaloneTimerRef.current = null
+      }
+      setStandaloneFlyout(false)
+    }
+    window.addEventListener("scroll", onWindowScroll, { passive: true })
+    return () => {
+      window.removeEventListener("scroll", onWindowScroll)
+    }
+  }, [standaloneFlyout])
+
+  useEffect(() => {
+    return () => {
+      if (standaloneTimerRef.current !== null) {
+        window.clearTimeout(standaloneTimerRef.current)
       }
     }
-    document.addEventListener("mousedown", handleClickOutside)
-    return () => document.removeEventListener("mousedown", handleClickOutside)
-  }, [menuOpen])
-
-  const hasMenuItems = !disabled || Boolean(onDelete)
-
-  const [isHovered, setIsHovered] = useState(false)
-
-  // Fetch TMDB external_ids on hover if needed
-  const { data: tmdbData } = useSWR<{ external_ids?: { imdb_id: string | null } }>(
-    isHovered && item.id ? `/api/tmdb/${type}/${item.id}?append_to_response=external_ids` : null,
-    fetcher
-  )
-
-  const imdbId = tmdbData?.external_ids?.imdb_id
-  const { data: omdbData } = useSWR<{ imdbRating?: string; Response?: string }>(
-    isHovered && imdbId ? `/api/omdb?i=${imdbId}` : null,
-    fetcher
-  )
-
-  const hasOmdbRating = omdbData?.Response !== "False" && omdbData?.imdbRating && omdbData.imdbRating !== "N/A"
+  }, [])
 
   return (
-    <Wrapper
-      href={href}
-      className={`group relative block w-full flex-shrink-0${disabled ? " cursor-default" : ""}`}
-      onMouseEnter={() => setIsHovered(true)}
-    >
-      {/* Poster Image Container */}
-      <div className="relative aspect-[2/3] w-full overflow-hidden rounded-[4px] bg-grey-850 shadow-md border border-grey-750">
-        <Image
-          src={posterUrl}
-          alt={title}
-          fill
-          sizes="(max-width: 640px) 175px, (max-width: 1024px) 220px, 275px"
-          unoptimized={posterUrl.startsWith("/api/")}
-          className="object-cover transition-transform duration-300 group-hover:scale-105"
-        />
+    <>
+      <div
+        ref={cardRef}
+        data-testid="movie-card"
+        className={`group relative block w-full shrink-0 transition-all duration-300 ${
+          disabled ? "cursor-default opacity-40 pointer-events-none" : "cursor-pointer opacity-100"
+        } ${dimmed ? "opacity-0" : ""}`}
+        onMouseEnter={handleMouseEnter}
+        onMouseLeave={handleMouseLeave}
+      >
+        {/* ── Card Container (Penpot card/movie/large or card/movie/default) ── */}
+        <Link
+          href={disabled ? "#" : href}
+          aria-label={title}
+          className={`block relative ${
+            isLarge
+              ? "aspect-[240/136] md:aspect-[240/361]"
+              : "aspect-[240/136]"
+          } w-full overflow-hidden rounded-[8px] bg-penpot-surface shadow-md transition-transform duration-200 group-hover:scale-[1.03] group-hover:border-penpot-primary-300/50 ${
+            disabled ? "pointer-events-none" : ""
+          }`}
+        >
+          <Image
+            src={backdropUrl}
+            alt={title}
+            fill
+            sizes={isLarge ? "(max-width: 640px) 240px, (max-width: 1024px) 320px, 400px" : "(max-width: 640px) 320px, (max-width: 1024px) 400px, 500px"}
+            unoptimized={backdropUrl.startsWith("/api/")}
+            className="object-cover transition-transform duration-300"
+          />
 
-
-        {/* Top Badges (Visible when not hovering) */}
-        <div className="absolute inset-x-2 top-2 z-10 flex items-center justify-end gap-1 pointer-events-none group-hover:opacity-0 transition-opacity">
-          {/* Availability Badge */}
-          {availabilityState?.status === "in_library" && (
-            <AvailabilityBadge state={availabilityState} />
-          )}
-          
-          {/* Airing Badge (TVMaze) */}
-          {item.airingLabel && (
-            <Badge label={item.airingLabel} variant="airing" />
-          )}
-          
-          {/* Smart Badges */}
-          {typeof item.badge === "string" ? (
-            <Badge label={item.badge} variant="new" />
-          ) : item.badge ? (
-            <Badge label={item.badge.label} variant={item.badge.type} />
-          ) : null}
-        </div>
-      </div>
-
-      {/* Sub-Card Title & Metadata Line (Visible when NOT hovering) */}
-      <div className="mt-2 space-y-0.5 px-0.5 group-hover:opacity-0 transition-opacity duration-200">
-        <h3 className="text-xs sm:text-sm font-bold text-white line-clamp-1 group-hover:text-accent transition-colors">
-          {title}
-        </h3>
-        <p className="text-[11px] font-medium text-grey-200 flex items-center gap-1.5">
-          <span>Sub | Dub</span>
-          {year && <span>• {year}</span>}
-        </p>
-      </div>
-
-      {/* Netflix-Style Full Hover Overlay (Expands over full card height) */}
-      <div className="absolute inset-0 z-20 bg-grey-850/95 p-3 sm:p-3.5 flex flex-col justify-between opacity-0 group-hover:opacity-100 transition-opacity duration-200 border border-grey-600 rounded-[4px] shadow-2xl pointer-events-none group-hover:pointer-events-auto">
-        <div className="space-y-1.5 overflow-hidden">
-          {/* Title */}
-          <h3 className="text-sm sm:text-lg font-bold text-white leading-tight line-clamp-2">
-            {title}
-          </h3>
-
-          {/* Rating & Metadata */}
-          <div className="flex items-center gap-2 text-[15px] font-bold text-amber-400">
-            {hasOmdbRating ? (
-              <div className="flex items-center gap-1.5 text-white">
-                <Image src="/imdb.webp" alt="IMDb" width={1280} height={1280} sizes="14px" className="h-3.5 w-auto object-contain" />
-                <span>{omdbData.imdbRating}</span>
-              </div>
-            ) : item.vote_average ? (
-              <div className="flex items-center gap-1">
-                <span>{formatRating(item.vote_average)}</span>
-                <Star className="size-4 fill-amber-400 text-amber-400" />
-              </div>
-            ) : null}
-            <span className="text-[15px] text-gray-400 font-medium">
-              {year ? `• ${year}` : ""}
-            </span>
-          </div>
-
-          {/* Synopsis Overview */}
-          <p className="text-[15px] text-gray-300 leading-relaxed line-clamp-5 sm:line-clamp-7 font-normal pt-1">
-            {item.overview || "No overview available for this title."}
-          </p>
-        </div>
-
-        {/* Bottom Action Bar */}
-        <div className="flex items-center justify-between pt-2">
-          <div className="flex items-center gap-1">
-            {!disabled && (
-              <button
-                type="button"
-                className="flex min-h-[44px] min-w-[44px] items-center justify-center p-2 text-accent hover:scale-110 transition-transform cursor-pointer"
-                title="Watch Now"
-                aria-label="Watch Now"
-                onClick={(e) => {
-                  e.preventDefault()
-                  e.stopPropagation()
-                  router.push(`/watch?tmdb=${item.id}&type=${type}`)
-                }}
-              >
-                <IconPlay className="size-5 fill-accent text-accent" />
-              </button>
-            )}
-            {onMarkWatched && (
-              <button
-                type="button"
-                className={`flex min-h-[44px] min-w-[44px] items-center justify-center p-2 hover:scale-110 transition-transform cursor-pointer ${
-                  isWatched ? "text-red-500 hover:text-red-400" : "text-white hover:text-accent"
-                }`}
-                title={
-                  type === "tv"
-                    ? isWatched
-                      ? "Mark all episodes as unwatched"
-                      : "Mark all episodes as watched"
-                    : isWatched
-                      ? "Mark as unwatched"
-                      : "Mark as watched"
-                }
-                aria-label="Toggle watched status"
-                onClick={(e) => {
-                  e.preventDefault()
-                  e.stopPropagation()
-                  onMarkWatched(item, type)
-                }}
-              >
-                {type === "tv" ? <CheckCheck className="size-5" /> : <Check className="size-5" />}
-              </button>
-            )}
-          </div>
-
-          {hasMenuItems && (
-            <div className="relative ml-auto" ref={menuRef}>
-              <button
-                type="button"
-                className="flex min-h-[44px] min-w-[44px] items-center justify-center p-2 text-gray-300 hover:text-white hover:scale-110 transition-transform cursor-pointer"
-                title="More options"
-                aria-label="More options"
-                onClick={(e) => {
-                  e.preventDefault()
-                  e.stopPropagation()
-                  setMenuOpen((prev) => !prev)
-                }}
-              >
-                <MoreVertical className="size-5" />
-              </button>
-
-              {menuOpen && (
-                <div
-                  className="absolute bottom-full right-0 mb-1 z-30 w-48 rounded-md bg-grey-900 border border-grey-700 shadow-xl p-1 flex flex-col gap-0.5"
-                  onClick={(e) => {
-                    e.preventDefault()
-                    e.stopPropagation()
-                  }}
-                >
-                  {!disabled && (
-                    <>
-                      <BookmarkButton
-                        itemId={availabilityState?.jellyfinItemId || String(item.id)}
-                        tmdbId={item.id}
-                        jellyfinId={availabilityState?.jellyfinItemId}
-                        mediaType={type}
-                        title={title}
-                        posterPath={item.poster_path}
-                        overview={item.overview}
-                        releaseYear={year}
-                        variant="menu-item"
-                      />
-                      <button
-                        type="button"
-                        className="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-medium text-gray-200 hover:text-white hover:bg-white/10 rounded transition-colors text-left cursor-pointer"
-                        onClick={(e) => {
-                          e.preventDefault()
-                          e.stopPropagation()
-                          setMenuOpen(false)
-                          router.push(href)
-                        }}
-                      >
-                        <IconAdd className="size-4 text-accent" />
-                        <span>Request / Add to Library</span>
-                      </button>
-                    </>
-                  )}
-                  {onDelete && (
-                    <button
-                      type="button"
-                      className="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-medium text-red-400 hover:text-red-300 hover:bg-red-500/10 rounded transition-colors text-left cursor-pointer"
-                      onClick={(e) => {
-                        e.preventDefault()
-                        e.stopPropagation()
-                        setMenuOpen(false)
-                        onDelete(item, type)
-                      }}
-                    >
-                      <Trash2 className="size-4 text-red-500" />
-                      <span>Delete from Library</span>
-                    </button>
-                  )}
-                </div>
-              )}
+          {/* Top-10 Ranking Badge (Penpot card/movie/top) */}
+          {cardRank ? (
+            <div className="absolute top-2.5 right-2.5 z-10 size-[35px] rounded-full bg-penpot-primary-300/80 backdrop-blur-sm border border-white/30 text-white font-bold text-sm flex items-center justify-center shadow-lg">
+              #{cardRank}
             </div>
-          )}
-        </div>
+          ) : null}
+
+          {/* Badges Overlay (Airing / New / In Library) */}
+          <div className="absolute inset-x-2 top-2 z-10 flex items-center justify-between pointer-events-none">
+            {/* Left Badges */}
+            <div className="flex items-center gap-1">
+              {item.airingLabel ? (
+                <Badge label={item.airingLabel} variant="airing" />
+              ) : typeof item.badge === "string" ? (
+                <Badge label={item.badge} variant="new" />
+              ) : item.badge ? (
+                <Badge label={item.badge.label} variant={item.badge.type} />
+              ) : null}
+            </div>
+
+            {/* Right: Availability Badge */}
+            {!cardRank && availabilityState?.status === "in_library" && (
+              <AvailabilityBadge state={availabilityState} />
+            )}
+          </div>
+        </Link>
       </div>
-    </Wrapper>
+
+      {/* Standalone Fallback Portal Flyout */}
+      {!onHoverEnter && standaloneFlyout && standaloneRect && typeof document !== "undefined" && (
+        createPortal(
+          <MediaCardFlyout
+            item={{
+              ...item,
+              backdrop_path: effectiveBackdropPath,
+              ranking: cardRank,
+            }}
+            rect={standaloneRect}
+            open={standaloneFlyout}
+            mediaType={type}
+            cardVariant={cardVariant}
+            availabilityState={availabilityState}
+            onExited={() => {
+              setStandaloneFlyout(false)
+              setStandaloneRect(null)
+            }}
+            onMouseEnter={() => {
+              if (standaloneTimerRef.current !== null) {
+                window.clearTimeout(standaloneTimerRef.current)
+              }
+              setStandaloneFlyout(true)
+            }}
+            onMouseLeave={handleMouseLeave}
+            onMarkWatched={onMarkWatched ? () => onMarkWatched(item, type) : undefined}
+            isWatched={isWatched}
+          />,
+          document.body
+        )
+      )}
+    </>
   )
 }
