@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { getSession } from "@/lib/auth"
 import { tmdbProxyFetch } from "@/lib/tmdb-proxy"
 import { checkRateLimit } from "@/lib/rate-limit"
+import { enrichMediaItemsWithPosters, fetchEnglishHorizontalPoster } from "@/lib/horizontal-posters"
 
 export const dynamic = "force-dynamic"
 
@@ -68,6 +69,35 @@ export async function GET(
         { error: "TMDB request failed", status: res.status },
         { status: res.status >= 500 ? 502 : res.status }
       )
+    }
+
+    // Enrich items with English title-treated backdrops before sending to client
+    const ENRICHABLE_ROOTS = new Set(["search", "discover", "trending", "movie", "tv"])
+    if (
+      ENRICHABLE_ROOTS.has(slug[0]) &&
+      typeof data === "object" &&
+      data !== null
+    ) {
+      const dataObj = data as Record<string, unknown>
+      const defaultType: "movie" | "tv" = slug.includes("tv") ? "tv" : "movie"
+
+      if (Array.isArray(dataObj.results)) {
+        await enrichMediaItemsWithPosters(
+          dataObj.results as Array<{
+            id: number
+            media_type?: string
+            backdrop_path?: string | null
+            title?: string
+            name?: string
+          }>,
+          defaultType
+        )
+      } else if (typeof dataObj.id === "number" && (slug[0] === "movie" || slug[0] === "tv")) {
+        const enPoster = await fetchEnglishHorizontalPoster(slug[0], dataObj.id)
+        if (enPoster) {
+          dataObj.backdrop_path = enPoster
+        }
+      }
     }
 
     return NextResponse.json(data, {

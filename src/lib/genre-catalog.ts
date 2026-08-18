@@ -9,6 +9,7 @@ import {
 } from "./tmdb"
 import { filterReleasedContent, filterDisplayableContent } from "./catalog"
 import { toRowItem, dedupeByTmdbId, type RowItem } from "./recommendations"
+import { enrichMediaItemsWithPosters } from "./horizontal-posters"
 import {
   getUserGenreProfile,
   getGenreTopPicks,
@@ -143,7 +144,9 @@ async function fetchMixedDiscover(
 
   const movieItems = toRowItems(movieData?.results ?? [], "movie", options)
   const tvItems = toRowItems(tvData?.results ?? [], "tv", options)
-  return dedupeByTmdbId([...movieItems, ...tvItems]).slice(0, limit)
+  const combined = dedupeByTmdbId([...movieItems, ...tvItems]).slice(0, limit)
+  await enrichMediaItemsWithPosters(combined)
+  return combined
 }
 
 // ── Availability maps ──
