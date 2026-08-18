@@ -184,7 +184,7 @@ export function MovieDetail({ params }: { params: Promise<{ id: string }> }) {
             <div className="flex flex-wrap items-center gap-2.5 sm:gap-3 text-xs sm:text-sm font-semibold text-penpot-neutral-100">
               {/* IMDb or TMDB Rating */}
               {hasOmdbRating ? (
-                <span className="inline-flex items-center gap-1.5 bg-black/40 border border-white/20 px-2.5 py-1 text-white font-bold rounded-[3px] backdrop-blur-md">
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 text-white font-bold rounded-[3px] backdrop-blur-md">
                   <Image src="/imdb.webp" alt="IMDb" width={1280} height={1280} sizes="16px" className="h-4 w-auto object-contain" />
                   <span>{omdbData.imdbRating}</span>
                   {omdbData.imdbVotes && omdbData.imdbVotes !== "N/A" && (
@@ -194,7 +194,7 @@ export function MovieDetail({ params }: { params: Promise<{ id: string }> }) {
                   )}
                 </span>
               ) : movie.vote_average > 0 ? (
-                <span className="inline-flex items-center gap-1 bg-black/40 border border-white/20 px-2.5 py-1 text-white font-bold rounded-[3px] backdrop-blur-md">
+                <span className="inline-flex items-center gap-1 px-2.5 py-1 text-white font-bold rounded-[3px] backdrop-blur-md">
                   <Star className="size-3.5 fill-amber-400 text-amber-400" />
                   <span>{formatRating(movie.vote_average)}</span>
                 </span>

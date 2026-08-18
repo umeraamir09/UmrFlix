@@ -1,9 +1,9 @@
 "use client"
 
-import { useMemo, useState, useEffect } from "react"
+import { useMemo, useState, useEffect, useRef, useCallback } from "react"
 import { useRouter } from "next/navigation"
 import useSWR, { useSWRConfig } from "swr"
-import { ArrowUpDown, Plus, Layers, ChevronDown } from "lucide-react"
+import { ArrowUpDown, Plus, Layers, ChevronDown, ChevronLeft, ChevronRight } from "lucide-react"
 import { EpisodeCard } from "@/components/EpisodeCard"
 import { Tooltip } from "@/components/ui/tooltip"
 import { useToast } from "@/components/Toast"
@@ -331,6 +331,51 @@ export function SeasonBrowser({
     }
   }
 
+  // Seasons scroll state & indicators
+  const seasonsScrollRef = useRef<HTMLDivElement>(null)
+  const [canScrollLeft, setCanScrollLeft] = useState(false)
+  const [canScrollRight, setCanScrollRight] = useState(false)
+
+  const checkSeasonsScroll = useCallback(() => {
+    if (seasonsScrollRef.current) {
+      const { scrollLeft, scrollWidth, clientWidth } = seasonsScrollRef.current
+      setCanScrollLeft(scrollLeft > 4)
+      setCanScrollRight(scrollLeft + clientWidth < scrollWidth - 4)
+    }
+  }, [])
+
+  useEffect(() => {
+    const el = seasonsScrollRef.current
+    if (!el) return
+    checkSeasonsScroll()
+    el.addEventListener("scroll", checkSeasonsScroll, { passive: true })
+    window.addEventListener("resize", checkSeasonsScroll)
+    return () => {
+      el.removeEventListener("scroll", checkSeasonsScroll)
+      window.removeEventListener("resize", checkSeasonsScroll)
+    }
+  }, [checkSeasonsScroll, seasons])
+
+  // Automatically scroll active season into view if off-screen
+  useEffect(() => {
+    if (seasonsScrollRef.current) {
+      const activeBtn = seasonsScrollRef.current.querySelector<HTMLElement>('[aria-pressed="true"]')
+      if (activeBtn) {
+        activeBtn.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "center" })
+      }
+    }
+  }, [currentSeason])
+
+  const scrollSeasons = (direction: "left" | "right") => {
+    if (seasonsScrollRef.current) {
+      const scrollAmount = 200
+      seasonsScrollRef.current.scrollBy({
+        left: direction === "left" ? -scrollAmount : scrollAmount,
+        behavior: "smooth",
+      })
+    }
+  }
+
   const isShowInSonarr =
     availabilityStatus === "in_library" ||
     availabilityStatus === "in_sonarr" ||
@@ -339,43 +384,77 @@ export function SeasonBrowser({
   return (
     <section className="mt-8 space-y-6">
       {/* ── Penpot Top Header Control Bar ── */}
-      <div className="flex flex-wrap items-center justify-between gap-4 pb-2 border-b border-penpot-border/60">
-        {/* Left Side: "Seasons" Label + Numbered Season Toggle Buttons (Penpot Frame 13) */}
-        <div className="flex items-center gap-4">
-          <h3 className="text-lg sm:text-xl font-bold uppercase tracking-tight text-white">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4 pb-2 border-b border-penpot-border/60">
+        {/* Left Side: "Seasons" Label + Scrollable Numbered Season Toggle Buttons */}
+        <div className="flex items-center gap-3 sm:gap-4 min-w-0 max-w-full flex-1">
+          <h3 className="text-lg sm:text-xl font-bold uppercase tracking-tight text-white shrink-0">
             Seasons
           </h3>
 
-          {/* Numbered Toggle Buttons Row */}
-          <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-1">
-            {seasons.map((s) => {
-              const isSelected = s.seasonNumber === currentSeason
-              return (
+          {/* Numbered Toggle Buttons Track Container with Desktop Chevrons */}
+          <div className="relative min-w-0 flex-1 overflow-hidden group/seasons">
+            {/* Desktop Left Scroll Button */}
+            {canScrollLeft && (
+              <div className="hidden sm:flex absolute left-0 inset-y-0 z-10 items-center bg-gradient-to-r from-penpot-bg via-penpot-bg/90 to-transparent pr-4 pl-0.5">
                 <button
-                  key={s.id}
-                  onClick={() => setSelectedSeason(s.seasonNumber)}
-                  aria-label={`Season ${s.seasonNumber}`}
-                  aria-pressed={isSelected}
-                  className={cn(
-                    "size-10 sm:size-11 rounded-[4px] font-black text-sm sm:text-base flex items-center justify-center transition-all duration-200 cursor-pointer shadow-md shrink-0",
-                    isSelected
-                      ? "bg-penpot-primary-400 text-white shadow-lg ring-1 ring-white/20"
-                      : "bg-white/[0.08] hover:bg-white/[0.15] text-penpot-text-medium hover:text-white border border-white/10"
-                  )}
+                  type="button"
+                  onClick={() => scrollSeasons("left")}
+                  aria-label="Scroll seasons left"
+                  className="size-7 rounded-full bg-black/80 hover:bg-black active:bg-black/60 text-white border border-white/20 flex items-center justify-center shadow-md transition-all hover:scale-105 active:scale-95 cursor-pointer touch-manipulation select-none"
                 >
-                  {s.seasonNumber}
+                  <ChevronLeft className="size-3.5" />
                 </button>
-              )
-            })}
+              </div>
+            )}
+
+            {/* Desktop Right Scroll Button */}
+            {canScrollRight && (
+              <div className="hidden sm:flex absolute right-0 inset-y-0 z-10 items-center bg-gradient-to-l from-penpot-bg via-penpot-bg/90 to-transparent pl-4 pr-0.5">
+                <button
+                  type="button"
+                  onClick={() => scrollSeasons("right")}
+                  aria-label="Scroll seasons right"
+                  className="size-7 rounded-full bg-black/80 hover:bg-black active:bg-black/60 text-white border border-white/20 flex items-center justify-center shadow-md transition-all hover:scale-105 active:scale-95 cursor-pointer touch-manipulation select-none"
+                >
+                  <ChevronRight className="size-3.5" />
+                </button>
+              </div>
+            )}
+
+            {/* Scrollable Numbered Buttons Row */}
+            <div
+              ref={seasonsScrollRef}
+              className="flex items-center gap-2 overflow-x-auto no-scrollbar py-1 scroll-smooth overscroll-contain touch-manipulation"
+            >
+              {seasons.map((s) => {
+                const isSelected = s.seasonNumber === currentSeason
+                return (
+                  <button
+                    key={s.id}
+                    onClick={() => setSelectedSeason(s.seasonNumber)}
+                    aria-label={`Season ${s.seasonNumber}`}
+                    aria-pressed={isSelected}
+                    className={cn(
+                      "size-10 sm:size-11 min-h-10 min-w-10 rounded-[4px] font-black text-sm sm:text-base flex items-center justify-center transition-all duration-200 cursor-pointer shadow-md shrink-0 touch-manipulation select-none",
+                      isSelected
+                        ? "bg-penpot-primary-400 text-white shadow-lg ring-1 ring-white/20 scale-105"
+                        : "bg-white/[0.08] hover:bg-white/[0.15] text-penpot-text-medium hover:text-white border border-white/10 active:scale-95"
+                    )}
+                  >
+                    {s.seasonNumber}
+                  </button>
+                )
+              })}
+            </div>
           </div>
         </div>
 
         {/* Right Side: Sort Order & Request Season Options */}
-        <div className="flex items-center gap-3 text-xs font-bold tracking-wider text-penpot-text-medium uppercase">
+        <div className="flex items-center justify-between sm:justify-end gap-3 text-xs font-bold tracking-wider text-penpot-text-medium uppercase shrink-0 pt-1 sm:pt-0">
           {onRequestSeason && isCurrentSeasonMissing && (
             <button
               onClick={() => onRequestSeason(currentSeason)}
-              className="flex min-h-[38px] items-center gap-1.5 px-3 py-1.5 bg-penpot-primary-500/20 hover:bg-penpot-primary-500/30 border border-penpot-primary-300/40 text-penpot-primary-100 rounded-[4px] transition-colors cursor-pointer"
+              className="flex min-h-[38px] items-center gap-1.5 px-3 py-1.5 bg-penpot-primary-500/20 hover:bg-penpot-primary-500/30 border border-penpot-primary-300/40 text-penpot-primary-100 rounded-[4px] transition-colors cursor-pointer touch-manipulation select-none"
             >
               <Plus className="size-3.5" />
               <span>Request Season {currentSeason}</span>
@@ -385,7 +464,7 @@ export function SeasonBrowser({
           <Tooltip content={isSortAscending ? "Sort by latest episode first" : "Sort by first episode first"}>
             <button
               onClick={() => setIsSortAscending((prev) => !prev)}
-              className="flex min-h-[38px] items-center gap-1.5 px-3 py-1.5 hover:text-white bg-black/20 hover:bg-white/10 border border-white/20 rounded-[4px] transition-colors cursor-pointer"
+              className="flex min-h-[38px] items-center gap-1.5 px-3 py-1.5 hover:text-white bg-black/20 hover:bg-white/10 border border-white/20 rounded-[4px] transition-colors cursor-pointer touch-manipulation select-none"
             >
               <ArrowUpDown className="size-3.5 text-penpot-text-subtle" />
               <span>{isSortAscending ? "Oldest First" : "Newest First"}</span>
