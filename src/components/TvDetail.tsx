@@ -9,17 +9,28 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { Button } from "@/components/ui/button"
 import { Tooltip } from "@/components/ui/tooltip"
 import { IconPlay, IconGroup, IconPlus } from "@/components/ui/icons"
-import { RequestModal } from "@/components/RequestModal"
+import dynamic from "next/dynamic"
 import { BookmarkButton } from "@/components/BookmarkButton"
 import { SeasonBrowser } from "@/components/SeasonBrowser"
 import { MovieRow } from "@/components/MovieRow"
 import { CastCarousel } from "@/components/CastCarousel"
-import { TrailerModal } from "@/components/TrailerModal"
-import { StartPartyModal } from "@/components/party/StartPartyModal"
 import { useAvailability } from "@/lib/use-availability"
 import { useToast } from "@/components/Toast"
 import { useRouter } from "next/navigation"
 import type { TmdbTvDetail } from "@/lib/tmdb"
+
+const RequestModal = dynamic(
+  () => import("@/components/RequestModal").then((m) => m.RequestModal),
+  { ssr: false }
+)
+const TrailerModal = dynamic(
+  () => import("@/components/TrailerModal").then((m) => m.TrailerModal),
+  { ssr: false }
+)
+const StartPartyModal = dynamic(
+  () => import("@/components/party/StartPartyModal").then((m) => m.StartPartyModal),
+  { ssr: false }
+)
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json())
 
@@ -148,7 +159,7 @@ export function TvDetail({ params }: { params: Promise<{ id: string }> }) {
         <div className="absolute inset-x-0 top-0 h-28 bg-gradient-to-b from-black/70 via-black/20 to-transparent" />
 
         {/* Hero Content Stack (Aligned Bottom-Left) */}
-        <div className="absolute bottom-8 sm:bottom-12 left-0 right-0 z-10 mx-auto max-w-[1560px] px-4 sm:px-6 md:px-8">
+        <div className="absolute bottom-8 sm:bottom-12 left-0 right-0 z-10 mx-auto max-w-[1560px] 2xl:max-w-[1920px] 3xl:max-w-[2300px] 4xl:max-w-[2700px] px-4 sm:px-6 md:px-8 lg:px-12 2xl:px-16">
           <div className="space-y-4 sm:space-y-5 max-w-4xl">
 
             {/* Logo Image or Stylized Text Title (Penpot #logo) */}
@@ -345,7 +356,7 @@ export function TvDetail({ params }: { params: Promise<{ id: string }> }) {
       </div>
 
       {/* ── Main Content Body ── */}
-      <div className="mx-auto max-w-[1560px] px-4 sm:px-6 md:px-8 mt-10 space-y-12">
+      <div className="mx-auto max-w-[1560px] 2xl:max-w-[1920px] 3xl:max-w-[2300px] 4xl:max-w-[2700px] px-4 sm:px-6 md:px-8 lg:px-12 2xl:px-16 mt-10 space-y-12">
         {/* ── Seasons & Episodes Section (Penpot Episodes //Episodes) ── */}
         <SeasonBrowser
           tmdbId={show.id}
