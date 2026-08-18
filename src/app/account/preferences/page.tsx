@@ -53,7 +53,7 @@ export default function AccountPreferencesPage() {
   }, [])
 
   return (
-    <div className="min-h-screen bg-background text-foreground pt-24 pb-16 px-4 sm:px-6 md:px-8 max-w-[1200px] mx-auto space-y-8">
+    <div className="min-h-[100dvh] bg-background text-foreground pt-24 pb-16 px-4 sm:px-6 md:px-8 max-w-[1200px] mx-auto space-y-8">
       {/* Header Banner */}
       <div className="border-b border-border pb-6 flex items-center justify-between">
         <div className="flex items-center gap-3">

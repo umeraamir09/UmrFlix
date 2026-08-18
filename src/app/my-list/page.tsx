@@ -81,7 +81,7 @@ export default function MyListPage() {
   }
 
   return (
-    <div className="min-h-screen bg-background text-foreground pt-24 pb-16 px-4 sm:px-6 md:px-8 max-w-[1600px] mx-auto space-y-8">
+    <div className="min-h-[100dvh] bg-background text-foreground pt-24 pb-16 px-4 sm:px-6 md:px-8 lg:px-12 2xl:px-16 max-w-[1600px] 2xl:max-w-[1920px] 3xl:max-w-[2300px] 4xl:max-w-[2700px] mx-auto space-y-8">
       {/* Header Banner */}
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 border-b border-border pb-6">
         <div className="flex items-center gap-3">
@@ -106,7 +106,7 @@ export default function MyListPage() {
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Search My List..."
-              className="w-full rounded-none bg-surface border border-border focus:border-accent text-xs text-white placeholder-muted py-2 pl-9 pr-3 focus:outline-none transition-colors"
+              className="w-full rounded-none bg-surface border border-border focus:border-accent text-base sm:text-xs text-white placeholder-muted py-2 pl-9 pr-3 focus:outline-none transition-colors touch-manipulation"
             />
           </div>
 
@@ -203,7 +203,7 @@ export default function MyListPage() {
           </Link>
         </div>
       ) : (
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 sm:gap-6">
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-7 3xl:grid-cols-8 gap-4 sm:gap-6">
           {filteredItems.map((item) => {
             const key = item.tmdbId ? `${item.mediaType}-${item.tmdbId}` : null
             const avail = key ? availabilityMap[key] : null

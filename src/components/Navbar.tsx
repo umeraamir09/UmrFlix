@@ -136,7 +136,7 @@ export function Navbar() {
       }`}
     >
       <ServiceHealthBanner />
-      <div className="mx-auto flex h-20 max-w-[1600px] items-center justify-between px-4 sm:px-6 md:px-8 relative">
+      <div className="mx-auto flex h-20 max-w-[1600px] 2xl:max-w-[1920px] 3xl:max-w-[2300px] 4xl:max-w-[2700px] items-center justify-between px-4 sm:px-6 md:px-8 lg:px-12 2xl:px-16 relative">
 
         {/* Left Section: Logo & Nav Links */}
         <div className="flex items-center gap-6 lg:gap-8 h-full">
@@ -323,7 +323,7 @@ export function Navbar() {
           {/* Mobile Menu Hamburger Button */}
           <button
             onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-            className="h-10 w-10 flex items-center justify-center text-penpot-text-high hover:text-penpot-secondary-200 md:hidden transition-colors rounded-[4px] hover:bg-penpot-opacity-white-10 cursor-pointer"
+            className="min-h-12 min-w-12 flex items-center justify-center text-penpot-text-high hover:text-penpot-secondary-200 md:hidden transition-colors rounded-[4px] hover:bg-penpot-opacity-white-10 cursor-pointer touch-manipulation select-none"
             aria-label="Toggle mobile menu"
             aria-expanded={mobileMenuOpen}
           >
@@ -343,7 +343,7 @@ export function Navbar() {
 
       {/* Mobile Drawer (Penpot Dark Theme) */}
       {mobileMenuOpen && (
-        <div className="md:hidden border-t border-penpot-border bg-penpot-neutral-700/98 backdrop-blur-xl px-4 py-6 animate-in slide-in-from-top duration-200 max-h-[80vh] overflow-y-auto">
+        <div className="md:hidden border-t border-penpot-border bg-penpot-neutral-700/98 backdrop-blur-xl px-4 py-6 animate-in slide-in-from-top duration-200 max-h-[calc(100dvh-5rem)] overflow-y-auto overscroll-contain">
           <div className="flex flex-col gap-2">
             {NAV_ITEMS.map((item) => {
               const active = isNavItemActive(item)
@@ -353,7 +353,7 @@ export function Navbar() {
                   key={item.href}
                   href={item.href}
                   onClick={() => setMobileMenuOpen(false)}
-                  className={`flex items-center gap-3 px-4 py-3 rounded-[4px] text-base font-medium transition-colors ${
+                  className={`flex items-center gap-3 px-4 py-3 rounded-[4px] text-base font-medium transition-colors touch-manipulation select-none ${
                     active
                       ? "text-penpot-secondary-200 bg-penpot-surface"
                       : "text-penpot-text-high hover:text-penpot-secondary-200 hover:bg-penpot-surface"
@@ -368,7 +368,7 @@ export function Navbar() {
             <Link
               href="/my-list"
               onClick={() => setMobileMenuOpen(false)}
-              className={`flex items-center gap-3 px-4 py-3 rounded-[4px] text-base font-medium transition-colors ${
+              className={`flex items-center gap-3 px-4 py-3 rounded-[4px] text-base font-medium transition-colors touch-manipulation select-none ${
                 pathname === "/my-list"
                   ? "text-penpot-secondary-200 bg-penpot-surface"
                   : "text-penpot-text-high hover:text-penpot-secondary-200 hover:bg-penpot-surface"
@@ -381,7 +381,7 @@ export function Navbar() {
             <Link
               href="/search"
               onClick={() => setMobileMenuOpen(false)}
-              className={`flex items-center gap-3 px-4 py-3 rounded-[4px] text-base font-medium transition-colors ${
+              className={`flex items-center gap-3 px-4 py-3 rounded-[4px] text-base font-medium transition-colors touch-manipulation select-none ${
                 pathname === "/search"
                   ? "text-penpot-secondary-200 bg-penpot-surface"
                   : "text-penpot-text-high hover:text-penpot-secondary-200 hover:bg-penpot-surface"
@@ -393,16 +393,16 @@ export function Navbar() {
 
             {/* Mobile Genre Links */}
             <div className="pt-4 mt-2 border-t border-penpot-border">
-              <p className="px-4 text-xs font-bold text-penpot-text-subtle uppercase tracking-wider mb-2">
+              <p className="px-4 text-xs font-bold text-penpot-text-subtle uppercase tracking-wider mb-2 select-none">
                 Genres
               </p>
-              <div className="grid grid-cols-2 gap-1 px-2">
+              <div className="grid grid-cols-2 gap-1.5 px-2">
                 {GENRE_CATALOG.slice(0, 12).map((genre) => (
                   <Link
                     key={genre.slug}
                     href={`/genre/${genre.slug}`}
                     onClick={() => setMobileMenuOpen(false)}
-                    className="text-xs font-medium text-penpot-text-medium hover:text-penpot-secondary-200 transition-colors py-1"
+                    className="text-xs font-medium text-penpot-text-medium hover:text-penpot-secondary-200 transition-colors py-2 px-2 rounded-[4px] hover:bg-penpot-surface touch-manipulation select-none"
                   >
                     {genre.name}
                   </Link>

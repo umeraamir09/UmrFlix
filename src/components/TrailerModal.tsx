@@ -82,12 +82,12 @@ export function TrailerModal({
       role="dialog"
       aria-modal="true"
       aria-labelledby="trailer-modal-title"
-      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 md:p-8 bg-black/80 backdrop-blur-md animate-in fade-in duration-200"
+      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 md:p-8 bg-black/80 backdrop-blur-md animate-in fade-in duration-200 overscroll-contain"
       onClick={onClose}
     >
       <div
         className={cn(
-          "relative w-full max-w-4xl bg-penpot-bg border border-penpot-border/80 rounded-lg shadow-2xl overflow-hidden",
+          "relative w-full max-w-4xl bg-penpot-bg border border-penpot-border/80 rounded-lg shadow-2xl overflow-hidden overscroll-contain",
           "animate-in zoom-in-95 fade-in duration-200"
         )}
         onClick={(e) => e.stopPropagation()}
@@ -109,7 +109,7 @@ export function TrailerModal({
           <button
             onClick={onClose}
             aria-label="Close trailer dialog"
-            className="flex items-center justify-center size-9 rounded-full bg-black/30 hover:bg-white/20 active:bg-white/30 text-white border border-white/20 transition-all cursor-pointer shrink-0"
+            className="flex items-center justify-center size-9 min-h-11 min-w-11 sm:size-9 rounded-full bg-black/30 hover:bg-white/20 active:bg-white/30 text-white border border-white/20 transition-all cursor-pointer shrink-0 touch-manipulation select-none"
           >
             <IconClose className="size-4" />
           </button>

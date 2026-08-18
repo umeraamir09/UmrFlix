@@ -52,7 +52,7 @@ export function CastCarousel({ cast }: { cast: TmdbCastMember[] }) {
           <div className="absolute left-0 top-1/2 -translate-y-1/2 z-30 flex items-center justify-start transition-opacity duration-200">
             <button
               onClick={() => scroll("left")}
-              className="size-10 rounded-full bg-black/60 hover:bg-black/80 active:bg-black text-white border border-white/20 backdrop-blur-md flex items-center justify-center shadow-2xl transition-all duration-200 hover:scale-110 active:scale-95 cursor-pointer focus:outline-none"
+              className="size-10 min-h-[48px] min-w-[48px] sm:size-10 sm:min-h-0 sm:min-w-0 rounded-full bg-black/60 hover:bg-black/80 active:bg-black text-white border border-white/20 backdrop-blur-md flex items-center justify-center shadow-2xl transition-all duration-200 hover:scale-110 active:scale-95 cursor-pointer focus:outline-none touch-manipulation select-none"
               aria-label="Scroll cast left"
             >
               <ChevronLeft className="size-5" />
@@ -65,7 +65,7 @@ export function CastCarousel({ cast }: { cast: TmdbCastMember[] }) {
           <div className="absolute right-0 top-1/2 -translate-y-1/2 z-30 flex items-center justify-end transition-opacity duration-200">
             <button
               onClick={() => scroll("right")}
-              className="size-10 rounded-full bg-black/60 hover:bg-black/80 active:bg-black text-white border border-white/20 backdrop-blur-md flex items-center justify-center shadow-2xl transition-all duration-200 hover:scale-110 active:scale-95 cursor-pointer focus:outline-none"
+              className="size-10 min-h-[48px] min-w-[48px] sm:size-10 sm:min-h-0 sm:min-w-0 rounded-full bg-black/60 hover:bg-black/80 active:bg-black text-white border border-white/20 backdrop-blur-md flex items-center justify-center shadow-2xl transition-all duration-200 hover:scale-110 active:scale-95 cursor-pointer focus:outline-none touch-manipulation select-none"
               aria-label="Scroll cast right"
             >
               <ChevronRight className="size-5" />
