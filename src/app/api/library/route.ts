@@ -32,6 +32,8 @@ export interface JellyfinLibraryItem {
   tvdbId: number | null
   imdbId: string | null
   year: number | null
+  overview?: string
+  voteAverage?: number
   posterUrl: string
   backdropUrl: string
   dateAdded?: string
@@ -43,6 +45,58 @@ type ExtendedJellyfinItem = JellyfinItem & {
   PremiereDate?: string
   DateCreated?: string
   DateLastMediaAdded?: string
+}
+
+type TmdbDetailsCacheEntry = {
+  title?: string
+  poster_path?: string | null
+  backdrop_path?: string | null
+  overview?: string
+  vote_average?: number
+  year?: number | null
+  timestamp: number
+}
+
+const tmdbDetailsCache = new Map<string, TmdbDetailsCacheEntry>()
+
+async function fetchTmdbMetadata(type: "movie" | "tv", tmdbId: number): Promise<TmdbDetailsCacheEntry | null> {
+  const cacheKey = `${type}:${tmdbId}`
+  const cached = tmdbDetailsCache.get(cacheKey)
+  if (cached && Date.now() - cached.timestamp < ID_CACHE_TTL_MS) {
+    return cached
+  }
+
+  try {
+    const res = await tmdbProxyFetch(
+      `/3/${type}/${tmdbId}?append_to_response=images&include_image_language=en`,
+      { timeoutMs: 3_500 }
+    )
+    if (!res.ok) return null
+    const data = await res.json()
+
+    // Find best English title treatment backdrop if available
+    const englishBackdrops =
+      data.images?.backdrops?.filter((b: { iso_639_1?: string }) => b.iso_639_1 === "en") || []
+    const horizontalPoster =
+      englishBackdrops.length > 0 ? englishBackdrops[0].file_path : data.backdrop_path
+
+    const releaseDate = data.release_date || data.first_air_date
+    const year = releaseDate ? parseInt(releaseDate.split("-")[0], 10) : undefined
+
+    const entry: TmdbDetailsCacheEntry = {
+      title: data.title || data.name,
+      poster_path: data.poster_path ? `https://image.tmdb.org/t/p/w780${data.poster_path}` : null,
+      backdrop_path: horizontalPoster ? `https://image.tmdb.org/t/p/w780${horizontalPoster}` : null,
+      overview: data.overview,
+      vote_average: data.vote_average,
+      year: year && !isNaN(year) ? year : null,
+      timestamp: Date.now(),
+    }
+    tmdbDetailsCache.set(cacheKey, entry)
+    return entry
+  } catch {
+    return null
+  }
 }
 
 async function resolveTmdbIdFromTvdb(tvdbId: number): Promise<number | null> {
@@ -145,6 +199,26 @@ export async function GET(request: NextRequest) {
             if (resolved) {
               entry.item.tmdbId = resolved
             }
+          }
+        })
+      )
+    }
+
+    // Enrich items with official TMDB metadata, posters, and backdrops
+    const allItemsToEnrich = [...movies, ...series].filter((item) => item.tmdbId)
+    for (let i = 0; i < allItemsToEnrich.length; i += BATCH_SIZE) {
+      const batch = allItemsToEnrich.slice(i, i + BATCH_SIZE)
+      await Promise.all(
+        batch.map(async (item) => {
+          if (!item.tmdbId) return
+          const meta = await fetchTmdbMetadata(item.type, item.tmdbId)
+          if (meta) {
+            if (meta.title) item.title = meta.title
+            if (meta.overview) item.overview = meta.overview
+            if (meta.poster_path) item.posterUrl = meta.poster_path
+            if (meta.backdrop_path) item.backdropUrl = meta.backdrop_path
+            if (meta.vote_average != null) item.voteAverage = meta.vote_average
+            if (meta.year != null && !item.year) item.year = meta.year
           }
         })
       )

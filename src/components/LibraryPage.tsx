@@ -197,12 +197,12 @@ export function LibraryPage() {
 
   if (isLoading) {
     return (
-      <div className="p-6">
+      <div className="pt-20 px-4 sm:px-6 md:px-8 lg:px-12 2xl:px-16 pb-12 max-w-[1600px] 2xl:max-w-[1920px] 3xl:max-w-[2300px] 4xl:max-w-[2700px] mx-auto">
         <h1 className="mb-6 text-2xl font-bold">My Library</h1>
-        <div className="grid grid-cols-2 gap-6 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-5 2xl:grid-cols-6">
+        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-5 3xl:grid-cols-6 sm:gap-5 md:gap-6">
           {Array.from({ length: 12 }).map((_, i) => (
             <div key={i} className="space-y-2">
-              <Skeleton className="aspect-[2/3] w-full rounded-none" />
+              <Skeleton className="aspect-[240/361] md:aspect-[240/136] w-full rounded-[8px]" />
               <Skeleton className="h-4 w-3/4" />
             </div>
           ))}
@@ -213,7 +213,7 @@ export function LibraryPage() {
 
   if (error || data?.error) {
     return (
-      <div className="p-6">
+      <div className="pt-20 px-4 sm:px-6 md:px-8 lg:px-12 2xl:px-16 pb-12 max-w-[1600px] 2xl:max-w-[1920px] 3xl:max-w-[2300px] 4xl:max-w-[2700px] mx-auto">
         <h1 className="mb-6 text-2xl font-bold">My Library</h1>
         <p className="text-muted">
           Unable to connect to Jellyfin server. Make sure Jellyfin is running.
@@ -229,7 +229,7 @@ export function LibraryPage() {
   }
 
   return (
-    <div className="pt-20 px-6 pb-6 max-w-[1600px] mx-auto">
+    <div className="pt-20 px-4 sm:px-6 md:px-8 lg:px-12 2xl:px-16 pb-12 max-w-[1600px] 2xl:max-w-[1920px] 3xl:max-w-[2300px] 4xl:max-w-[2700px] mx-auto">
       <div className="mb-6 flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold">My Library</h1>
@@ -286,7 +286,7 @@ export function LibraryPage() {
             No movies in your Jellyfin library yet. Browse trending to find something to watch!
           </p>
         ) : (
-          <div className="grid grid-cols-2 gap-6 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-5 2xl:grid-cols-6">
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-5 3xl:grid-cols-6 sm:gap-5 md:gap-6">
             {movieItems.map((m) => {
               const tmdbId = m.tmdbId ?? 0
               return (
@@ -295,7 +295,10 @@ export function LibraryPage() {
                   item={{
                     id: tmdbId,
                     title: m.title,
+                    overview: m.overview,
                     poster_path: m.posterUrl,
+                    backdrop_path: m.backdropUrl,
+                    vote_average: m.voteAverage,
                     release_date: m.year ? String(m.year) : undefined,
                   }}
                   type="movie"
@@ -322,7 +325,7 @@ export function LibraryPage() {
         {seriesItems.length === 0 ? (
           <p className="text-muted">No TV shows in your Jellyfin library yet.</p>
         ) : (
-          <div className="grid grid-cols-2 gap-6 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-5 2xl:grid-cols-6">
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-5 3xl:grid-cols-6 sm:gap-5 md:gap-6">
             {seriesItems.map((s) => {
               const tmdbId = s.tmdbId ?? 0
               return (
@@ -331,7 +334,10 @@ export function LibraryPage() {
                   item={{
                     id: tmdbId,
                     name: s.title,
+                    overview: s.overview,
                     poster_path: s.posterUrl,
+                    backdrop_path: s.backdropUrl,
+                    vote_average: s.voteAverage,
                     first_air_date: s.year ? String(s.year) : undefined,
                   }}
                   type="tv"
