@@ -12,11 +12,14 @@ import { ChevronLeft, ChevronRight } from "lucide-react"
 import { MoleculeBullets } from "@/components/ui/bullets"
 
 type ApiContinueWatchingItem = {
+  id?: number
   jellyfinItemId: string
   title: string
   episodeTitle?: string
   episodeNumber?: string
   overview?: string
+  poster_path?: string | null
+  backdrop_path?: string | null
   imageUrl: string
   primaryUrl?: string
   logoUrl?: string
@@ -109,12 +112,13 @@ export function ContinueWatchingSection() {
         const data: { items: ApiContinueWatchingItem[] } = await res.json()
 
         const mapped: ContinueWatchingItem[] = data.items.map((item) => ({
-          id: Number(item.providerIds.Tmdb) || 0,
+          id: item.id || Number(item.providerIds?.Tmdb) || 0,
           title: item.title,
           episodeTitle: item.episodeTitle,
           episodeNumber: item.episodeNumber,
           overview: item.overview,
-          backdrop_path: null,
+          poster_path: item.poster_path || null,
+          backdrop_path: item.backdrop_path || null,
           media_type: item.mediaType,
           progressPercent: item.progressPercent,
           timeLeft: item.timeLeft,

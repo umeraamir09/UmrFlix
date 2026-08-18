@@ -34,20 +34,18 @@ export function getContinueWatchingMedia(item: ContinueWatchingItem) {
 
   const detailHref = item.id ? `/${item.media_type}/${item.id}` : playHref
 
-  const posterUrl = item.jellyfinPrimaryUrl
-    ? item.jellyfinPrimaryUrl
-    : item.poster_path
-    ? `https://image.tmdb.org/t/p/w780${item.poster_path}`
-    : item.jellyfinImageUrl ||
-      (item.backdrop_path
-        ? `https://image.tmdb.org/t/p/w780${item.backdrop_path}`
-        : "/placeholder-poster.svg")
+  // PREFER TMDB official poster first so mobile 2:3 vertical cards match normal catalog cards
+  const posterUrl = item.poster_path
+    ? (item.poster_path.startsWith("http") ? item.poster_path : `https://image.tmdb.org/t/p/w780${item.poster_path}`)
+    : (item.jellyfinPrimaryUrl ||
+       (item.backdrop_path
+         ? (item.backdrop_path.startsWith("http") ? item.backdrop_path : `https://image.tmdb.org/t/p/w780${item.backdrop_path}`)
+         : item.jellyfinImageUrl || "/placeholder-poster.svg"))
 
-  const backdropUrl = item.jellyfinImageUrl
-    ? item.jellyfinImageUrl
-    : item.backdrop_path
-    ? `https://image.tmdb.org/t/p/w780${item.backdrop_path}`
-    : posterUrl
+  // PREFER TMDB 16:9 English backdrop first on desktop
+  const backdropUrl = item.backdrop_path
+    ? (item.backdrop_path.startsWith("http") ? item.backdrop_path : `https://image.tmdb.org/t/p/w780${item.backdrop_path}`)
+    : (item.jellyfinImageUrl || posterUrl)
 
   const logoUrl = item.jellyfinLogoUrl || null
 
