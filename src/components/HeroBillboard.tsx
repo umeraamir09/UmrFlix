@@ -26,7 +26,13 @@ export interface BillboardItem {
   logo_path?: string | null
 }
 
-export function HeroBillboard({ items }: { items: BillboardItem[] }) {
+export function HeroBillboard({
+  items,
+  headerOverlay,
+}: {
+  items: BillboardItem[]
+  headerOverlay?: React.ReactNode
+}) {
   const [currentIndex, setCurrentIndex] = useState(0)
   const [direction, setDirection] = useState<"next" | "prev">("next")
   const [requestTargetItem, setRequestTargetItem] = useState<BillboardItem | null>(null)
@@ -119,8 +125,19 @@ export function HeroBillboard({ items }: { items: BillboardItem[] }) {
         <div className="absolute inset-0 bg-gradient-to-b from-black/80 via-black/30 to-transparent h-28 sm:h-36 pointer-events-none" />
       </div>
 
+      {/* Top Header Overlay (e.g. Series / Movies Title + Top Genre Selector) */}
+      {headerOverlay && (
+        <div className="absolute top-24 sm:top-28 left-0 right-0 z-30 pointer-events-auto">
+          <div className="mx-auto max-w-[1600px] 2xl:max-w-[1920px] 3xl:max-w-[2300px] 4xl:max-w-[2700px] px-4 sm:px-6 md:px-8 lg:px-12 2xl:px-16">
+            {headerOverlay}
+          </div>
+        </div>
+      )}
+
       {/* Hero Content Container with Swiping Text Animation */}
-      <div className="relative z-10 mx-auto flex h-full max-w-[1600px] 2xl:max-w-[1920px] 3xl:max-w-[2300px] 4xl:max-w-[2700px] items-center px-4 sm:px-6 md:px-8 lg:px-12 2xl:px-16 pb-28 sm:pb-36 md:pb-44 2xl:pb-52">
+      <div className={`relative z-10 mx-auto flex h-full max-w-[1600px] 2xl:max-w-[1920px] 3xl:max-w-[2300px] 4xl:max-w-[2700px] items-center px-4 sm:px-6 md:px-8 lg:px-12 2xl:px-16 pb-28 sm:pb-36 md:pb-44 2xl:pb-52 ${
+        headerOverlay ? "pt-24 sm:pt-28" : ""
+      }`}>
         <div
           key={`${currentIndex}-${direction}`}
           className={`w-full max-w-2xl md:max-w-3xl space-y-4 sm:space-y-6 pt-12 ${

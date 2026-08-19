@@ -17,7 +17,7 @@ export function GenreFilterBar({ genres, mediaType, activeGenre, basePath }: Gen
   const searchParams = useSearchParams()
 
   const currentGenre = activeGenre ?? (searchParams ? searchParams.get("genre") ?? undefined : undefined)
-  const path = basePath || (mediaType === "movie" ? "/movie" : "/tvshows")
+  const path = basePath || (mediaType === "movie" ? "/movies" : "/tvshows")
 
   const scroll = (direction: "left" | "right") => {
     if (scrollRef.current) {

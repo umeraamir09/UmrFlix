@@ -27,7 +27,7 @@ export function Footer() {
             <h4 className="text-xs font-bold uppercase tracking-wider text-white">Explore</h4>
             <ul className="space-y-2 text-xs">
               <li><Link href="/popular" className="hover:text-penpot-primary-100 transition-colors">Browse Popular</Link></li>
-              <li><Link href="/movie" className="hover:text-penpot-primary-100 transition-colors">Trending Movies</Link></li>
+              <li><Link href="/movies" className="hover:text-penpot-primary-100 transition-colors">Trending Movies</Link></li>
               <li><Link href="/tvshows" className="hover:text-penpot-primary-100 transition-colors">Popular TV Shows</Link></li>
               <li><Link href="/library" className="hover:text-penpot-primary-100 transition-colors">My Library & Requests</Link></li>
             </ul>

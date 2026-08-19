@@ -1,8 +1,9 @@
 import Link from "next/link"
+import type { Metadata } from "next"
 import { HeroBillboard, BillboardItem } from "@/components/HeroBillboard"
 import { MovieRow } from "@/components/MovieRow"
 import { SpotlightBanner, SpotlightItem } from "@/components/SpotlightBanner"
-import { GenreFilterBar } from "@/components/GenreFilterBar"
+import { TopGenreSelector } from "@/components/TopGenreSelector"
 import { getTrending, getItemLogo, discoverTv, type TmdbTvShow, type TmdbPaginated } from "@/lib/tmdb"
 import { filterReleasedContent } from "@/lib/catalog"
 import { PersonalizedFeed } from "@/components/PersonalizedFeed"
@@ -11,6 +12,28 @@ import { authenticate, getAllItems } from "@/lib/jellyfin"
 import { getGenreByParam, getTvGenres, getGenreDiscoverParams, buildGenreDiscoverQuery } from "@/lib/genres"
 
 export const revalidate = 1800 // Revalidate page every 30 minutes
+
+export async function generateMetadata({
+  searchParams,
+}: {
+  searchParams?: Promise<{ genre?: string }>
+}): Promise<Metadata> {
+  const resolved = searchParams ? await searchParams : {}
+  const rawGenre = resolved.genre ? decodeURIComponent(resolved.genre) : undefined
+  const selectedGenre = rawGenre ? getGenreByParam(rawGenre) : null
+
+  if (selectedGenre) {
+    return {
+      title: `${selectedGenre.name} TV Shows & Series — Browse & Stream | UmrFlix`,
+      description: `Discover top trending, highest rated, and newly airing ${selectedGenre.name} television series on UmrFlix.`,
+    }
+  }
+
+  return {
+    title: "TV Shows & Series — Trending, Airing & Legendary Shows | UmrFlix",
+    description: "Discover trending shows, personalized recommendations, airing episodes, and binge-worthy series on UmrFlix.",
+  }
+}
 
 interface JellyfinApiItem {
   Id: string
@@ -162,41 +185,28 @@ export default async function TvShowCatalogPage({
     console.error("Failed to load TV Show Catalog Page data:", err)
   }
 
+  const headerOverlay = (
+    <div className="flex items-center gap-4 sm:gap-6 flex-wrap">
+      <h1 className="text-3xl sm:text-4xl md:text-5xl font-black uppercase tracking-tight text-white drop-shadow-md">
+        {selectedGenre ? `${selectedGenre.name} Series` : "Series"}
+      </h1>
+      <TopGenreSelector
+        genres={getTvGenres()}
+        mediaType="tv"
+        activeGenre={selectedGenre?.name}
+        basePath="/tvshows"
+      />
+    </div>
+  )
+
   return (
     <div className="space-y-10 pb-16">
-      {/* Hero Billboard */}
-      {heroItems.length > 0 && <HeroBillboard items={heroItems} />}
+      {/* Hero Billboard with Top Header Overlay */}
+      {heroItems.length > 0 && (
+        <HeroBillboard items={heroItems} headerOverlay={headerOverlay} />
+      )}
 
       <div className="mx-auto max-w-[1600px] 2xl:max-w-[1920px] 3xl:max-w-[2300px] 4xl:max-w-[2700px] px-4 sm:px-6 md:px-8 lg:px-12 2xl:px-16 space-y-12 relative z-20 -mt-28 sm:-mt-36 md:-mt-44 2xl:-mt-52">
-        {/* Header & Genre Filter Bar */}
-        <div className="space-y-4">
-          <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 border-b border-border/50 pb-4">
-            <div>
-              <h1 className="text-3xl sm:text-4xl font-black uppercase tracking-tight text-white">
-                {selectedGenre ? `${selectedGenre.name} TV Shows` : "TV Shows & Series"}
-              </h1>
-              <p className="text-sm text-foreground-muted mt-1 font-medium">
-                {selectedGenre
-                  ? `Discover popular series, top rated shows, and recent broadcasts in ${selectedGenre.name}.`
-                  : "Discover trending shows, personalized recommendations, airing episodes, and binge-worthy series."}
-              </p>
-            </div>
-            {selectedGenre && (
-              <Link
-                href={`/genre/${selectedGenre.slug}`}
-                className="shrink-0 inline-flex items-center gap-2 rounded-none border border-accent/50 bg-surface px-4 py-2.5 text-xs font-bold uppercase tracking-wider text-white transition-all hover:bg-accent hover:border-accent hover:scale-[1.02] active:scale-95"
-              >
-                Dedicated {selectedGenre.name} Page →
-              </Link>
-            )}
-          </div>
-          <GenreFilterBar
-            genres={getTvGenres()}
-            mediaType="tv"
-            activeGenre={selectedGenre?.name}
-          />
-        </div>
-
         {selectedGenre ? (
           <>
             {/* Popular Genre TV Shows */}
