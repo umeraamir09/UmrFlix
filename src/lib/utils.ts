@@ -14,6 +14,11 @@ export function getImageUrl(
   // Handle full HTTP / HTTPS URLs
   if (path.startsWith("http://") || path.startsWith("https://")) {
     if (path.includes("image.tmdb.org/t/p/")) {
+      const parts = path.split(/\/t\/p\/[^/]+/)
+      const afterPart = parts[1] || ""
+      if (afterPart.startsWith("/api/") || afterPart.startsWith("/placeholder")) {
+        return afterPart
+      }
       return path.replace(/\/t\/p\/[^/]+/, `/t/p/${size}`)
     }
     return path

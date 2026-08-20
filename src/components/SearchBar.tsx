@@ -5,6 +5,7 @@ import { useState, useCallback, useEffect, useRef } from "react"
 import { Loader2, Film, Tv } from "lucide-react"
 import { IconSearch, IconClose } from "@/components/ui/icons"
 import Image from "next/image"
+import { getImageUrl } from "@/lib/utils"
 
 interface SearchPreviewItem {
   id: number
@@ -117,9 +118,7 @@ export function SearchBar() {
             const date = item.release_date || item.first_air_date || ""
             const year = date ? new Date(date).getFullYear() : ""
             const isTv = item.media_type === "tv" || !!item.name
-            const poster = item.poster_path
-              ? `https://image.tmdb.org/t/p/w92${item.poster_path}`
-              : "/placeholder-poster.svg"
+            const poster = getImageUrl(item.poster_path, "w92")
 
             return (
               <div

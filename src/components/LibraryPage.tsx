@@ -300,6 +300,7 @@ export function LibraryPage() {
                     backdrop_path: m.backdropUrl,
                     vote_average: m.voteAverage,
                     release_date: m.year ? String(m.year) : undefined,
+                    jellyfinItemId: m.jellyfinId,
                   }}
                   type="movie"
                   availabilityState={{
@@ -339,6 +340,7 @@ export function LibraryPage() {
                     backdrop_path: s.backdropUrl,
                     vote_average: s.voteAverage,
                     first_air_date: s.year ? String(s.year) : undefined,
+                    jellyfinItemId: s.jellyfinId,
                   }}
                   type="tv"
                   availabilityState={{

@@ -5,6 +5,7 @@ import Link from "next/link"
 import { Check } from "lucide-react"
 import { IconPlay, IconDownloadNav } from "@/components/ui/icons"
 import { useState } from "react"
+import { getImageUrl } from "@/lib/utils"
 
 export interface SpotlightItem {
   id: number
@@ -18,7 +19,7 @@ export interface SpotlightItem {
 export function SpotlightBanner({ item }: { item: SpotlightItem }) {
   const [bookmarked, setBookmarked] = useState(false)
   const backdropUrl = item.backdrop_path
-    ? `https://image.tmdb.org/t/p/w1280${item.backdrop_path}`
+    ? getImageUrl(item.backdrop_path, "w1280")
     : "https://image.tmdb.org/t/p/w1280/muth4OYamv31pG2LX2jU2u2vY1n.jpg"
 
   return (

@@ -9,6 +9,7 @@ import { MoleculeBullets } from "@/components/ui/bullets"
 import { RequestModal } from "@/components/RequestModal"
 import { useAvailability } from "@/lib/use-availability"
 import { useToast } from "@/components/Toast"
+import { getImageUrl } from "@/lib/utils"
 
 export interface BillboardItem {
   id: number
@@ -66,7 +67,7 @@ export function HeroBillboard({ items }: { items: BillboardItem[] }) {
   if (!activeItem) return null
 
   const backdropUrl = activeItem.backdrop_path
-    ? `https://image.tmdb.org/t/p/w1280${activeItem.backdrop_path}`
+    ? getImageUrl(activeItem.backdrop_path, "w1280")
     : "https://image.tmdb.org/t/p/w1280/muth4OYamv31pG2LX2jU2u2vY1n.jpg"
 
   const title = activeItem.title || "Featured Title"

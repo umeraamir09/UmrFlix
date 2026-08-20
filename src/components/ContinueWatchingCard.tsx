@@ -5,6 +5,7 @@ import Image from "next/image"
 import { useRef, useState, useEffect } from "react"
 import { createPortal } from "react-dom"
 import { Check, Loader2, MoreVertical, Info } from "lucide-react"
+import { getImageUrl } from "@/lib/utils"
 
 export interface ContinueWatchingItem {
   id: number
@@ -36,16 +37,21 @@ export function getContinueWatchingMedia(item: ContinueWatchingItem) {
 
   // PREFER TMDB official poster first so mobile 2:3 vertical cards match normal catalog cards
   const posterUrl = item.poster_path
-    ? (item.poster_path.startsWith("http") ? item.poster_path : `https://image.tmdb.org/t/p/w780${item.poster_path}`)
-    : (item.jellyfinPrimaryUrl ||
-       (item.backdrop_path
-         ? (item.backdrop_path.startsWith("http") ? item.backdrop_path : `https://image.tmdb.org/t/p/w780${item.backdrop_path}`)
-         : item.jellyfinImageUrl || "/placeholder-poster.svg"))
+    ? getImageUrl(item.poster_path, "w780")
+    : (item.jellyfinPrimaryUrl
+      ? getImageUrl(item.jellyfinPrimaryUrl, "w780")
+      : (item.backdrop_path
+        ? getImageUrl(item.backdrop_path, "w780")
+        : (item.jellyfinImageUrl
+          ? getImageUrl(item.jellyfinImageUrl, "w780")
+          : "/placeholder-poster.svg")))
 
   // PREFER TMDB 16:9 English backdrop first on desktop
   const backdropUrl = item.backdrop_path
-    ? (item.backdrop_path.startsWith("http") ? item.backdrop_path : `https://image.tmdb.org/t/p/w780${item.backdrop_path}`)
-    : (item.jellyfinImageUrl || posterUrl)
+    ? getImageUrl(item.backdrop_path, "w780")
+    : (item.jellyfinImageUrl
+      ? getImageUrl(item.jellyfinImageUrl, "w780")
+      : posterUrl)
 
   const logoUrl = item.jellyfinLogoUrl || null
 

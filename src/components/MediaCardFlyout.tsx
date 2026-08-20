@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useEffect, useState } from "react"
+import React, { useEffect, useState, useRef } from "react"
 import Link from "next/link"
 import Image from "next/image"
 import { useRouter } from "next/navigation"
@@ -9,8 +9,8 @@ import { BookmarkButton } from "@/components/BookmarkButton"
 import { AvailabilityBadge } from "@/components/AvailabilityBadge"
 import { Tooltip } from "@/components/ui/tooltip"
 import { IconPlay, IconGroup, IconTv, IconMovie, IconAdd, IconInfo } from "@/components/ui/icons"
-import { ChevronDown, Check, Loader2 } from "lucide-react"
-import { formatYear, formatRuntime } from "@/lib/utils"
+import { ChevronDown, Check, Loader2, MoreVertical, Trash2 } from "lucide-react"
+import { getImageUrl, formatYear, formatRuntime } from "@/lib/utils"
 import { RequestModal } from "@/components/RequestModal"
 import type { AvailabilityResult } from "@/app/api/availability/route"
 
@@ -66,6 +66,7 @@ export interface MediaCardFlyoutProps {
   onMouseEnter?: () => void
   onMouseLeave?: () => void
   onMarkWatched?: () => void
+  onDelete?: () => void
   marking?: boolean
   isWatched?: boolean
   availabilityState?: AvailabilityResult
@@ -81,6 +82,7 @@ export function MediaCardFlyout({
   onMouseEnter,
   onMouseLeave,
   onMarkWatched,
+  onDelete,
   marking = false,
   isWatched = false,
   availabilityState,
@@ -90,8 +92,8 @@ export function MediaCardFlyout({
   const router = useRouter()
   const [entered, setEntered] = useState(false)
   const [showRequestModal, setShowRequestModal] = useState(false)
-
-
+  const [isMenuOpen, setIsMenuOpen] = useState(false)
+  const menuRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     let raf = 0
@@ -99,7 +101,10 @@ export function MediaCardFlyout({
     if (open) {
       raf = requestAnimationFrame(() => setEntered(true))
     } else {
-      raf = requestAnimationFrame(() => setEntered(false))
+      raf = requestAnimationFrame(() => {
+        setEntered(false)
+        setIsMenuOpen(false)
+      })
       timer = window.setTimeout(() => onExited?.(), FLYOUT_EXIT_MS)
     }
     return () => {
@@ -107,6 +112,28 @@ export function MediaCardFlyout({
       window.clearTimeout(timer)
     }
   }, [open, onExited])
+
+  // Close dropdown menu on outside click or Escape
+  useEffect(() => {
+    if (!isMenuOpen) return
+    const handleClickOutside = (e: MouseEvent | TouchEvent) => {
+      const target = e.target as Node
+      if (menuRef.current && !menuRef.current.contains(target)) {
+        setIsMenuOpen(false)
+      }
+    }
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setIsMenuOpen(false)
+    }
+    document.addEventListener("mousedown", handleClickOutside)
+    document.addEventListener("touchstart", handleClickOutside, { passive: true })
+    document.addEventListener("keydown", handleKeyDown)
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside)
+      document.removeEventListener("touchstart", handleClickOutside)
+      document.removeEventListener("keydown", handleKeyDown)
+    }
+  }, [isMenuOpen])
 
   // Fetch extra TMDB details for runtime / number of seasons if not already known
   const { data: tmdbDetail } = useSWR<{
@@ -145,11 +172,11 @@ export function MediaCardFlyout({
   const detailHref = `/${mediaType}/${item.id}`
 
   const backdropUrl = item.jellyfinImageUrl
-    ? item.jellyfinImageUrl
+    ? getImageUrl(item.jellyfinImageUrl, "w780")
     : item.backdrop_path
-    ? `https://image.tmdb.org/t/p/w780${item.backdrop_path}`
+    ? getImageUrl(item.backdrop_path, "w780")
     : item.poster_path
-    ? `https://image.tmdb.org/t/p/w780${item.poster_path}`
+    ? getImageUrl(item.poster_path, "w780")
     : "/placeholder-poster.svg"
 
   const displayEpisodeInfo = item.episodeNumber
@@ -162,7 +189,7 @@ export function MediaCardFlyout({
   const top = Math.max(12, isLarge ? rect.top - 20 : rect.top - 16)
 
   const posterUrl = item.poster_path
-    ? `https://image.tmdb.org/t/p/w780${item.poster_path}`
+    ? getImageUrl(item.poster_path, "w780")
     : backdropUrl
 
   // FLIP transform mapping back to base card bounding box
@@ -177,7 +204,7 @@ export function MediaCardFlyout({
       style={{ top, left, width: FLYOUT_WIDTH }}
       onMouseEnter={onMouseEnter}
       onMouseLeave={() => {
-        if (showRequestModal) return
+        if (showRequestModal || isMenuOpen) return
         onMouseLeave?.()
       }}
     >
@@ -300,6 +327,74 @@ export function MediaCardFlyout({
                     variant="circle-sm"
                   />
                 </Tooltip>
+
+                {/* Optional Mark Watched Button */}
+                {onMarkWatched && (
+                  <Tooltip content={isWatched ? "Mark Unwatched" : "Mark Watched"} side="top">
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.preventDefault()
+                        e.stopPropagation()
+                        onMarkWatched()
+                      }}
+                      disabled={marking}
+                      aria-label="Toggle Watched"
+                      className="size-10 min-h-[40px] min-w-[40px] rounded-full border-2 border-white/80 bg-black/20 hover:bg-white/20 active:bg-white/30 text-white flex items-center justify-center backdrop-blur-sm shadow-lg transition-transform hover:scale-105 active:scale-95 cursor-pointer shrink-0 disabled:opacity-50"
+                    >
+                      {marking ? (
+                        <Loader2 className="size-4 animate-spin text-white" />
+                      ) : (
+                        <Check className={`size-4 stroke-[2.5] ${isWatched ? "text-penpot-primary-100" : "text-white"}`} />
+                      )}
+                    </button>
+                  </Tooltip>
+                )}
+
+                {/* Options / Delete Dropdown Menu */}
+                {onDelete && (
+                  <div className="relative" ref={menuRef} onClick={(e) => e.stopPropagation()}>
+                    <Tooltip content="Options" side="top">
+                      <button
+                        type="button"
+                        aria-label={`Options for ${title}`}
+                        aria-expanded={isMenuOpen}
+                        onClick={(e) => {
+                          e.preventDefault()
+                          e.stopPropagation()
+                          setIsMenuOpen((prev) => !prev)
+                        }}
+                        className={`size-10 min-h-[40px] min-w-[40px] rounded-full border-2 border-white/80 bg-black/20 hover:bg-white/20 active:bg-white/30 text-white flex items-center justify-center backdrop-blur-sm shadow-lg transition-transform hover:scale-105 active:scale-95 cursor-pointer shrink-0 ${
+                          isMenuOpen ? "bg-white/30 border-white text-white scale-105" : ""
+                        }`}
+                      >
+                        <MoreVertical className="size-4 text-white" />
+                      </button>
+                    </Tooltip>
+
+                    {/* Dropdown Menu Popover */}
+                    {isMenuOpen && (
+                      <div
+                        className="absolute left-0 bottom-full mb-2 z-50 w-44 rounded-md bg-penpot-neutral-700/98 border border-penpot-border p-1 shadow-2xl backdrop-blur-xl animate-in fade-in zoom-in-95 duration-150 flex flex-col gap-1 select-none"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.preventDefault()
+                            e.stopPropagation()
+                            setIsMenuOpen(false)
+                            onDelete()
+                          }}
+                          className="w-full min-h-9 flex items-center gap-2.5 px-3 py-2 text-xs font-semibold text-red-400 hover:text-red-300 hover:bg-red-500/15 active:bg-red-500/25 rounded transition-colors text-left cursor-pointer"
+                        >
+                          <Trash2 className="size-3.5 text-red-400 shrink-0" />
+                          <span>Delete</span>
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 {/* 4. More Info Button */}
                 <Tooltip content="More Info" side="top" className="ml-auto">
@@ -493,6 +588,51 @@ export function MediaCardFlyout({
                       )}
                     </button>
                   </Tooltip>
+                )}
+
+                {/* Options / Delete Dropdown Menu */}
+                {onDelete && (
+                  <div className="relative" ref={menuRef} onClick={(e) => e.stopPropagation()}>
+                    <Tooltip content="Options" side="top">
+                      <button
+                        type="button"
+                        aria-label={`Options for ${title}`}
+                        aria-expanded={isMenuOpen}
+                        onClick={(e) => {
+                          e.preventDefault()
+                          e.stopPropagation()
+                          setIsMenuOpen((prev) => !prev)
+                        }}
+                        className={`size-10 min-h-[40px] min-w-[40px] rounded-full border-2 border-white/80 bg-black/20 hover:bg-white/20 active:bg-white/30 text-white flex items-center justify-center backdrop-blur-sm shadow-lg transition-transform hover:scale-105 active:scale-95 cursor-pointer shrink-0 ${
+                          isMenuOpen ? "bg-white/30 border-white text-white scale-105" : ""
+                        }`}
+                      >
+                        <MoreVertical className="size-4 text-white" />
+                      </button>
+                    </Tooltip>
+
+                    {/* Dropdown Menu Popover */}
+                    {isMenuOpen && (
+                      <div
+                        className="absolute left-0 bottom-full mb-2 z-50 w-44 rounded-md bg-penpot-neutral-700/98 border border-penpot-border p-1 shadow-2xl backdrop-blur-xl animate-in fade-in zoom-in-95 duration-150 flex flex-col gap-1 select-none"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.preventDefault()
+                            e.stopPropagation()
+                            setIsMenuOpen(false)
+                            onDelete()
+                          }}
+                          className="w-full min-h-9 flex items-center gap-2.5 px-3 py-2 text-xs font-semibold text-red-400 hover:text-red-300 hover:bg-red-500/15 active:bg-red-500/25 rounded transition-colors text-left cursor-pointer"
+                        >
+                          <Trash2 className="size-3.5 text-red-400 shrink-0" />
+                          <span>Delete</span>
+                        </button>
+                      </div>
+                    )}
+                  </div>
                 )}
 
                 {/* 4. More Details Button */}

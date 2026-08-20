@@ -22,6 +22,7 @@ export type MovieCardItem = {
   media_type?: string
   runtime?: number
   numberOfSeasons?: number
+  jellyfinItemId?: string
   // Server-computed availability
   availabilityStatus?: {
     status: string
@@ -55,6 +56,7 @@ export function MovieCard({
   item,
   type,
   availabilityState,
+  onDelete,
   onMarkWatched,
   isWatched = false,
   disabled = false,
@@ -236,6 +238,7 @@ export function MovieCard({
               ...item,
               backdrop_path: isLarge ? posterPath : backdropPath,
               ranking: cardRank,
+              jellyfinItemId: item.jellyfinItemId || availabilityState?.jellyfinItemId,
             }}
             rect={standaloneRect}
             open={standaloneFlyout}
@@ -254,6 +257,7 @@ export function MovieCard({
             }}
             onMouseLeave={handleMouseLeave}
             onMarkWatched={onMarkWatched ? () => onMarkWatched(item, type) : undefined}
+            onDelete={onDelete ? () => onDelete(item, type) : undefined}
             isWatched={isWatched}
           />,
           document.body
