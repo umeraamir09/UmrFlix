@@ -1,11 +1,6 @@
-import { Fragment } from "react"
-import Link from "next/link"
 import { notFound } from "next/navigation"
 import type { Metadata } from "next"
-import { HeroBillboard, BillboardItem } from "@/components/HeroBillboard"
 import { MovieRow } from "@/components/MovieRow"
-import { SpotlightBanner, SpotlightItem } from "@/components/SpotlightBanner"
-import { GenreSwitcher } from "@/components/GenreSwitcher"
 import { getGenreBySlug } from "@/lib/genres"
 import { getGenrePageData, GenreRow } from "@/lib/genre-catalog"
 import { getSession } from "@/lib/auth"
@@ -30,17 +25,6 @@ export async function generateMetadata({
   }
 }
 
-function toSpotlight(item: GenreRow["items"][number]): SpotlightItem | null {
-  if (!item.backdrop_path) return null
-  return {
-    id: item.id,
-    title: item.title || item.name || "",
-    overview: item.overview || "",
-    backdrop_path: item.backdrop_path,
-    media_type: item.media_type === "tv" ? "tv" : "movie",
-  }
-}
-
 export default async function GenrePage({
   params,
 }: {
@@ -53,92 +37,50 @@ export default async function GenrePage({
   const session = await getSession()
   const userId = session?.userId ?? "default"
 
-  let heroItems: BillboardItem[] = []
   let rows: GenreRow[] = []
 
   try {
     const data = await getGenrePageData(slug, userId)
     if (data) {
-      heroItems = data.heroItems
       rows = data.rows
     }
   } catch (err) {
     console.error(`Failed to load genre page data for "${slug}":`, err)
   }
 
-  // Spotlight banners interleaved between rows. The trending row is
-  // popularity-sorted, so items past the hero's top-5 make for varied
-  // mid-page spotlights.
-  const trendingRow = rows.find((r) => r.id === "trending") ?? rows[0]
-  const trendingItems = trendingRow?.items ?? []
-  const spotlightItem1 = trendingItems[6] ? toSpotlight(trendingItems[6]) : null
-  const spotlightItem2 = trendingItems[10] ? toSpotlight(trendingItems[10]) : null
-
-  const isEmpty = heroItems.length === 0 && rows.length === 0
+  const isEmpty = rows.length === 0
 
   return (
-    <div className="space-y-10 pb-16">
-      {/* Hero Billboard */}
-      {heroItems.length > 0 && <HeroBillboard items={heroItems} />}
-
-      <div
-        className={`mx-auto max-w-[1600px] 2xl:max-w-[1920px] 3xl:max-w-[2300px] 4xl:max-w-[2700px] px-4 sm:px-6 md:px-8 lg:px-12 2xl:px-16 space-y-12 relative z-20 ${
-          heroItems.length > 0 ? "-mt-28 sm:-mt-36 md:-mt-44 2xl:-mt-52" : ""
-        }`}
-      >
-        {/* Header & Genre Switcher */}
-        <div className="space-y-4">
-          <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 border-b border-border/50 pb-4">
-            <div>
-              <h1 className="text-3xl sm:text-4xl font-black uppercase tracking-tight text-white">
-                {genre.name}
-              </h1>
-              <p className="text-sm text-foreground-muted mt-1 font-medium">
-                {genre.description}
-              </p>
-            </div>
-          </div>
-          <GenreSwitcher activeSlug={slug} />
+    <div className="min-h-screen bg-penpot-bg text-penpot-text-high">
+      <div className="mx-auto max-w-[1600px] 2xl:max-w-[1920px] 3xl:max-w-[2300px] 4xl:max-w-[2700px] px-4 sm:px-6 md:px-8 lg:px-12 2xl:px-16 pt-28 sm:pt-32 md:pt-36 lg:pt-40 pb-16 sm:pb-24">
+        {/* ── Centered Genre Title (1:1 Penpot Collection/Genre Design) ── */}
+        <div className="text-center mb-8 sm:mb-12 md:mb-16">
+          <h1 className="text-4xl sm:text-5xl md:text-6xl lg:text-7xl 2xl:text-8xl font-black uppercase tracking-tight text-white select-none">
+            {genre.name}
+          </h1>
         </div>
 
         {isEmpty ? (
-          <div className="py-16 text-center">
+          <div className="py-20 text-center">
             <p className="text-lg font-bold text-white">
               Nothing here right now
             </p>
-            <p className="text-sm text-foreground-muted mt-1">
+            <p className="text-sm text-penpot-text-medium mt-1">
               We couldn&apos;t find any {genre.name} titles. Check back soon.
             </p>
           </div>
         ) : (
-          <>
-            {rows.map((row, index) => (
-              <Fragment key={row.id}>
-                <MovieRow
-                  title={row.title}
-                  subtitle={row.subtitle}
-                  type={row.type === "tv" ? "tv" : "movie"}
-                  customItems={row.items}
-                />
-                {index === 2 && spotlightItem1 && (
-                  <SpotlightBanner item={spotlightItem1} />
-                )}
-                {index === 5 && spotlightItem2 && (
-                  <SpotlightBanner item={spotlightItem2} />
-                )}
-              </Fragment>
+          <div className="space-y-6 sm:space-y-8 md:space-y-10">
+            {rows.map((row) => (
+              <MovieRow
+                key={row.id}
+                title={row.title}
+                subtitle={row.subtitle}
+                type={row.type === "tv" ? "tv" : "movie"}
+                customItems={row.items}
+              />
             ))}
-
-            {/* Browse full catalog */}
-            <div className="pt-2 border-t border-border/50">
-              <Link
-                href={`/search?genre=${encodeURIComponent(genre.name)}`}
-                className="inline-flex items-center gap-2 rounded-none border border-border bg-surface px-5 py-3 text-xs font-bold uppercase tracking-wider text-gray-300 transition-all hover:border-accent hover:text-white hover:scale-[1.02] active:scale-95"
-              >
-                Browse full {genre.name} catalog
-              </Link>
-            </div>
-          </>
+          </div>
         )}
       </div>
     </div>

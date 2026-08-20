@@ -114,6 +114,15 @@
       "baselineFile": "subtitles-options.png",
       "viewport": { "width": 589, "height": 305 },
       "threshold": 0.05
+    },
+    {
+      "id": "genre",
+      "name": "Genre Catalog Page",
+      "boardId": "genre-page",
+      "route": "/genre/action",
+      "baselineFile": "genre.png",
+      "viewport": { "width": 1440, "height": 900 },
+      "threshold": 0.08
     }
   ]
 }
