@@ -1418,7 +1418,11 @@ export function CinemaPlayer({
     >
       {/* Video Tap & Gesture Backdrop Layer */}
       <div
-        className="absolute inset-0 z-10 cursor-pointer"
+        className={`absolute inset-0 z-10 ${
+          !controlsVisible && playing && !episodeBrowserOpen
+            ? "cursor-none"
+            : "cursor-pointer"
+        }`}
         {...gestureHandlers}
       />
 
@@ -1632,6 +1636,7 @@ export function CinemaPlayer({
             playbackRate={displayPlaybackRate}
             isFullscreen={isFullscreen}
             hasNext={!!nextEpisode && !!onNextEpisode}
+            nextEpisode={nextEpisode}
             chapters={payload.chapters}
             itemId={payload.itemId}
             trickplay={payload.trickplay}

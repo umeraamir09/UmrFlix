@@ -1,15 +1,8 @@
 "use client"
 
 import { useEffect, useRef, useState } from "react"
-import Image from "next/image"
-import {
-  ArrowLeft,
-  Flag,
-  PictureInPicture2,
-  Volume2,
-  VolumeX,
-} from "lucide-react"
-import { formatTimecode, useRemainingTimeToggle } from "./PlayerOverlays"
+import { PictureInPicture2 } from "lucide-react"
+import { formatTimecode, useRemainingTimeToggle, type NextEpisodeInfo } from "./PlayerOverlays"
 import type {
   AudioTrack,
   ChapterInfo,
@@ -21,6 +14,8 @@ import { ChapterImagePreview, chapterPreviewDisplaySize, getChapterPreloadUrls }
 import { preloadImages } from "./use-preloaded-image"
 import { EpisodeBrowser } from "./EpisodeBrowser"
 import { AudioSubtitlesMenu, SpeedQualityMenu } from "./player-menus"
+import { PlayerHeader } from "./PlayerHeader"
+import { NextEpisodeCard } from "./NextEpisodeCard"
 import type { EpisodeInfo, SeasonInfo } from "@/components/SeasonBrowser"
 import type { SubtitleStyle } from "./SubtitleOverlay"
 
@@ -29,8 +24,15 @@ import {
   IconPause,
   IconSkipBackward,
   IconSkipForward,
+  IconSkipNext,
   IconSubtitles,
   IconSpeed,
+  IconVolumeUp,
+  IconVolumeMute,
+  IconVideoLibrary,
+  IconHelp,
+  IconFullscreen,
+  IconMinimize,
 } from "@/components/ui/icons"
 
 // ── Seek bar with buffered display, chapter ticks, hover tooltip & scrubbing ──
@@ -58,20 +60,13 @@ export function SeekBar({
   const [hover, setHover] = useState<{ time: number; x: number; barW: number } | null>(null)
   const [scrubTime, setScrubTime] = useState<number | null>(null)
 
-  // 4.3 — pointermove fires 60-120x/sec during a drag; batch hover/scrub state
-  // writes into a single rAF per frame instead of re-rendering per pixel, and
-  // DON'T seek during the drag — the preview shows the position visually and
-  // video.currentTime (plus party commands) only move on pointerdown/up.
   const pendingHoverRef = useRef<{ time: number; x: number; barW: number } | null>(null)
   const pendingScrubRef = useRef<number | null>(null)
   const scrubTimeRef = useRef<number | null>(null)
   const rafRef = useRef<number | null>(null)
 
-  // 4.6 — preload trickplay sprite tiles (or chapter images) as soon as the
-  // cursor enters the bar, so the hover bubble never pops in with a stall.
-  // preloadImages shares usePreloadedImage's cache, so a completed preload
-  // makes the first hover render instantly; the ref dedupes in-flight URLs.
   const preloadedTilesRef = useRef(new Set<string>())
+  const hasChapterImages = chapters.some((c) => Boolean(c.imageTag))
   const preloadPreviews = () => {
     const urls = trickplay
       ? getTrickplayPreloadUrls(trickplay, itemId)
@@ -117,9 +112,6 @@ export function SeekBar({
   const playedPct = duration > 0 ? (shownTime / duration) * 100 : 0
   const bufferedPct = duration > 0 ? Math.min(100, (buffered / duration) * 100) : 0
 
-  // 5.1 — role="slider" needs keyboard support: arrows nudge by ±10s (±5s with
-  // Shift), Up/Down step 10% of the duration, Home/End jump to the edges.
-  // Keys stopPropagation so the player surface's shortcuts never double-handle.
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (duration <= 0) return
     let next: number | null = null
@@ -148,25 +140,22 @@ export function SeekBar({
       case "PageDown":
         next = shownTime - Math.max(30, duration * 0.1)
         break
-      default:
-        return
     }
-    e.preventDefault()
-    e.stopPropagation()
-    onSeek(Math.min(Math.max(0, next), duration))
+    if (next !== null) {
+      e.preventDefault()
+      e.stopPropagation()
+      const clamped = Math.max(0, Math.min(duration, next))
+      onSeek(clamped)
+    }
   }
 
-  // Chapter images available as fallback when trickplay is absent?
-  const hasChapterImages = !trickplay && chapters.some((c) => c.imageTag)
-
-  // Keep the preview bubble within the bar so it never clips off-screen
   const preview = trickplay
     ? trickplayPreviewDisplaySize(trickplay)
     : hasChapterImages
       ? chapterPreviewDisplaySize()
       : null
-  const previewW = preview ? preview.width + 2 : 0 // + border
-  const clampedHoverX =
+  const previewW = preview ? preview.width + 2 : 0
+  const previewLeft =
     hover && preview && hover.barW > previewW
       ? Math.min(Math.max(hover.x, previewW / 2), hover.barW - previewW / 2)
       : (hover?.x ?? 0)
@@ -177,123 +166,115 @@ export function SeekBar({
       role="slider"
       aria-label="Seek bar"
       aria-valuemin={0}
-      aria-valuemax={Math.max(0, duration)}
+      aria-valuemax={duration}
       aria-valuenow={shownTime}
       aria-valuetext={formatTimecode(shownTime)}
-      aria-disabled={duration <= 0}
       tabIndex={0}
       onKeyDown={handleKeyDown}
-      className="group/seek relative flex h-11 sm:h-6 cursor-pointer items-center touch-none select-none"
       onPointerEnter={preloadPreviews}
       onPointerDown={(e) => {
-        e.currentTarget.setPointerCapture(e.pointerId)
-        const t = fraction(e.clientX) * duration
+        e.stopPropagation()
+        const target = e.currentTarget
+        target.setPointerCapture(e.pointerId)
+        const f = fraction(e.clientX)
+        const t = f * duration
         scrubTimeRef.current = t
         setScrubTime(t)
-        onSeek(t) // tap-to-seek: instant jump on press
+        onSeek(t)
         onScrubStateChange?.(true)
       }}
       onPointerMove={(e) => {
         const rect = barRef.current?.getBoundingClientRect()
-        const f =
-          rect && rect.width > 0
-            ? Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width))
-            : 0
-        const h = {
-          time: f * duration,
-          x: e.clientX - (rect?.left ?? 0),
-          barW: rect?.width ?? 0,
-        }
+        if (!rect) return
+        const x = e.clientX - rect.left
+        const f = Math.min(1, Math.max(0, x / rect.width))
+        const t = f * duration
+
         if (scrubTimeRef.current !== null) {
-          // 4.3 — dragging: update the preview position only; the actual seek
-          // happens once on pointerup (video.currentTime + party commands).
-          scrubTimeRef.current = f * duration
-          schedulePointerMove(h, f * duration)
-          onScrubStateChange?.(true)
+          scrubTimeRef.current = t
+          schedulePointerMove({ time: t, x, barW: rect.width }, t)
         } else {
-          schedulePointerMove(h, null)
+          schedulePointerMove({ time: t, x, barW: rect.width }, null)
         }
       }}
-      onPointerUp={() => {
-        // 4.3 — single seek at release with the final drag position
-        const final = scrubTimeRef.current
-        if (final !== null) onSeek(final)
-        scrubTimeRef.current = null
-        pendingScrubRef.current = null
-        setScrubTime(null)
-        onScrubStateChange?.(false)
+      onPointerUp={(e) => {
+        e.stopPropagation()
+        try {
+          e.currentTarget.releasePointerCapture(e.pointerId)
+        } catch {}
+        if (scrubTimeRef.current !== null) {
+          const finalTime = scrubTimeRef.current
+          scrubTimeRef.current = null
+          setScrubTime(null)
+          onSeek(finalTime)
+          onScrubStateChange?.(false)
+        }
       }}
       onPointerCancel={() => {
         scrubTimeRef.current = null
-        pendingScrubRef.current = null
         setScrubTime(null)
+        setHover(null)
         onScrubStateChange?.(false)
       }}
       onPointerLeave={() => {
+        if (rafRef.current !== null) {
+          cancelAnimationFrame(rafRef.current)
+          rafRef.current = null
+        }
         pendingHoverRef.current = null
         setHover(null)
       }}
+      className="group/seek relative flex h-6 w-full cursor-pointer touch-none items-center outline-none select-none"
     >
-      {/* track */}
-      <div className="relative h-[3px] w-full rounded-full bg-white/35 transition-[height] duration-150 group-hover/seek:h-[5px]">
-        {/* buffered */}
+      {/* Visual Track (3px height matching Penpot) */}
+      <div className="relative h-[3px] w-full rounded-full bg-white/30 transition-all group-hover/seek:h-1.5 group-focus-visible/seek:ring-2 group-focus-visible/seek:ring-cyan">
+        {/* Buffered */}
         <div
-          className="absolute inset-y-0 left-0 rounded-full bg-white/50"
+          className="absolute inset-y-0 left-0 rounded-full bg-white/40"
           style={{ width: `${bufferedPct}%` }}
         />
-        {/* played */}
+        {/* Played (#02E7F5 Cyan) */}
         <div
-          className="absolute inset-y-0 left-0 rounded-full bg-accent"
+          className="absolute inset-y-0 left-0 rounded-full bg-accent bg-cyan"
           style={{ width: `${playedPct}%` }}
         />
-        {/* chapter ticks */}
-        {duration > 0 &&
-          chapters.map((ch) => (
+
+        {/* Chapter Ticks */}
+        {chapters.map((ch, idx) => {
+          const pct = duration > 0 ? (ch.startSeconds / duration) * 100 : 0
+          if (pct <= 0 || pct >= 100) return null
+          return (
             <div
-              key={`${ch.name}-${ch.startSeconds}`}
-              className="absolute top-0 h-full w-[2px] bg-white/60"
-              style={{ left: `${(ch.startSeconds / duration) * 100}%` }}
-              title={ch.name}
+              key={idx}
+              className="absolute top-0 bottom-0 w-[2px] -translate-x-1/2 bg-black/70"
+              style={{ left: `${pct}%` }}
             />
-          ))}
+          )
+        })}
+
+        {/* Scrubber Handle Thumb (12px circular cyan handle matching Penpot) */}
+        <div
+          className="absolute top-1/2 size-3 -translate-x-1/2 -translate-y-1/2 rounded-full bg-cyan shadow-md transition-transform duration-100 group-hover/seek:scale-125"
+          style={{ left: `${playedPct}%` }}
+        />
       </div>
 
-      {/* red circular dot handle */}
-      <div
-        className="pointer-events-none absolute size-4 sm:size-4.5 rounded-full bg-accent shadow-md transition-transform duration-100 group-hover/seek:scale-150 group-active/seek:scale-150"
-        style={{ left: `calc(${playedPct}% - 8px)` }}
-      />
-
-      {/* hover tooltip: trickplay → chapter images → plain timecode */}
-      {hover &&
-        (trickplay ? (
-          <div
-            className="pointer-events-none absolute bottom-full mb-2 -translate-x-1/2 border border-white/15 bg-black shadow-2xl"
-            style={{ left: clampedHoverX }}
-          >
+      {/* Hover preview tooltip (Trickplay / Chapter / Timecode) */}
+      {hover && (
+        <div
+          className="pointer-events-none absolute bottom-5 -translate-x-1/2 flex flex-col items-center gap-1.5"
+          style={{ left: previewLeft }}
+        >
+          {trickplay ? (
             <TrickplayPreview trickplay={trickplay} itemId={itemId} time={hover.time} />
-            <div className="py-1.5 text-center text-xs font-semibold tabular-nums text-white">
-              {formatTimecode(hover.time)}
-            </div>
-          </div>
-        ) : hasChapterImages ? (
-          <div
-            className="pointer-events-none absolute bottom-full mb-2 -translate-x-1/2 border border-white/15 bg-black shadow-2xl"
-            style={{ left: clampedHoverX }}
-          >
+          ) : hasChapterImages ? (
             <ChapterImagePreview chapters={chapters} itemId={itemId} time={hover.time} />
-            <div className="py-1.5 text-center text-xs font-semibold tabular-nums text-white">
-              {formatTimecode(hover.time)}
-            </div>
-          </div>
-        ) : (
-          <div
-            className="pointer-events-none absolute -top-9 -translate-x-1/2 rounded border border-white/10 bg-black/90 px-2.5 py-1 text-xs font-semibold tabular-nums text-white shadow-lg"
-            style={{ left: hover.x }}
-          >
+          ) : null}
+          <span className="rounded bg-black/90 px-2 py-1 text-xs font-semibold tabular-nums text-white shadow-lg border border-white/10">
             {formatTimecode(hover.time)}
-          </div>
-        ))}
+          </span>
+        </div>
+      )}
     </div>
   )
 }
@@ -301,7 +282,6 @@ export function SeekBar({
 // ── Main Control Bar ──
 
 export function PlayerControls({
-  isTouchDevice = false,
   visible,
   title,
   subtitle,
@@ -322,6 +302,7 @@ export function PlayerControls({
   playbackRate,
   isFullscreen,
   hasNext,
+  nextEpisode,
   chapters,
   itemId,
   trickplay,
@@ -368,6 +349,7 @@ export function PlayerControls({
   playbackRate: number
   isFullscreen: boolean
   hasNext: boolean
+  nextEpisode?: NextEpisodeInfo | null
   chapters: ChapterInfo[]
   itemId: string
   trickplay: TrickplayInfo | null
@@ -396,12 +378,12 @@ export function PlayerControls({
   const [audioSubsOpen, setAudioSubsOpen] = useState(false)
   const [speedOpen, setSpeedOpen] = useState(false)
   const [isScrubbing, setIsScrubbing] = useState(false)
+  const [showNextPreview, setShowNextPreview] = useState(false)
+  const [showHelpTooltip, setShowHelpTooltip] = useState(false)
   const [showRemaining, toggleRemainingTime] = useRemainingTimeToggle()
   const audioSubsRef = useRef<HTMLDivElement>(null)
   const speedRef = useRef<HTMLDivElement>(null)
 
-  // Close menus when controls fade out (render-time state adjustment — see
-  // react.dev "you might not need an effect")
   const [prevVisible, setPrevVisible] = useState(visible)
   if (prevVisible !== visible) {
     setPrevVisible(visible)
@@ -460,277 +442,271 @@ export function PlayerControls({
           visible || isAnyMenuOpen ? "visible opacity-100" : "invisible opacity-0"
         }`}
       >
-      {/* Background gradients */}
-      <div className="pointer-events-none absolute inset-x-0 top-0 h-32 bg-gradient-to-b from-black/80 via-black/40 to-transparent" />
-      <div className="pointer-events-none absolute inset-x-0 bottom-0 h-36 bg-gradient-to-t from-black/95 via-black/60 to-transparent" />
-
-      {/* Top Bar */}
-      <div className="relative z-30 pointer-events-auto flex items-center justify-between px-6 sm:px-8 pt-6">
-        <button
-          onClick={onBack ?? (() => window.history.back())}
-          className="flex items-center justify-center p-1 text-white/90 transition-transform hover:scale-110 hover:text-white active:scale-95"
-          aria-label="Go back"
-        >
-          <ArrowLeft className="size-9 sm:size-10 stroke-[2.5]" />
-        </button>
-        <button
-          onClick={onReport}
-          className="flex items-center justify-center p-1 text-white/90 transition-transform hover:scale-110 hover:text-white active:scale-95"
-          aria-label="Report issue"
-        >
-          <Flag className="size-9 sm:size-10 stroke-[2.2]" />
-        </button>
-      </div>
-
-      {/* Bottom Bar */}
-      <div className="relative z-30 pointer-events-auto px-6 sm:px-8 pb-6 pt-2">
-        {/* Current time on the left, total duration / remaining time on the right above seekbar */}
-        <div className="mb-1.5 flex items-center justify-between text-xs sm:text-sm font-medium tabular-nums text-white">
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation()
-              toggleRemainingTime()
-            }}
-            className="cursor-pointer transition-colors hover:text-accent active:scale-95 select-none"
-            title={showRemaining ? "Click to show total duration" : "Click to show remaining time"}
-          >
-            {formatTimecode(currentTime)}
-          </button>
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation()
-              toggleRemainingTime()
-            }}
-            className="cursor-pointer transition-colors hover:text-accent active:scale-95 select-none"
-            title={showRemaining ? "Click to show total duration" : "Click to show remaining time"}
-          >
-            {showRemaining
-              ? `-${formatTimecode(Math.max(0, duration - currentTime))}`
-              : formatTimecode(duration)}
-          </button>
-        </div>
-
-        {/* Seekbar */}
-        <SeekBar
-          currentTime={currentTime}
-          duration={duration}
-          buffered={buffered}
-          chapters={chapters}
-          itemId={itemId}
-          trickplay={trickplay}
-          onSeek={onSeek}
-          onScrubStateChange={setIsScrubbing}
+        {/* Top Header Bar (Penpot 1:1) */}
+        <PlayerHeader
+          title={title}
+          subtitle={subtitle}
+          onBack={onBack ?? (() => window.history.back())}
+          onReport={onReport}
+          visible={visible || isAnyMenuOpen}
         />
 
-        {/* Control Buttons Row */}
-        <div className="mt-2.5 sm:mt-3 flex items-center justify-between gap-2 sm:gap-4">
-          {/* Left Controls */}
-          <div className="flex items-center gap-2 sm:gap-6 shrink-0">
-            {!isTouchDevice && (
-              <>
-                <button
-                  onClick={onTogglePlay}
-                  className="flex items-center justify-center p-1 text-white transition-transform hover:scale-110 active:scale-95"
-                  aria-label={playing ? "Pause" : "Play"}
-                >
-                  {playing ? (
-                    <IconPause className="size-8 sm:size-9 fill-white text-white" />
-                  ) : (
-                    <IconPlay className="size-8 sm:size-9 fill-white text-white" />
-                  )}
-                </button>
+        {/* Bottom Transport Bar (`Player/controls` Penpot 1:1) */}
+        <div className="mt-auto relative z-30 pointer-events-auto px-6 sm:px-10 pb-6 pt-2 bg-gradient-to-t from-black/95 via-black/60 to-transparent">
+          {/* Progress Bar with Cyan fill and 12px thumb */}
+          <SeekBar
+            currentTime={currentTime}
+            duration={duration}
+            buffered={buffered}
+            chapters={chapters}
+            itemId={itemId}
+            trickplay={trickplay}
+            onSeek={onSeek}
+            onScrubStateChange={setIsScrubbing}
+          />
 
-                <button
-                  onClick={() => onSkipBy(-10)}
-                  className="flex items-center justify-center p-1 text-white transition-transform hover:scale-110 active:scale-95"
-                  aria-label="Skip back 10 seconds"
-                >
-                  <IconSkipBackward className="size-8 sm:size-9 text-white" />
-                </button>
-
-                <button
-                  onClick={() => onSkipBy(10)}
-                  className="flex items-center justify-center p-1 text-white transition-transform hover:scale-110 active:scale-95"
-                  aria-label="Skip forward 10 seconds"
-                >
-                  <IconSkipForward className="size-8 sm:size-9 text-white" />
-                </button>
-              </>
-            )}
-
-            {/* Volume */}
-            <div className="group/vol flex items-center relative">
+          {/* Controls Row */}
+          <div className="mt-3 flex items-center justify-between gap-4">
+            {/* Left Controls (`Frame 19` in Penpot: Replay 10, Play/Pause, Forward 10, Volume + Time) */}
+            <div className="flex items-center gap-4 sm:gap-6 shrink-0">
               <button
-                onClick={onToggleMute}
-                className="flex items-center justify-center p-1 text-white transition-transform hover:scale-110 active:scale-95 min-h-[36px] min-w-[36px]"
-                aria-label={muted ? "Unmute" : "Mute"}
+                type="button"
+                onClick={() => onSkipBy(-10)}
+                className="flex size-9 items-center justify-center text-white transition-transform hover:scale-110 active:scale-95"
+                aria-label="Replay 10 seconds"
+                title="Replay 10s"
               >
-                {muted || volume === 0 ? (
-                  <VolumeX className="size-5 sm:size-7 stroke-[2.2]" />
+                <IconSkipBackward className="size-7 text-white" />
+              </button>
+
+              <button
+                type="button"
+                onClick={onTogglePlay}
+                className="flex size-10 items-center justify-center text-white transition-transform hover:scale-110 active:scale-95"
+                aria-label={playing ? "Pause" : "Play"}
+                title={playing ? "Pause" : "Play"}
+              >
+                {playing ? (
+                  <IconPause className="size-8 text-white fill-white" />
                 ) : (
-                  <Volume2 className="size-5 sm:size-7 stroke-[2.2]" />
+                  <IconPlay className="size-8 text-white fill-white" />
                 )}
               </button>
-              {typeof navigator !== "undefined" && !/iPad|iPhone|iPod/.test(navigator.userAgent) && (
-                <input
-                  type="range"
-                  min={0}
-                  max={100}
-                  value={muted ? 0 : Math.round(volume * 100)}
-                  onChange={(e) => onVolumeChange(Number(e.target.value) / 100)}
-                  className="w-0 opacity-0 transition-all duration-200 accent-accent h-2 group-hover/vol:ml-2.5 group-hover/vol:w-20 sm:group-hover/vol:w-24 group-hover/vol:opacity-100"
-                  aria-label="Volume"
-                  aria-valuetext={`${Math.round(volume * 100)} percent`}
-                />
+
+              <button
+                type="button"
+                onClick={() => onSkipBy(10)}
+                className="flex size-9 items-center justify-center text-white transition-transform hover:scale-110 active:scale-95"
+                aria-label="Forward 10 seconds"
+                title="Forward 10s"
+              >
+                <IconSkipForward className="size-7 text-white" />
+              </button>
+
+              {/* Volume + Time Indicator */}
+              <div className="flex items-center gap-3">
+                <div className="group/vol flex items-center relative">
+                  <button
+                    type="button"
+                    onClick={onToggleMute}
+                    className="flex size-9 items-center justify-center text-white transition-transform hover:scale-110 active:scale-95"
+                    aria-label={muted ? "Unmute" : "Mute"}
+                    title={muted ? "Unmute" : "Mute"}
+                  >
+                    {muted || volume === 0 ? (
+                      <IconVolumeMute className="size-6 text-white" />
+                    ) : (
+                      <IconVolumeUp className="size-6 text-white" />
+                    )}
+                  </button>
+
+                  {typeof navigator !== "undefined" && !/iPad|iPhone|iPod/.test(navigator.userAgent) && (
+                    <input
+                      type="range"
+                      min={0}
+                      max={100}
+                      value={muted ? 0 : Math.round(volume * 100)}
+                      onChange={(e) => onVolumeChange(Number(e.target.value) / 100)}
+                      className="w-0 opacity-0 transition-all duration-200 accent-cyan h-1.5 group-hover/vol:ml-2 group-hover/vol:w-20 sm:group-hover/vol:w-24 group-hover/vol:opacity-100 cursor-pointer"
+                      aria-label="Volume slider"
+                      aria-valuetext={`${Math.round(volume * 100)} percent`}
+                    />
+                  )}
+                </div>
+
+                {/* Time Indicator (`10:00 / 52:20` formatted as 16px text in Penpot) */}
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    toggleRemainingTime()
+                  }}
+                  className="cursor-pointer text-sm sm:text-base font-normal tabular-nums text-white transition-colors hover:text-cyan active:scale-95 select-none"
+                  title={showRemaining ? "Click to show total duration" : "Click to show remaining time"}
+                >
+                  <span>{formatTimecode(currentTime)}</span>
+                  <span className="text-white/60 mx-1">/</span>
+                  <span>
+                    {showRemaining
+                      ? `-${formatTimecode(Math.max(0, duration - currentTime))}`
+                      : formatTimecode(duration)}
+                  </span>
+                </button>
+              </div>
+            </div>
+
+            {/* Right Controls (`Frame 20` in Penpot: Help, Skip Next, Episodes, Subtitles, Fullscreen) */}
+            <div className="flex items-center gap-3 sm:gap-6 shrink-0 relative">
+              {/* Help Button (Penpot `Player/Button/help`) */}
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => setShowHelpTooltip(!showHelpTooltip)}
+                  onMouseEnter={() => setShowHelpTooltip(true)}
+                  onMouseLeave={() => setShowHelpTooltip(false)}
+                  className="flex size-9 items-center justify-center text-white/90 hover:text-white transition-transform hover:scale-110 active:scale-95"
+                  aria-label="Help and shortcuts"
+                  title="Help & Shortcuts"
+                >
+                  <IconHelp className="size-6 text-white" />
+                </button>
+                {showHelpTooltip && (
+                  <div className="absolute bottom-12 right-0 w-48 rounded-lg bg-black/90 p-3 text-xs text-white shadow-xl border border-white/10 backdrop-blur-md">
+                    <p className="font-bold text-cyan mb-1">Shortcuts</p>
+                    <p>Space: Play / Pause</p>
+                    <p>← / →: Skip 10s</p>
+                    <p>↑ / ↓: Volume</p>
+                    <p>F: Fullscreen</p>
+                    <p>M: Mute</p>
+                  </div>
+                )}
+              </div>
+
+              {/* Next Episode (Penpot `Player/Button/Next` with hover preview card) */}
+              {(hasNext || nextEpisode) && onNextEpisode && (
+                <div
+                  className="relative"
+                  onMouseEnter={() => setShowNextPreview(true)}
+                  onMouseLeave={() => setShowNextPreview(false)}
+                >
+                  {showNextPreview && nextEpisode && (
+                    <div className="absolute bottom-12 right-0 pointer-events-none animate-in fade-in zoom-in-95 duration-150">
+                      <NextEpisodeCard next={nextEpisode} seriesTitle={title} />
+                    </div>
+                  )}
+                  <button
+                    type="button"
+                    onClick={onNextEpisode}
+                    className="flex size-9 items-center justify-center text-white/90 hover:text-white transition-transform hover:scale-110 active:scale-95"
+                    aria-label="Play next episode"
+                    title="Next Episode"
+                  >
+                    <IconSkipNext className="size-6 text-white" />
+                  </button>
+                </div>
               )}
-            </div>
-          </div>
 
-          {/* Center Title (+ episode subtitle) */}
-          <div className="flex-1 min-w-0 text-center px-1.5">
-            <span className="text-xs sm:text-base font-medium tracking-wide text-white text-center truncate block max-w-[160px] sm:max-w-xs md:max-w-md mx-auto drop-shadow-md">
-              {title}
-            </span>
-            {subtitle && (
-              <span className="mt-0.5 text-[10px] sm:text-xs font-normal tracking-wide text-gray-300 text-center truncate block max-w-[160px] sm:max-w-xs md:max-w-md mx-auto drop-shadow-md">
-                {subtitle}
-              </span>
-            )}
-          </div>
-
-          {/* Right Controls */}
-          <div className="flex items-center gap-2 sm:gap-5 shrink-0 relative">
-            {/* Next Episode (only when one is available) */}
-            {hasNext && onNextEpisode && (
-              <button
-                onClick={onNextEpisode}
-                className="flex items-center justify-center p-1 text-white transition-all hover:scale-110 hover:opacity-100 active:scale-95 opacity-90 min-h-[36px] min-w-[36px]"
-                aria-label="Play next episode"
-                title="Next Episode"
-              >
-                <Image
-                  src="/icons/next-ep.svg"
-                  alt=""
-                  width={40}
-                  height={40}
-                  className="size-5 sm:size-7"
-                />
-              </button>
-            )}
-
-            {/* Episode Browser (series only; guests in a party can't switch) */}
-            {seriesId && onSelectEpisode && episodes && episodes.length > 0 && (
-              <button
-                onClick={() => {
-                  setAudioSubsOpen(false)
-                  setSpeedOpen(false)
-                  onToggleEpisodeBrowser()
-                }}
-                className={`flex items-center justify-center p-1 text-white transition-all hover:scale-110 hover:opacity-100 active:scale-95 opacity-90 min-h-[36px] min-w-[36px] ${
-                  episodeBrowserOpen ? "text-accent" : ""
-                }`}
-                aria-label="Browse episodes"
-                title="Episodes"
-                aria-haspopup="dialog"
-                aria-expanded={episodeBrowserOpen}
-              >
-                <Image
-                  src="/icons/ep-browser.svg"
-                  alt=""
-                  width={40}
-                  height={40}
-                  className="size-5 sm:size-7"
-                />
-              </button>
-            )}
-
-            {/* Subtitles & Audio Menu */}
-            <div ref={audioSubsRef} className="relative">
-              <button
-                onClick={() => {
-                  setAudioSubsOpen((o) => !o)
-                  setSpeedOpen(false)
-                }}
-                className={`flex items-center justify-center p-1 text-white transition-transform hover:scale-110 active:scale-95 min-h-[36px] min-w-[36px] ${
-                  audioSubsOpen ? "text-accent" : ""
-                }`}
-                aria-label="Audio and Subtitles"
-                aria-haspopup="menu"
-                aria-expanded={audioSubsOpen}
-              >
-                <IconSubtitles className="size-5 sm:size-7" />
-              </button>
-            </div>
-
-            {/* Speedometer & Quality Menu */}
-            <div ref={speedRef} className="relative">
-              <button
-                onClick={() => {
-                  setSpeedOpen((o) => !o)
-                  setAudioSubsOpen(false)
-                }}
-                className={`flex items-center justify-center p-1 text-white transition-transform hover:scale-110 active:scale-95 min-h-[36px] min-w-[36px] ${
-                  speedOpen ? "text-accent" : ""
-                }`}
-                aria-label="Playback Speed and Quality"
-                aria-haspopup="menu"
-                aria-expanded={speedOpen}
-              >
-                <IconSpeed className="size-5 sm:size-7" />
-              </button>
-            </div>
-
-            {/* Picture-in-Picture */}
-            <button
-              onClick={onTogglePip}
-              className="hidden sm:flex items-center justify-center p-1 text-white transition-transform hover:scale-110 active:scale-95"
-              aria-label="Picture in Picture"
-              title="Picture in Picture"
-            >
-              <PictureInPicture2 className="size-6 sm:size-7 stroke-[1.8]" />
-            </button>
-
-            {/* Fullscreen */}
-            <button
-              onClick={onToggleFullscreen}
-              className="flex items-center justify-center p-1 text-white transition-transform hover:scale-110 active:scale-95 min-h-[36px] min-w-[36px]"
-              aria-label={isFullscreen ? "Exit Fullscreen" : "Fullscreen"}
-            >
-              {isFullscreen ? (
-                <Image
-                  src="/icons/minimize.svg"
-                  alt=""
-                  width={40}
-                  height={40}
-                  className="size-5 sm:size-7"
-                />
-              ) : (
-                <Image
-                  src="/icons/maximize.svg"
-                  alt=""
-                  width={40}
-                  height={40}
-                  className="size-5 sm:size-7"
-                />
+              {/* Episodes Browser Button (Penpot `Player/Button/episodes`) */}
+              {seriesId && onSelectEpisode && episodes && episodes.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAudioSubsOpen(false)
+                    setSpeedOpen(false)
+                    onToggleEpisodeBrowser()
+                  }}
+                  className={`flex size-9 items-center justify-center text-white/90 hover:text-white transition-transform hover:scale-110 active:scale-95 ${
+                    episodeBrowserOpen ? "text-cyan" : ""
+                  }`}
+                  aria-label="Browse episodes"
+                  title="Episodes"
+                  aria-haspopup="dialog"
+                  aria-expanded={episodeBrowserOpen}
+                >
+                  <IconVideoLibrary className="size-6 text-white" />
+                </button>
               )}
-            </button>
+
+              {/* Subtitles & Audio Button (Penpot `Player/Button/subtitles`) */}
+              <div ref={audioSubsRef} className="relative">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAudioSubsOpen((o) => !o)
+                    setSpeedOpen(false)
+                  }}
+                  className={`flex size-9 items-center justify-center text-white/90 hover:text-white transition-transform hover:scale-110 active:scale-95 ${
+                    audioSubsOpen ? "text-cyan" : ""
+                  }`}
+                  aria-label="Audio and Subtitles"
+                  title="Audio & Subtitles"
+                  aria-haspopup="dialog"
+                  aria-expanded={audioSubsOpen}
+                >
+                  <IconSubtitles className="size-6 text-white" />
+                </button>
+              </div>
+
+              {/* Speed & Quality Button */}
+              <div ref={speedRef} className="relative">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSpeedOpen((o) => !o)
+                    setAudioSubsOpen(false)
+                  }}
+                  className={`flex size-9 items-center justify-center text-white/90 hover:text-white transition-transform hover:scale-110 active:scale-95 ${
+                    speedOpen ? "text-cyan" : ""
+                  }`}
+                  aria-label="Playback Speed and Quality"
+                  title="Playback Speed & Quality"
+                  aria-haspopup="menu"
+                  aria-expanded={speedOpen}
+                >
+                  <IconSpeed className="size-6 text-white" />
+                </button>
+              </div>
+
+              {/* Picture-in-Picture */}
+              <button
+                type="button"
+                onClick={onTogglePip}
+                className="hidden sm:flex size-9 items-center justify-center text-white/90 hover:text-white transition-transform hover:scale-110 active:scale-95"
+                aria-label="Picture in Picture"
+                title="Picture in Picture"
+              >
+                <PictureInPicture2 className="size-6 stroke-[1.8] text-white" />
+              </button>
+
+              {/* Fullscreen Button (Penpot `Player/Button/expand`) */}
+              <button
+                type="button"
+                onClick={onToggleFullscreen}
+                className="flex size-9 items-center justify-center text-white/90 hover:text-white transition-transform hover:scale-110 active:scale-95"
+                aria-label={isFullscreen ? "Exit Fullscreen" : "Fullscreen"}
+                title={isFullscreen ? "Exit Fullscreen (F)" : "Fullscreen (F)"}
+              >
+                {isFullscreen ? (
+                  <IconMinimize className="size-6 text-white" />
+                ) : (
+                  <IconFullscreen className="size-6 text-white" />
+                )}
+              </button>
+            </div>
           </div>
         </div>
-      </div>
 
-      {/* In-player episode browser overlay */}
-      {episodeBrowserOpen && seriesId && episodes && episodes.length > 0 && onSelectEpisode && (
-        <EpisodeBrowser
-          episodes={episodes}
-          seasons={seasons ?? []}
-          currentItemId={itemId}
-          onClose={onToggleEpisodeBrowser}
-          onSelect={(episodeId) => onSelectEpisode(episodeId)}
-        />
-      )}
-    </div>
+        {/* In-player episode browser overlay */}
+        {episodeBrowserOpen && seriesId && episodes && episodes.length > 0 && onSelectEpisode && (
+          <EpisodeBrowser
+            episodes={episodes}
+            seasons={seasons ?? []}
+            currentItemId={itemId}
+            onClose={onToggleEpisodeBrowser}
+            onSelect={(episodeId) => onSelectEpisode(episodeId)}
+          />
+        )}
+      </div>
     </>
   )
 }

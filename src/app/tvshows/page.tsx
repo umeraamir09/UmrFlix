@@ -1,4 +1,3 @@
-import Link from "next/link"
 import type { Metadata } from "next"
 import { HeroBillboard, BillboardItem } from "@/components/HeroBillboard"
 import { MovieRow } from "@/components/MovieRow"

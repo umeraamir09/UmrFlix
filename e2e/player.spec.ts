@@ -1,9 +1,42 @@
 import { test, expect } from "./fixtures/test-base"
 
 test.describe("CinemaPlayer (/watch)", () => {
+  test.beforeEach(async ({ page }) => {
+    await page.route("**/api/jellyfin/playback/**", async (route) => {
+      const mockPayload = {
+        itemId: "preview",
+        playSessionId: "mock-session-123",
+        mediaSourceId: "mock-media-123",
+        container: "mp4",
+        supportsDirectPlay: true,
+        supportsTranscoding: true,
+        canDirectPlay: true,
+        directUrl: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4",
+        hlsUrl: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4",
+        runtimeTicks: 6000000000,
+        resumeTicks: 0,
+        played: false,
+        playedPercentage: 0,
+        audio: [{ index: 0, title: "English (Stereo)", isDefault: true }],
+        subtitles: [],
+        defaultAudioIndex: 0,
+        chapters: [],
+        markers: [],
+        trickplay: null,
+        title: "Preview Video",
+        series: null,
+      }
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(mockPayload),
+      })
+    })
+  })
+
   test("renders player container, controls, and back navigation", async ({ page, disableMotion }) => {
     await disableMotion()
-    await page.goto("/watch?id=test-preview-1")
+    await page.goto("/watch?id=preview")
     await page.waitForLoadState("domcontentloaded")
 
     // The player wrapper is full screen
@@ -12,15 +45,16 @@ test.describe("CinemaPlayer (/watch)", () => {
 
     // Hover or move mouse to reveal controls
     await page.mouse.move(500, 500)
+    await page.waitForTimeout(300)
 
     // Look for back button / header or transport controls
-    const backBtn = page.locator("button, a").filter({ has: page.locator("svg") }).first()
+    const backBtn = page.getByTestId("player-back-btn")
     await expect(backBtn).toBeVisible()
   })
 
   test("toggles player controls on mouse interaction", async ({ page, disableMotion }) => {
     await disableMotion()
-    await page.goto("/watch?id=test-preview-1")
+    await page.goto("/watch?id=preview")
     await page.waitForLoadState("domcontentloaded")
 
     // Move mouse over player area
