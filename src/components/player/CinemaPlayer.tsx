@@ -123,6 +123,11 @@ export function CinemaPlayer({
   const frameCaptureCanvasRef = useRef<HTMLCanvasElement | null>(null)
   // 1.1 — human-readable label for the pending stream rebuild (e.g. "720p", "Audio Track 2")
   const qualityChangeLabel = useRef<string | null>(null)
+  // Mobile browsers (iOS Safari, Android Chrome) re-show the poster whenever
+  // the video is paused — which happens on every HLS stream rebuild (quality
+  // switch, episode change). Once the first play event fires we suppress the
+  // poster entirely so it can never overlay the active or rebuilding stream.
+  const hadPlayedRef = useRef(false)
 
   const [clientId] = useState(() => `tab_${Math.random().toString(36).substring(2, 9)}`)
 
@@ -1390,11 +1395,12 @@ export function CinemaPlayer({
 
       <video
         ref={videoRef}
-        poster={poster}
+        poster={hadPlayedRef.current ? undefined : poster}
         playsInline
         aria-label={title}
         className="size-full object-contain pointer-events-none"
         onPlay={() => {
+          hadPlayedRef.current = true
           setPlaying(true)
           setNeedsManualPlay(false)
           playIntentRef.current = true
