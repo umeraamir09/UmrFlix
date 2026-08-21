@@ -16,15 +16,22 @@ export const dynamic = "force-dynamic"
  *                    reset (Module 4.1 UCB1 reward signal).
  */
 export async function POST(request: Request) {
-  let body: { rowCategoryKey?: string; action?: string }
+  let body: { rowCategoryKey?: string; action?: string; clicked?: boolean }
   try {
     body = await request.json()
   } catch {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 })
   }
 
-  const { rowCategoryKey, action } = body
-  if (!rowCategoryKey || (action !== "view" && action !== "click")) {
+  let action = body.action
+  if (!action && body.clicked === true) {
+    action = "click"
+  } else if (!action && body.clicked === false) {
+    action = "view"
+  }
+
+  const { rowCategoryKey } = body
+  if (!rowCategoryKey || typeof rowCategoryKey !== "string" || (action !== "view" && action !== "click")) {
     return NextResponse.json({ error: "rowCategoryKey and action (view|click) are required" }, { status: 400 })
   }
 

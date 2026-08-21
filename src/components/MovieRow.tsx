@@ -14,6 +14,7 @@ import { MoleculeBullets } from "@/components/ui/bullets"
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json())
 const HOVER_CLOSE_DELAY_MS = 80
+const sessionViewedRows = new Set<string>()
 
 export function MovieRow({
   title,
@@ -34,6 +35,7 @@ export function MovieRow({
   isTop10?: boolean
   cardVariant?: "default" | "large"
 }) {
+  const sectionRef = useRef<HTMLElement>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
   const [canScrollLeft, setCanScrollLeft] = useState(false)
   const [canScrollRight, setCanScrollRight] = useState(true)
@@ -227,6 +229,45 @@ export function MovieRow({
     }
   }, [])
 
+  useEffect(() => {
+    if (!rowKey || typeof IntersectionObserver === "undefined") return
+    if (sessionViewedRows.has(rowKey)) return
+
+    const el = sectionRef.current
+    if (!el) return
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (entry.isIntersecting && entry.intersectionRatio >= 0.25) {
+            sessionViewedRows.add(rowKey)
+            observer.disconnect()
+
+            const payload = JSON.stringify({ rowCategoryKey: rowKey, action: "view" })
+            if (typeof navigator !== "undefined" && navigator.sendBeacon) {
+              navigator.sendBeacon(
+                "/api/discovery/impression",
+                new Blob([payload], { type: "application/json" })
+              )
+            } else {
+              void fetch("/api/discovery/impression", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: payload,
+                keepalive: true,
+              }).catch(() => {})
+            }
+            break
+          }
+        }
+      },
+      { threshold: [0.25] }
+    )
+
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [rowKey])
+
   const scroll = (direction: "left" | "right") => {
     clearEnterTimer()
     if (open) setOpen(false)
@@ -241,23 +282,25 @@ export function MovieRow({
 
   const handleCardClick = useCallback(() => {
     if (rowKey) {
+      const payload = JSON.stringify({ rowCategoryKey: rowKey, action: "click", clicked: true })
       if (typeof navigator !== "undefined" && navigator.sendBeacon) {
         navigator.sendBeacon(
           "/api/discovery/impression",
-          new Blob([JSON.stringify({ rowCategoryKey: rowKey, clicked: true })], { type: "application/json" })
+          new Blob([payload], { type: "application/json" })
         )
       } else {
         void fetch("/api/discovery/impression", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ rowCategoryKey: rowKey, clicked: true }),
+          body: payload,
+          keepalive: true,
         }).catch(() => {})
       }
     }
   }, [rowKey])
 
   return (
-    <section className="relative my-8 space-y-3 group/row">
+    <section ref={sectionRef} className="relative my-8 space-y-3 group/row">
       {/* ── Header with Title & Penpot Pagination Bullets (Frame 45 / Frame 46) ── */}
       <div className="flex items-end justify-between px-1">
         <div>

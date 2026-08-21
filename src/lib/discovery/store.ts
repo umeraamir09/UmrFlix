@@ -287,37 +287,67 @@ export async function loadFeatureProfile(
 
 // ── Row bandit stats ──
 
+const LOCAL_ROW_STATS_KEY = "__umrflixRowStats"
+const LOCAL_ROW_FATIGUE_KEY = "__umrflixRowFatigue"
+
+function localRowStatsMap(): Map<string, RowStats> {
+  const g = globalThis as Record<string, unknown>
+  if (!g[LOCAL_ROW_STATS_KEY]) g[LOCAL_ROW_STATS_KEY] = new Map<string, RowStats>()
+  return g[LOCAL_ROW_STATS_KEY] as Map<string, RowStats>
+}
+
+function localRowFatigueMap(): Map<string, Map<string, RowFatigue>> {
+  const g = globalThis as Record<string, unknown>
+  if (!g[LOCAL_ROW_FATIGUE_KEY]) g[LOCAL_ROW_FATIGUE_KEY] = new Map<string, Map<string, RowFatigue>>()
+  return g[LOCAL_ROW_FATIGUE_KEY] as Map<string, Map<string, RowFatigue>>
+}
+
 export async function recordRowImpression(
   rowCategoryKey: string,
   opts: { clicked?: boolean; played?: boolean } = {}
 ): Promise<void> {
   const convex = getConvexClient()
-  if (!convex) return
-  try {
-    await convex.mutation(recordRowImpressionRef, { rowCategoryKey, ...opts })
-  } catch (err) {
-    console.error("[Discovery] Failed to record row impression:", err)
+  if (convex) {
+    try {
+      await convex.mutation(recordRowImpressionRef, { rowCategoryKey, ...opts })
+      return
+    } catch (err) {
+      console.error("[Discovery] Failed to record row impression in Convex, falling back to in-memory:", err)
+    }
   }
+  const stats = localRowStatsMap()
+  const current = stats.get(rowCategoryKey) ?? {
+    rowCategoryKey,
+    totalImpressions: 0,
+    totalClicks: 0,
+    totalPlays: 0,
+  }
+  current.totalImpressions += 1
+  if (opts.clicked) current.totalClicks += 1
+  if (opts.played) current.totalPlays += 1
+  stats.set(rowCategoryKey, current)
 }
 
 export async function getRowStats(): Promise<Map<string, RowStats>> {
-  const map = new Map<string, RowStats>()
   const convex = getConvexClient()
-  if (!convex) return map
-  try {
-    const rows = await convex.query(getRowStatsRef, {})
-    for (const row of rows ?? []) {
-      map.set(row.rowCategoryKey, {
-        rowCategoryKey: row.rowCategoryKey,
-        totalImpressions: row.totalImpressions,
-        totalClicks: row.totalClicks,
-        totalPlays: row.totalPlays,
-      })
+  if (convex) {
+    try {
+      const rows = await convex.query(getRowStatsRef, {})
+      const map = new Map<string, RowStats>()
+      for (const row of rows ?? []) {
+        map.set(row.rowCategoryKey, {
+          rowCategoryKey: row.rowCategoryKey,
+          totalImpressions: row.totalImpressions,
+          totalClicks: row.totalClicks,
+          totalPlays: row.totalPlays,
+        })
+      }
+      return map
+    } catch (err) {
+      console.error("[Discovery] Failed to load row stats from Convex, falling back to in-memory:", err)
     }
-  } catch (err) {
-    console.error("[Discovery] Failed to load row stats:", err)
   }
-  return map
+  return new Map(localRowStatsMap())
 }
 
 // ── Row fatigue ──
@@ -328,12 +358,26 @@ export async function recordRowFatigueImpression(
   rowCategoryKey: string
 ): Promise<void> {
   const convex = getConvexClient()
-  if (!convex) return
-  try {
-    await convex.mutation(recordRowFatigueRef, { userId, profileId, rowCategoryKey })
-  } catch (err) {
-    console.error("[Discovery] Failed to record fatigue impression:", err)
+  if (convex) {
+    try {
+      await convex.mutation(recordRowFatigueRef, { userId, profileId, rowCategoryKey })
+      return
+    } catch (err) {
+      console.error("[Discovery] Failed to record fatigue impression in Convex, falling back to in-memory:", err)
+    }
   }
+  const userMap = localRowFatigueMap()
+  const userKey = `${userId}:${profileId}`
+  if (!userMap.has(userKey)) userMap.set(userKey, new Map<string, RowFatigue>())
+  const fatigueMap = userMap.get(userKey)!
+  const current = fatigueMap.get(rowCategoryKey) ?? {
+    rowCategoryKey,
+    unclickedImpressions: 0,
+    lastSeenTimestamp: Date.now(),
+  }
+  current.unclickedImpressions += 1
+  current.lastSeenTimestamp = Date.now()
+  fatigueMap.set(rowCategoryKey, current)
 }
 
 export async function resetRowFatigue(
@@ -342,11 +386,21 @@ export async function resetRowFatigue(
   rowCategoryKey: string
 ): Promise<void> {
   const convex = getConvexClient()
-  if (!convex) return
-  try {
-    await convex.mutation(resetRowFatigueRef, { userId, profileId, rowCategoryKey })
-  } catch (err) {
-    console.error("[Discovery] Failed to reset fatigue:", err)
+  if (convex) {
+    try {
+      await convex.mutation(resetRowFatigueRef, { userId, profileId, rowCategoryKey })
+      return
+    } catch (err) {
+      console.error("[Discovery] Failed to reset fatigue in Convex, falling back to in-memory:", err)
+    }
+  }
+  const userMap = localRowFatigueMap()
+  const userKey = `${userId}:${profileId}`
+  const fatigueMap = userMap.get(userKey)
+  if (fatigueMap?.has(rowCategoryKey)) {
+    const current = fatigueMap.get(rowCategoryKey)!
+    current.unclickedImpressions = 0
+    fatigueMap.set(rowCategoryKey, current)
   }
 }
 
@@ -354,18 +408,23 @@ export async function getRowFatigueMap(
   userId: string,
   profileId: string
 ): Promise<Map<string, RowFatigue>> {
-  const map = new Map<string, RowFatigue>()
   const convex = getConvexClient()
-  if (!convex) return map
-  try {
-    const rows = await convex.query(getRowFatigueRef, { userId, profileId })
-    for (const row of rows ?? []) {
-      map.set(row.rowCategoryKey, row)
+  if (convex) {
+    try {
+      const rows = await convex.query(getRowFatigueRef, { userId, profileId })
+      const map = new Map<string, RowFatigue>()
+      for (const row of rows ?? []) {
+        map.set(row.rowCategoryKey, row)
+      }
+      return map
+    } catch (err) {
+      console.error("[Discovery] Failed to load row fatigue from Convex, falling back to in-memory:", err)
     }
-  } catch (err) {
-    console.error("[Discovery] Failed to load row fatigue:", err)
   }
-  return map
+  const userMap = localRowFatigueMap()
+  const userKey = `${userId}:${profileId}`
+  const fatigueMap = userMap.get(userKey)
+  return fatigueMap ? new Map(fatigueMap) : new Map<string, RowFatigue>()
 }
 
 // ── Item profile cache (shared catalog cache in cacheStore) ──

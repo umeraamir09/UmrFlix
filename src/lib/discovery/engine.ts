@@ -162,13 +162,15 @@ export async function getPersonalizedFeed(
   }
 
   // ── Feed floor guarantee (minimum 6 rows) ──
-  const targetFloor = Math.min(FEED_FLOOR_ROWS, candidates.length)
-  if (rankable.size < targetFloor) {
-    for (const row of candidates) {
-      if (!rankable.has(row.key)) {
-        processRow(row)
-      }
-      if (rankable.size >= targetFloor) break
+  // If rankable rows fall below floor due to suppression or small candidate pool,
+  // evaluate fallback cold-start rows while strictly enforcing suppression.
+  if (rankable.size < FEED_FLOOR_ROWS) {
+    const coldRows = await buildColdStartRows(mediaType)
+    for (const row of coldRows) {
+      if (rankable.has(row.key)) continue
+      if (isRowSuppressed(fatigueByKey.get(row.key))) continue
+      processRow(row)
+      if (rankable.size >= FEED_FLOOR_ROWS) break
     }
   }
 

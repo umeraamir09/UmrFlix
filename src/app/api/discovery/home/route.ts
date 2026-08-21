@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server"
 import { getSession } from "@/lib/auth"
 import { getPersonalizedFeed } from "@/lib/discovery/engine"
-import { recordServeLog, recordRowFatigueImpression } from "@/lib/discovery/store"
+import { recordServeLog } from "@/lib/discovery/store"
 
 export const dynamic = "force-dynamic"
 
@@ -44,9 +44,6 @@ export async function GET(req: Request) {
     if (rows.length > 0 && session?.userId) {
       const servedItemKeys = rows.flatMap((r) => r.items.map((i) => `${i.media_type ?? "movie"}:${i.id}`))
       void recordServeLog(userId, "default", servedItemKeys)
-      for (const row of rows) {
-        void recordRowFatigueImpression(userId, "default", row.key)
-      }
     }
 
     return NextResponse.json({ rows })
