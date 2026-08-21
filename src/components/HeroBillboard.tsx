@@ -121,7 +121,7 @@ export function HeroBillboard({ items }: { items: BillboardItem[] }) {
       <div className="relative z-10 mx-auto flex h-full max-w-[1600px] items-center px-4 sm:px-6 md:px-10 lg:px-14 pb-28 sm:pb-36 md:pb-44">
         <div
           key={`${currentIndex}-${direction}`}
-          className={`max-w-2xl md:max-w-3xl space-y-4 sm:space-y-6 pt-12 ${
+          className={`w-full max-w-2xl md:max-w-3xl space-y-4 sm:space-y-6 pt-12 ${
             direction === "next" ? "animate-slide-in-right" : "animate-slide-in-left"
           }`}
         >
@@ -148,7 +148,7 @@ export function HeroBillboard({ items }: { items: BillboardItem[] }) {
           </p>
 
           {/* Action CTAs: Reusable Penpot Button components */}
-          <div className="flex flex-wrap items-center gap-3.5 pt-2">
+          <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-3.5 pt-2 w-full sm:w-auto">
             {isAvailable ? (
               <Link
                 data-testid="hero-action"
@@ -157,7 +157,7 @@ export function HeroBillboard({ items }: { items: BillboardItem[] }) {
                     ? `/watch?id=${playItemId}${activeItem.media_type === "tv" ? "&type=tv" : ""}`
                     : detailsUrl
                 }
-                className={buttonVariants({ variant: "play", size: "md" })}
+                className={buttonVariants({ variant: "play", size: "md", className: "w-full sm:w-auto" })}
               >
                 <Play className="size-4.5 fill-current mr-2" />
                 Play
@@ -168,6 +168,7 @@ export function HeroBillboard({ items }: { items: BillboardItem[] }) {
                 variant="muted"
                 size="md"
                 disabled
+                className="w-full sm:w-auto"
               >
                 <Loader2 className="size-4.5 animate-spin mr-2 text-penpot-primary-100" />
                 Downloading {availability.progress ? `${Math.round(availability.progress)}%` : ""}
@@ -178,7 +179,7 @@ export function HeroBillboard({ items }: { items: BillboardItem[] }) {
                 variant="muted"
                 size="md"
                 disabled
-                className="border-amber-500/40 bg-amber-950/40 text-amber-300"
+                className="w-full sm:w-auto border-amber-500/40 bg-amber-950/40 text-amber-300"
               >
                 <Clock className="size-4.5 text-amber-400 animate-pulse mr-2" />
                 Pending Approval
@@ -189,6 +190,7 @@ export function HeroBillboard({ items }: { items: BillboardItem[] }) {
                 variant="muted"
                 size="md"
                 disabled
+                className="w-full sm:w-auto"
               >
                 <Loader2 className="size-4.5 animate-spin mr-2 text-penpot-neutral-200" />
                 Requested
@@ -199,6 +201,7 @@ export function HeroBillboard({ items }: { items: BillboardItem[] }) {
                 variant="request"
                 size="md"
                 onClick={() => setRequestTargetItem(activeItem)}
+                className="w-full sm:w-auto"
               >
                 <Plus className="size-4.5 stroke-[3] mr-2" />
                 Request
@@ -208,7 +211,7 @@ export function HeroBillboard({ items }: { items: BillboardItem[] }) {
             {/* More Information Button (redirects to details page) */}
             <Link
               href={detailsUrl}
-              className={buttonVariants({ variant: "moreInfo", size: "md" })}
+              className={buttonVariants({ variant: "moreInfo", size: "md", className: "w-full sm:w-auto" })}
             >
               <Info className="size-4.5 mr-2" />
               More Information
