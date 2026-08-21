@@ -1,0 +1,128 @@
+{
+  "version": "1.0.0",
+  "penpotProjectId": "26720b27-06c7-807c-8008-7cae63519639",
+  "targets": [
+    {
+      "id": "header",
+      "name": "Header Navigation",
+      "boardId": "6a7aa282-1937-5e61-aba1-916b660e4530",
+      "route": "/",
+      "selector": "header",
+      "baselineFile": "header.png",
+      "viewport": { "width": 1440, "height": 80 },
+      "threshold": 0.05
+    },
+    {
+      "id": "login",
+      "name": "Login Page",
+      "boardId": "dc8f1fbe-b5a0-5b68-a2e8-d5ef353d6dc7",
+      "route": "/login",
+      "baselineFile": "login.png",
+      "viewport": { "width": 1440, "height": 900 },
+      "threshold": 0.05
+    },
+    {
+      "id": "login-expanded",
+      "name": "Login Custom URL Expanded",
+      "boardId": "b1400f09-e660-5b17-97b1-e5e6db9c17e8",
+      "route": "/login",
+      "interaction": "expand-custom-url",
+      "baselineFile": "login-expanded.png",
+      "viewport": { "width": 1440, "height": 900 },
+      "threshold": 0.05
+    },
+    {
+      "id": "hero",
+      "name": "Hero Billboard",
+      "boardId": "dfd9f3c1-7e88-57ed-926c-03fffa75e4bf",
+      "route": "/",
+      "selector": "[data-testid='hero-billboard']",
+      "baselineFile": "hero.png",
+      "viewport": { "width": 1440, "height": 980 },
+      "threshold": 0.08
+    },
+    {
+      "id": "home",
+      "name": "Home Page",
+      "boardId": "6236bf84-be00-50b0-a3ea-4503c45004b2",
+      "route": "/",
+      "baselineFile": "home.png",
+      "viewport": { "width": 1440, "height": 1200 },
+      "threshold": 0.08
+    },
+    {
+      "id": "movies",
+      "name": "Movies Catalog Page",
+      "boardId": "759d5a0e-e055-5ae4-be3e-39a9e033fa6f",
+      "route": "/movies",
+      "baselineFile": "movies.png",
+      "viewport": { "width": 1440, "height": 1200 },
+      "threshold": 0.08
+    },
+    {
+      "id": "tvshows",
+      "name": "TV Shows Catalog Page",
+      "boardId": "d688207a-0e9d-55f2-85ca-44278a8243c5",
+      "route": "/tvshows",
+      "baselineFile": "tvshows.png",
+      "viewport": { "width": 1440, "height": 1200 },
+      "threshold": 0.08
+    },
+    {
+      "id": "search-results",
+      "name": "Search Results Page",
+      "boardId": "8981f748-a9ef-58fd-91d7-acdbe016a93c",
+      "route": "/search?q=Luca",
+      "baselineFile": "search-results.png",
+      "viewport": { "width": 1440, "height": 1242 },
+      "threshold": 0.08
+    },
+    {
+      "id": "search-no-results",
+      "name": "Search Empty / No Results",
+      "boardId": "62815c9f-11bf-5e55-910b-4ff10563b438",
+      "route": "/search?q=xyz123abcnonexistent",
+      "baselineFile": "search-no-results.png",
+      "viewport": { "width": 1440, "height": 1242 },
+      "threshold": 0.05
+    },
+    {
+      "id": "movie-modal",
+      "name": "Movie Modal Card",
+      "boardId": "e296842d-558a-5fae-9978-ab29f5548cef",
+      "route": "/",
+      "selector": "[data-testid='movie-modal']",
+      "baselineFile": "movie-modal.png",
+      "viewport": { "width": 329, "height": 345 },
+      "threshold": 0.05
+    },
+    {
+      "id": "player-controls",
+      "name": "CinemaPlayer Controls",
+      "boardId": "fc3d31e0-bab7-5215-b837-679dfa258682",
+      "route": "/watch?id=preview",
+      "baselineFile": "player-controls.png",
+      "viewport": { "width": 1440, "height": 781 },
+      "threshold": 0.08
+    },
+    {
+      "id": "subtitles-options",
+      "name": "Subtitles Options Popover",
+      "boardId": "8b1145c9-9348-5e62-a23a-c06e3894d0ca",
+      "route": "/watch?id=preview",
+      "selector": "[data-testid='subtitles-popover']",
+      "baselineFile": "subtitles-options.png",
+      "viewport": { "width": 589, "height": 305 },
+      "threshold": 0.05
+    },
+    {
+      "id": "genre",
+      "name": "Genre Catalog Page",
+      "boardId": "genre-page",
+      "route": "/genre/action",
+      "baselineFile": "genre.png",
+      "viewport": { "width": 1440, "height": 900 },
+      "threshold": 0.08
+    }
+  ]
+}

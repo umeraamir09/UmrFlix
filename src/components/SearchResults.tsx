@@ -7,9 +7,11 @@ import Image from "next/image"
 import Link from "next/link"
 import { Search, X, ChevronRight, ChevronDown, Loader2 } from "lucide-react"
 import { useBatchAvailability } from "@/lib/use-availability"
+import { useBatchHorizontalPosters } from "@/lib/use-horizontal-posters"
 import { AvailabilityBadge } from "@/components/AvailabilityBadge"
 import { getGenreByParam, getGenreIdsForMediaType, getGenreDiscoverParams } from "@/lib/genres"
 import { filterDisplayableContent } from "@/lib/catalog"
+import { getImageUrl } from "@/lib/utils"
 
 const RECENT_SEARCHES_KEY = "umrflix_recent_searches"
 const MAX_RECENTS = 6
@@ -321,7 +323,30 @@ export function SearchResults() {
     })
   }, [results])
 
+  const posterRefs = useMemo(() => {
+    return results.map((item) => {
+      const isTv = item.media_type === "tv" || (!item.title && item.name)
+      return {
+        id: item.id,
+        type: isTv ? ("tv" as const) : ("movie" as const),
+      }
+    })
+  }, [results])
+
   const { availabilityMap } = useBatchAvailability(itemRefs)
+  const { posterMap } = useBatchHorizontalPosters(posterRefs)
+
+  const getPosterUrl = useCallback(
+    (item: SearchResultItem, isTv: boolean) => {
+      const key = `${isTv ? "tv" : "movie"}-${item.id}`
+      const horizontalPoster = posterMap[key]
+      if (horizontalPoster) return getImageUrl(horizontalPoster, "w780")
+      if (item.backdrop_path) return getImageUrl(item.backdrop_path, "w780")
+      if (item.poster_path) return getImageUrl(item.poster_path, "w780")
+      return "/placeholder-poster.svg"
+    },
+    [posterMap]
+  )
 
   const movies = results.filter((r) => r.media_type === "movie" || (!r.media_type && r.title))
   const series = results.filter((r) => r.media_type === "tv" || (!r.media_type && r.name))
@@ -342,7 +367,7 @@ export function SearchResults() {
           : "Browse"
 
   return (
-    <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6 md:px-8 space-y-10">
+    <div className="mx-auto max-w-[1600px] 2xl:max-w-[1920px] 3xl:max-w-[2300px] 4xl:max-w-[2700px] px-4 py-8 sm:px-6 md:px-8 lg:px-12 2xl:px-16 space-y-10">
       {/* Search Bar Header */}
       <div className="relative w-full pt-2">
         <form onSubmit={handleSearchSubmit} className="relative flex items-center">
@@ -353,22 +378,23 @@ export function SearchResults() {
             value={inputValue}
             onChange={(e) => setInputValue(e.target.value)}
             placeholder="Search..."
-            className={`w-full bg-transparent pb-3 pt-2 text-2xl sm:text-3xl font-medium text-white placeholder-gray-500 border-b ${inputValue ? "border-accent" : "border-border focus:border-accent"
-              } focus:outline-none transition-colors pr-10`}
+            className={`w-full bg-transparent pb-3 pt-2 text-2xl sm:text-3xl font-medium text-white placeholder:text-penpot-text-subtle border-b ${
+              inputValue ? "border-penpot-primary-300" : "border-penpot-border focus:border-penpot-primary-300"
+            } focus:outline-none transition-colors pr-10`}
           />
           {isLoading && inputValue.trim() ? (
-            <Loader2 className="absolute right-0 pb-3 size-6 animate-spin text-accent pointer-events-none" />
+            <Loader2 className="absolute right-0 pb-3 size-6 animate-spin text-penpot-primary-200 pointer-events-none" />
           ) : inputValue ? (
             <button
               type="button"
               onClick={handleClear}
-              className="absolute right-0 pb-3 text-gray-400 hover:text-white transition-colors"
+              className="absolute right-0 pb-3 text-penpot-text-medium hover:text-white transition-colors cursor-pointer"
               title="Clear Search"
             >
               <X className="size-6" />
             </button>
           ) : (
-            <Search className="absolute right-0 pb-3 size-6 text-gray-400 pointer-events-none" />
+            <Search className="absolute right-0 pb-3 size-6 text-penpot-text-subtle pointer-events-none" />
           )}
         </form>
       </div>
@@ -378,17 +404,17 @@ export function SearchResults() {
         <div className="w-full space-y-4">
           {/* Filter Row: Type */}
           <div className="flex flex-wrap items-center gap-2.5">
-            <span className="text-[11px] font-bold text-gray-400 uppercase tracking-wider mr-1">Filter By</span>
+            <span className="text-[11px] font-bold text-penpot-text-medium uppercase tracking-wider mr-1">Filter By</span>
             {TYPE_OPTIONS.map((opt) => {
               const active = type === opt.value
               return (
                 <button
                   key={opt.value}
                   onClick={() => updateParams({ type: opt.value })}
-                  className={`bg-surface border px-3 py-1.5 text-xs font-bold uppercase tracking-wider transition-all rounded-none ${
+                  className={`bg-penpot-surface border px-3 py-1.5 text-xs font-bold uppercase tracking-wider transition-all rounded-[4px] cursor-pointer ${
                     active
-                      ? "border-accent text-white hover:bg-card"
-                      : "border-border text-gray-300 hover:bg-card hover:border-accent hover:text-white"
+                      ? "border-penpot-primary-300 text-white bg-penpot-primary-500/30"
+                      : "border-penpot-border text-penpot-text-medium hover:bg-penpot-neutral-500 hover:border-penpot-primary-300 hover:text-white"
                   }`}
                 >
                   {opt.label}
@@ -396,32 +422,32 @@ export function SearchResults() {
               )
             })}
 
-            <span className="hidden sm:inline-block h-4 w-px bg-separator mx-2" />
+            <span className="hidden sm:inline-block h-4 w-px bg-penpot-border mx-2" />
 
             {/* Sort Dropdown */}
             <div className="relative inline-flex">
               <select
                 value={sort}
                 onChange={(e) => updateParams({ sort: e.target.value })}
-                className="appearance-none bg-surface border border-border hover:border-accent px-3 py-1.5 pr-8 text-xs font-bold uppercase tracking-wider text-gray-300 hover:text-white cursor-pointer transition-all rounded-none focus:outline-none"
+                className="appearance-none bg-penpot-surface border border-penpot-border hover:border-penpot-primary-300 px-3 py-1.5 pr-8 text-xs font-bold uppercase tracking-wider text-penpot-text-medium hover:text-white cursor-pointer transition-all rounded-[4px] focus:outline-none"
               >
                 {SORT_OPTIONS.map((opt) => (
-                  <option key={opt.value} value={opt.value} className="bg-surface text-white">
+                  <option key={opt.value} value={opt.value} className="bg-penpot-surface text-white">
                     {opt.label}
                   </option>
                 ))}
               </select>
-              <ChevronDown className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 size-3.5 text-gray-400" />
+              <ChevronDown className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 size-3.5 text-penpot-text-medium" />
             </div>
 
             {/* Active genre chip */}
             {genre && (
-              <div className="flex items-center gap-2 bg-surface border border-accent px-3 py-1.5 text-xs font-bold uppercase tracking-wider text-white rounded-none">
+              <div className="flex items-center gap-2 bg-penpot-surface border border-penpot-primary-300 px-3 py-1.5 text-xs font-bold uppercase tracking-wider text-white rounded-[4px]">
                 <span>{genre}</span>
                 <button
                   type="button"
                   onClick={() => updateParams({ genre: "" })}
-                  className="text-gray-400 hover:text-white transition-colors"
+                  className="text-penpot-text-medium hover:text-white transition-colors cursor-pointer"
                   title="Clear genre"
                 >
                   <X className="size-3.5" />
@@ -432,14 +458,14 @@ export function SearchResults() {
 
           {/* Dedicated Genre Page Banner */}
           {genreDef && (
-            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 bg-surface border border-accent/40 p-4 rounded-none shadow-lg">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 bg-penpot-surface border border-penpot-primary-300/40 p-4 rounded-[8px] shadow-lg">
               <div>
                 <p className="text-sm font-bold text-white">Looking for the dedicated {genreDef.name} experience?</p>
-                <p className="text-xs text-foreground-muted mt-0.5">Explore curated sub-categories, personalized picks, and available library titles for {genreDef.name}.</p>
+                <p className="text-xs text-penpot-text-medium mt-0.5">Explore curated sub-categories, personalized picks, and available library titles for {genreDef.name}.</p>
               </div>
               <Link
                 href={`/genre/${genreDef.slug}`}
-                className="shrink-0 inline-flex items-center gap-2 bg-accent text-white px-4 py-2 text-xs font-bold uppercase tracking-wider transition-all hover:bg-accent/90 hover:scale-[1.02] active:scale-95"
+                className="shrink-0 inline-flex items-center gap-2 bg-penpot-primary-300 text-white px-4 py-2 text-xs font-bold uppercase tracking-wider transition-all hover:bg-penpot-primary-400 hover:scale-[1.02] active:scale-95 rounded-[4px]"
               >
                 Explore Dedicated {genreDef.name} Page →
               </Link>
@@ -458,7 +484,7 @@ export function SearchResults() {
             {recentSearches.length > 0 && (
               <button
                 onClick={clearAllRecents}
-                className="text-xs font-bold uppercase tracking-wider text-gray-400 hover:text-white transition-colors"
+                className="text-xs font-bold uppercase tracking-wider text-penpot-text-medium hover:text-white transition-colors cursor-pointer"
               >
                 Clear Recent
               </button>
@@ -471,13 +497,13 @@ export function SearchResults() {
                 <div
                   key={term}
                   onClick={() => handleSelectRecent(term)}
-                  className="group flex items-center gap-2 bg-surface hover:bg-card border border-border hover:border-accent px-3 py-1.5 text-xs font-bold uppercase tracking-wider text-gray-300 hover:text-white cursor-pointer transition-all rounded-none"
+                  className="group flex items-center gap-2 bg-penpot-surface hover:bg-penpot-neutral-500 border border-penpot-border hover:border-penpot-primary-300 px-3 py-1.5 text-xs font-bold uppercase tracking-wider text-penpot-text-medium hover:text-white cursor-pointer transition-all rounded-[4px]"
                 >
                   <span>{term}</span>
                   <button
                     type="button"
                     onClick={(e) => removeRecentSearch(e, term)}
-                    className="text-gray-400 hover:text-white transition-colors p-0.5"
+                    className="text-penpot-text-medium hover:text-white transition-colors p-0.5 cursor-pointer"
                     title="Remove item"
                   >
                     <X className="size-3.5" />
@@ -486,7 +512,7 @@ export function SearchResults() {
               ))}
             </div>
           ) : (
-            <p className="text-xs text-gray-500 pt-2">No recent searches yet.</p>
+            <p className="text-xs text-penpot-text-medium pt-2">No recent searches yet.</p>
           )}
         </div>
       )}
@@ -497,20 +523,20 @@ export function SearchResults() {
           {isLoading ? (
             <div className="space-y-8 pt-4">
               <div className="space-y-3">
-                <div className="h-6 w-32 bg-card animate-pulse rounded-none" />
-                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
-                  {Array.from({ length: 3 }).map((_, i) => (
-                    <div key={i} className="aspect-video bg-card animate-shimmer rounded-none" />
+                <div className="h-6 w-32 bg-penpot-surface/60 border border-penpot-border/40 animate-pulse rounded-[4px]" />
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-5">
+                  {Array.from({ length: 6 }).map((_, i) => (
+                    <div key={i} className="aspect-[240/136] bg-penpot-surface/60 border border-penpot-border/40 animate-pulse rounded-[8px]" />
                   ))}
                 </div>
               </div>
             </div>
           ) : error ? (
-            <p className="text-center text-sm text-gray-400 py-12">
+            <p className="text-center text-sm text-penpot-text-medium py-12">
               Search failed. Please verify connection.
             </p>
           ) : results.length === 0 ? (
-            <p className="text-center text-sm text-gray-400 py-16">
+            <p className="text-center text-sm text-penpot-text-medium py-16">
               No results found for &ldquo;{query || genre || browseTitle}&rdquo;. Try another search term!
             </p>
           ) : (
@@ -521,15 +547,11 @@ export function SearchResults() {
                   <h2 className="text-base sm:text-lg font-bold uppercase tracking-wider text-white">
                     {isBrowseMode ? browseTitle : "Top Results"}
                   </h2>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-5 3xl:grid-cols-6 gap-5">
                     {topResults.map((item) => {
-                      const isTv = item.media_type === "tv" || (!item.title && item.name)
+                      const isTv = Boolean(item.media_type === "tv" || (!item.title && item.name))
                       const title = item.title || item.name || "Untitled"
-                      const backdrop = item.backdrop_path
-                        ? `https://image.tmdb.org/t/p/w500${item.backdrop_path}`
-                        : item.poster_path
-                          ? `https://image.tmdb.org/t/p/w500${item.poster_path}`
-                          : "/placeholder-poster.svg"
+                      const backdrop = getPosterUrl(item, isTv)
 
                       const availabilityKey = `${isTv ? "tv" : "movie"}-${item.id}`
                       const availability = availabilityMap[availabilityKey]
@@ -539,9 +561,9 @@ export function SearchResults() {
                           key={item.id}
                           href={`/${isTv ? "tv" : "movie"}/${item.id}`}
                           onClick={handleResultClick}
-                          className="group block overflow-hidden rounded-none bg-transparent relative"
+                          className="group block overflow-hidden rounded-[8px] bg-transparent relative"
                         >
-                          <div className="relative aspect-video w-full overflow-hidden bg-card border border-border group-hover:border-accent transition-colors">
+                          <div className="relative aspect-[240/136] w-full overflow-hidden rounded-[8px] bg-penpot-surface border border-penpot-border group-hover:border-penpot-primary-300 transition-colors">
                             <Image
                               src={backdrop}
                               alt={title}
@@ -552,18 +574,16 @@ export function SearchResults() {
                             />
                             {/* Availability Badge */}
                             <div className="absolute top-2 right-2 z-10 pointer-events-none">
-                              {availability?.status === "in_library" ? (
+                              {availability?.status === "in_library" && (
                                 <AvailabilityBadge state={availability} />
-                              ) : (
-                                <div />
                               )}
                             </div>
                           </div>
-                          <div className="pt-2.5">
-                            <h3 className="text-sm font-bold text-white group-hover:text-accent transition-colors truncate">
+                          <div className="pt-2">
+                            <h3 className="text-sm font-bold text-white group-hover:text-penpot-primary-100 transition-colors truncate">
                               {title}
                             </h3>
-                            <p className="text-xs font-medium text-gray-400 mt-0.5">
+                            <p className="text-xs font-medium text-penpot-text-medium mt-0.5">
                               Subtitled {isTv ? "• Series" : "• Movie"}
                             </p>
                           </div>
@@ -580,12 +600,10 @@ export function SearchResults() {
                   <h2 className="text-base sm:text-lg font-bold uppercase tracking-wider text-white">
                     Series
                   </h2>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-5 3xl:grid-cols-6 gap-5">
                     {visibleSeries.map((item) => {
                       const title = item.name || item.title || "Untitled"
-                      const poster = item.poster_path
-                        ? `https://image.tmdb.org/t/p/w185${item.poster_path}`
-                        : "/placeholder-poster.svg"
+                      const backdrop = getPosterUrl(item, true)
                       const year = item.first_air_date
                         ? new Date(item.first_air_date).getFullYear()
                         : null
@@ -598,35 +616,30 @@ export function SearchResults() {
                           key={item.id}
                           href={`/tv/${item.id}`}
                           onClick={handleResultClick}
-                          className="group flex items-start gap-3.5 p-2 rounded-none hover:bg-card border border-transparent hover:border-border transition-colors relative"
+                          className="group block overflow-hidden rounded-[8px] bg-transparent relative"
                         >
-                          <div className="relative h-20 w-14 flex-shrink-0 overflow-hidden bg-card border border-border">
+                          <div className="relative aspect-[240/136] w-full overflow-hidden rounded-[8px] bg-penpot-surface border border-penpot-border group-hover:border-penpot-primary-300 transition-colors">
                             <Image
-                              src={poster}
+                              src={backdrop}
                               alt={title}
                               fill
-                              sizes="56px"
-                              className="object-cover"
+                              sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
+                              className="object-cover transition-transform duration-300 group-hover:scale-105"
                               unoptimized
                             />
                             {/* Availability Badge on poster */}
-                            <div className="absolute top-1 right-1 z-10 pointer-events-none scale-90 origin-top-right">
-                              {availability?.status === "in_library" ? (
+                            <div className="absolute top-2 right-2 z-10 pointer-events-none">
+                              {availability?.status === "in_library" && (
                                 <AvailabilityBadge state={availability} />
-                              ) : (
-                                <div />
                               )}
                             </div>
                           </div>
-                          <div className="flex-1 min-w-0 pt-0.5">
-                            <h3 className="text-sm font-bold text-white group-hover:text-accent transition-colors truncate">
+                          <div className="pt-2">
+                            <h3 className="text-sm font-bold text-white group-hover:text-penpot-primary-100 transition-colors truncate">
                               {title}
                             </h3>
-                            <p className="text-xs font-medium text-gray-400 mt-0.5">
-                              {year ? `1 Season • ${year}` : "1 Season"}
-                            </p>
-                            <p className="text-xs font-medium text-gray-400 mt-0.5">
-                              Sub | Dub
+                            <p className="text-xs font-medium text-penpot-text-medium mt-0.5">
+                              {year ? `Series • ${year}` : "Series"}
                             </p>
                           </div>
                         </Link>
@@ -636,7 +649,7 @@ export function SearchResults() {
                   {series.length > 6 && !showAllSeries && (
                     <button
                       onClick={() => setShowAllSeries(true)}
-                      className="inline-flex items-center gap-1 text-xs font-bold uppercase tracking-wider text-gray-400 hover:text-white transition-colors pt-1"
+                      className="inline-flex items-center gap-1 text-xs font-bold uppercase tracking-wider text-penpot-text-medium hover:text-white transition-colors pt-1 cursor-pointer"
                     >
                       <span>See More</span>
                       <ChevronRight className="size-4" />
@@ -651,12 +664,10 @@ export function SearchResults() {
                   <h2 className="text-base sm:text-lg font-bold uppercase tracking-wider text-white">
                     Movies
                   </h2>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-5 3xl:grid-cols-6 gap-5">
                     {visibleMovies.map((item) => {
                       const title = item.title || item.name || "Untitled"
-                      const poster = item.poster_path
-                        ? `https://image.tmdb.org/t/p/w185${item.poster_path}`
-                        : "/placeholder-poster.svg"
+                      const backdrop = getPosterUrl(item, false)
                       const year = item.release_date
                         ? new Date(item.release_date).getFullYear()
                         : null
@@ -669,35 +680,30 @@ export function SearchResults() {
                           key={item.id}
                           href={`/movie/${item.id}`}
                           onClick={handleResultClick}
-                          className="group flex items-start gap-3.5 p-2 rounded-none hover:bg-card border border-transparent hover:border-border transition-colors relative"
+                          className="group block overflow-hidden rounded-[8px] bg-transparent relative"
                         >
-                          <div className="relative h-20 w-14 flex-shrink-0 overflow-hidden bg-card border border-border">
+                          <div className="relative aspect-[240/136] w-full overflow-hidden rounded-[8px] bg-penpot-surface border border-penpot-border group-hover:border-penpot-primary-300 transition-colors">
                             <Image
-                              src={poster}
+                              src={backdrop}
                               alt={title}
                               fill
-                              sizes="56px"
-                              className="object-cover"
+                              sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
+                              className="object-cover transition-transform duration-300 group-hover:scale-105"
                               unoptimized
                             />
                             {/* Availability Badge on poster */}
-                            <div className="absolute top-1 right-1 z-10 pointer-events-none scale-90 origin-top-right">
-                              {availability?.status === "in_library" ? (
+                            <div className="absolute top-2 right-2 z-10 pointer-events-none">
+                              {availability?.status === "in_library" && (
                                 <AvailabilityBadge state={availability} />
-                              ) : (
-                                <div />
                               )}
                             </div>
                           </div>
-                          <div className="flex-1 min-w-0 pt-0.5">
-                            <h3 className="text-sm font-bold text-white group-hover:text-accent transition-colors truncate">
+                          <div className="pt-2">
+                            <h3 className="text-sm font-bold text-white group-hover:text-penpot-primary-100 transition-colors truncate">
                               {title}
                             </h3>
-                            <p className="text-xs font-medium text-gray-400 mt-0.5">
-                              Movie {year ? `• ${year}` : ""}
-                            </p>
-                            <p className="text-xs font-medium text-gray-400 mt-0.5">
-                              Sub | Dub
+                            <p className="text-xs font-medium text-penpot-text-medium mt-0.5">
+                              {year ? `Movie • ${year}` : "Movie"}
                             </p>
                           </div>
                         </Link>
@@ -707,7 +713,7 @@ export function SearchResults() {
                   {movies.length > 6 && !showAllMovies && (
                     <button
                       onClick={() => setShowAllMovies(true)}
-                      className="inline-flex items-center gap-1 text-xs font-bold uppercase tracking-wider text-gray-400 hover:text-white transition-colors pt-1"
+                      className="inline-flex items-center gap-1 text-xs font-bold uppercase tracking-wider text-penpot-text-medium hover:text-white transition-colors pt-1 cursor-pointer"
                     >
                       <span>See More</span>
                       <ChevronRight className="size-4" />

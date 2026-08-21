@@ -18,6 +18,7 @@ import {
 } from "lucide-react"
 
 import type { RequestItem } from "@/lib/requests-store"
+import { getImageUrl } from "@/lib/utils"
 
 export type ProfileMapData = {
   qualityProfiles: { id: number; name: string }[]
@@ -88,11 +89,7 @@ export function AdminRequestCard({
     return st.charAt(0).toUpperCase() + st.slice(1)
   }
 
-  const posterUrl = req.posterPath
-    ? req.posterPath.startsWith("/")
-      ? `https://image.tmdb.org/t/p/w185${req.posterPath}`
-      : req.posterPath
-    : null
+  const posterUrl = req.posterPath ? getImageUrl(req.posterPath, "w185") : null
 
   return (
     <div className="p-5 border border-border/80 bg-card hover:border-gray-500/80 transition-all rounded-none space-y-4 shadow-lg">

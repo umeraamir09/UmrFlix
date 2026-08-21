@@ -201,8 +201,8 @@ export function RequestButton({
   // Case 4: Default - Not Requested yet
   return (
     <>
-      <Button size="lg" variant="primary" onClick={() => setShowModal(true)}>
-        <Plus className="mr-1 size-4 text-white" />
+      <Button size="lg" variant="request" onClick={() => setShowModal(true)} className="gap-2">
+        <Plus className="size-4 text-penpot-neutral-600 stroke-[2.5]" />
         Request
       </Button>
 

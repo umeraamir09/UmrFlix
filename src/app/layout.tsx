@@ -48,7 +48,7 @@ export default function RootLayout({
           href="https://api.fontshare.com/v2/css?f[]=satoshi@1,2&display=swap"
         />
       </head>
-      <body className="flex min-h-[100dvh] flex-col bg-background text-foreground font-sans">
+      <body className="flex min-h-[100dvh] flex-col bg-penpot-bg text-penpot-text-high font-sans">
         <SWRProvider>
           <ToastProvider>
             <LayoutShell>{children}</LayoutShell>

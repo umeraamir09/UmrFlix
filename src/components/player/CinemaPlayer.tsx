@@ -7,7 +7,17 @@ import {
   parsePlaybackPayload,
   type PlaybackPayload,
 } from "@/lib/playback-types"
-import { usePlayerSettings, updatePlayerSettings } from "@/lib/player-settings"
+import { usePlayerSettings, updatePlayerSettings, loadPlayerSettings } from "@/lib/player-settings"
+import {
+  audioTrackKey,
+  loadTrackMemory,
+  memoryKeyForPayload,
+  normalizeLang,
+  resolveInitialAudioIndex,
+  resolveInitialSubtitleIndex,
+  saveTrackSelection,
+  subtitleTrackKey,
+} from "@/lib/track-memory"
 import { SubtitleOverlay } from "./SubtitleOverlay"
 import { PlayerControls } from "./PlayerControls"
 import {
@@ -363,9 +373,41 @@ export function CinemaPlayer({
 
     fetch(`/api/jellyfin/playback/${itemId}`)
       .then(async (r) => {
-        const raw = await r.json()
-        if (!r.ok || (raw && typeof raw === "object" && raw.error && !raw.itemId)) {
-          throw new Error(raw?.error ?? "Failed to load stream")
+        const contentType = r.headers.get("content-type") || ""
+        if (!r.ok) {
+          let errorMsg = `Playback error (HTTP ${r.status})`
+          if (contentType.includes("application/json")) {
+            try {
+              const errData = await r.json()
+              if (errData && typeof errData === "object" && errData.error) {
+                errorMsg = errData.error
+              }
+            } catch {
+              /* non-fatal JSON parse error */
+            }
+          } else if (r.status === 401) {
+            errorMsg = "Unauthorized. Please log in again."
+          } else if (r.status === 404) {
+            errorMsg = "Media item not found in your library."
+          } else if (r.status === 502 || r.status === 503 || r.status === 504) {
+            errorMsg = "Media server is currently unreachable. Please try again later."
+          }
+          throw new Error(errorMsg)
+        }
+
+        if (!contentType.includes("application/json")) {
+          throw new Error("Invalid response received from media server.")
+        }
+
+        let raw: unknown
+        try {
+          raw = await r.json()
+        } catch {
+          throw new Error("Malformed playback data received from server.")
+        }
+
+        if (!raw || (typeof raw === "object" && "error" in raw && !("itemId" in raw))) {
+          throw new Error((raw as { error?: string })?.error ?? "Failed to load stream")
         }
         return parsePlaybackPayload(raw)
       })
@@ -376,10 +418,14 @@ export function CinemaPlayer({
           `item=${data.itemId} container=${data.container} vcodec=${data.videoCodec} canDirectPlay=${data.canDirectPlay} supportsTranscoding=${data.supportsTranscoding} resume=${Math.round(data.resumeTicks / TICKS_PER_SECOND)}s | audio: ${data.audio.map((a) => `[${a.index}] ${a.codec} "${a.title}"`).join(", ") || "none"} | subs: ${data.subtitles.map((s) => `[${s.index}] ${s.codec}${s.isImageBased ? " (image)" : ""}`).join(", ") || "none"} | markers: ${data.markers.map((m) => `${m.type}@${Math.round(m.start)}s`).join(", ") || "none"}`,
         )
         setPayload(data)
-        setAudioIndex(data.defaultAudioIndex)
-        const defaultSub =
-          data.subtitles.find((s) => s.isDefault && !s.isImageBased) ?? null
-        setSubtitleIndex(defaultSub ? defaultSub.index : null)
+        // Restore remembered track choices for this title (series-scoped for
+        // episodes), falling back to the global preferred-language settings
+        // and then Jellyfin's defaults. Settings are read imperatively so a
+        // mid-playback settings change doesn't refetch the payload.
+        const prefs = loadPlayerSettings()
+        const remembered = loadTrackMemory()[memoryKeyForPayload(data)]
+        setAudioIndex(resolveInitialAudioIndex(data, remembered?.audio, prefs.preferredAudioLanguage))
+        setSubtitleIndex(resolveInitialSubtitleIndex(data, remembered?.subtitle, prefs.preferredSubtitleLanguage))
         // Resume watching automatically — playback continues from the
         // Jellyfin-saved position without prompting.
         if (data.resumeTicks > 0) {
@@ -1190,10 +1236,24 @@ export function CinemaPlayer({
   const handleAudioChange = useCallback(
     (index: number) => {
       playerLog.info("user", `audio track change → index ${index}`)
+      const track = payload?.audio.find((a) => a.index === index)
       const audioLabel =
-        payload?.audio.find((a) => a.index === index)?.title ||
-        payload?.audio.find((a) => a.index === index)?.language ||
+        track?.title ||
+        track?.language ||
         `Audio Track ${index + 1}`
+      // Remember the choice for this title (series-scoped for episodes) so it
+      // restores automatically next time.
+      if (payload && track) {
+        saveTrackSelection(memoryKeyForPayload(payload), {
+          audio: {
+            index,
+            key: audioTrackKey(track),
+            lang: normalizeLang(track.language),
+            title: track.title,
+            updatedAt: Date.now(),
+          },
+        })
+      }
       rebuildAtPosition(() => setAudioIndex(index), audioLabel)
       announce(`Audio track changed to ${audioLabel}`)
     },
@@ -1207,6 +1267,21 @@ export function CinemaPlayer({
       // playback.
       const track = payload?.subtitles.find((s) => s.index === index)
       playerLog.info("user", `subtitle change → ${track ? `[${index}] ${track.title}` : "off"}`)
+      // Remember the choice for this title — including an explicit "off" —
+      // so it restores automatically next time.
+      if (payload) {
+        saveTrackSelection(memoryKeyForPayload(payload), {
+          subtitle: track
+            ? {
+                index: track.index,
+                key: subtitleTrackKey(track),
+                lang: normalizeLang(track.language),
+                title: track.title,
+                updatedAt: Date.now(),
+              }
+            : { index: null, key: null, updatedAt: Date.now() },
+        })
+      }
       const targetBurns = track != null && (track.isImageBased || burnSubtitles)
       if (targetBurns || burnSelectedSubtitle) {
         const subLabel = index == null ? "Subtitles Off" : track?.title || "Subtitles"
@@ -1386,7 +1461,11 @@ export function CinemaPlayer({
     >
       {/* Video Tap & Gesture Backdrop Layer */}
       <div
-        className="absolute inset-0 z-10 cursor-pointer"
+        className={`absolute inset-0 z-10 ${
+          !controlsVisible && playing && !episodeBrowserOpen
+            ? "cursor-none"
+            : "cursor-pointer"
+        }`}
         {...gestureHandlers}
       />
 
@@ -1600,6 +1679,7 @@ export function CinemaPlayer({
             playbackRate={displayPlaybackRate}
             isFullscreen={isFullscreen}
             hasNext={!!nextEpisode && !!onNextEpisode}
+            nextEpisode={nextEpisode}
             chapters={payload.chapters}
             itemId={payload.itemId}
             trickplay={payload.trickplay}

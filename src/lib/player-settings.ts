@@ -18,11 +18,29 @@ export type PlayerSettings = {
   subtitleMode: SubtitleMode
   /** Persisted quality preference. "auto" enables adaptive quality. */
   qualityPreference: string
+  /** Whether to automatically play the next episode when the current one ends. */
+  autoPlayNext: boolean
+  /** Whether to automatically skip detected intro segments. */
+  autoSkipIntro: boolean
+  /** Step size in seconds for forward/backward skip buttons and keyboard shortcuts. */
+  skipInterval: number
+  /** Default playback speed (e.g. 1.0, 1.25, 1.5). */
+  defaultPlaybackRate: number
+  /** Preferred audio language tag (e.g. "original", "eng", "jpn", "spa", "fre", "deu"). */
+  preferredAudioLanguage: string
+  /** Preferred subtitle language tag (e.g. "none", "eng", "spa", "fre", "jpn", "deu"). */
+  preferredSubtitleLanguage: string
 }
 
 export const DEFAULT_PLAYER_SETTINGS: PlayerSettings = {
   subtitleMode: "client",
   qualityPreference: "auto",
+  autoPlayNext: true,
+  autoSkipIntro: false,
+  skipInterval: 10,
+  defaultPlaybackRate: 1.0,
+  preferredAudioLanguage: "original",
+  preferredSubtitleLanguage: "none",
 }
 
 const STORAGE_KEY = "umrflix.playerSettings"

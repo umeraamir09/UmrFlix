@@ -1,8 +1,6 @@
 "use client"
 
 import { useEffect, useRef, useState } from "react"
-import Image from "next/image"
-import { ArrowLeft, Maximize, Minimize } from "lucide-react"
 import { formatTimecode, useRemainingTimeToggle } from "../PlayerOverlays"
 import type {
   AudioTrack,
@@ -13,6 +11,7 @@ import type {
 import { SeekBar } from "../PlayerControls"
 import { AudioSubtitlesMenu, SpeedQualityMenu } from "../player-menus"
 import { EpisodeBrowser } from "../EpisodeBrowser"
+import { PlayerHeader } from "../PlayerHeader"
 import type { EpisodeInfo, SeasonInfo } from "@/components/SeasonBrowser"
 import type { SubtitleStyle } from "../SubtitleOverlay"
 import type { SkipRipple } from "./use-touch-gestures"
@@ -24,12 +23,12 @@ import {
   IconSkipForward,
   IconSpeed,
   IconSubtitles,
+  IconVideoLibrary,
 } from "@/components/ui/icons"
 
 // Safe-area aware paddings (env() with fallback so non-notch devices still get spacing)
 const PAD_L = "pl-[max(1.5rem,env(safe-area-inset-left,0px))]"
 const PAD_R = "pr-[max(1.5rem,env(safe-area-inset-right,0px))]"
-const PAD_T = "pt-[max(1rem,env(safe-area-inset-top,0px))]"
 const PAD_B = "pb-[max(1rem,env(safe-area-inset-bottom,0px))]"
 const EDGE_L = "left-[max(1.5rem,env(safe-area-inset-left,0px))]"
 
@@ -72,7 +71,7 @@ function SkipRippleOverlay({ ripple }: { ripple: NonNullable<SkipRipple> }) {
   )
 }
 
-// ── Left-edge brightness rail (Figma "brightness control") ──
+// ── Left-edge brightness rail ──
 
 function BrightnessRail({
   value,
@@ -141,7 +140,7 @@ function BrightnessRail({
         aria-valuetext={`${Math.round(value * 100)} percent`}
         tabIndex={0}
         onKeyDown={handleKeyDown}
-        className="relative flex h-32 w-7 touch-none items-center justify-center cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-white/70 rounded"
+        className="relative flex h-32 w-7 touch-none items-center justify-center cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-cyan rounded"
         onPointerDown={(e) => {
           e.stopPropagation()
           e.currentTarget.setPointerCapture(e.pointerId)
@@ -157,12 +156,12 @@ function BrightnessRail({
         {/* track */}
         <div className="relative h-full w-1.5 rounded-full bg-white/30">
           <div
-            className="absolute inset-x-0 bottom-0 rounded-full bg-white"
+            className="absolute inset-x-0 bottom-0 rounded-full bg-cyan"
             style={{ height: `${fillPct}%` }}
           />
           {/* thumb */}
           <div
-            className="absolute left-1/2 size-3.5 -translate-x-1/2 translate-y-1/2 rounded-full bg-white shadow-md"
+            className="absolute left-1/2 size-3.5 -translate-x-1/2 translate-y-1/2 rounded-full bg-cyan shadow-md"
             style={{ bottom: `${fillPct}%` }}
           />
         </div>
@@ -171,39 +170,7 @@ function BrightnessRail({
   )
 }
 
-// ── Bottom action-row button (icon + label, per Figma bottom row) ──
-
-function ActionButton({
-  icon,
-  label,
-  onClick,
-  active = false,
-  ariaExpanded,
-}: {
-  icon: React.ReactNode
-  label: string
-  onClick: () => void
-  active?: boolean
-  ariaExpanded?: boolean
-}) {
-  return (
-    <button
-      onClick={(e) => {
-        e.stopPropagation()
-        onClick()
-      }}
-      className={`flex items-center justify-center gap-1.5 rounded-full px-2 sm:px-3 py-1.5 text-xs sm:text-sm font-medium tracking-tight transition-colors hover:bg-white/10 active:bg-white/20 shrink-0 ${
-        active ? "text-accent" : "text-white/95"
-      }`}
-      aria-expanded={ariaExpanded}
-    >
-      {icon}
-      <span className="whitespace-nowrap font-medium">{label}</span>
-    </button>
-  )
-}
-
-// ── Touch controls overlay (Figma: "video player (landscape)") ──
+// ── Touch controls overlay ──
 
 export function TouchControls({
   visible,
@@ -240,11 +207,9 @@ export function TouchControls({
   onSubtitleChange,
   onPlaybackRateChange,
   onBack,
+  onReport,
   onInteract,
-  isFullscreen = false,
-  onToggleFullscreen,
   ripple,
-  hasParty = false,
 }: {
   visible: boolean
   title: string
@@ -281,13 +246,10 @@ export function TouchControls({
   onPlaybackRateChange: (rate: number) => void
   onBack?: () => void
   onReport?: () => void
-  /** Re-arms the auto-hide timer (transport presses, scrub release, etc.). */
   onInteract: () => void
   isFullscreen?: boolean
   onToggleFullscreen?: () => void
   ripple: SkipRipple
-  /** True in watch-party rooms — the PartyBar occupies the top-right corner,
-   * so the touch chrome shifts down to stay clear of it. */
   hasParty?: boolean
 }) {
   const [audioSubsOpen, setAudioSubsOpen] = useState(false)
@@ -325,12 +287,8 @@ export function TouchControls({
   const isAnyMenuOpen =
     audioSubsOpen || speedOpen || episodeBrowserOpen || isScrubbing || brightnessDragging
   const show = visible || isAnyMenuOpen
-  // Islands only receive touches while visible — otherwise invisible controls
-  // would swallow taps that should toggle the overlay (no hover-poke on touch).
   const pe = show ? "pointer-events-auto" : "pointer-events-none"
 
-  // Close menus when the overlay fades out (render-time state adjustment — see
-  // react.dev "you might not need an effect")
   const [prevShow, setPrevShow] = useState(show)
   if (prevShow !== show) {
     setPrevShow(show)
@@ -340,11 +298,9 @@ export function TouchControls({
     }
   }
 
-  const speedLabel = `Speed (${playbackRate === 1 ? "1x" : `${playbackRate}x`})`
-
   return (
     <>
-      {/* Brightness dim — above the video & subtitles, below all controls */}
+      {/* Brightness dim — above video & subtitles, below controls */}
       {brightness < 1 && (
         <div
           className="pointer-events-none absolute inset-0 z-[35] bg-black"
@@ -355,19 +311,7 @@ export function TouchControls({
       {/* Double-tap skip feedback */}
       {ripple && <SkipRippleOverlay ripple={ripple} />}
 
-      {/* Menu Backdrop Shield */}
-      {(audioSubsOpen || speedOpen) && (
-        <div
-          onClick={(e) => {
-            e.stopPropagation()
-            setAudioSubsOpen(false)
-            setSpeedOpen(false)
-          }}
-          className="fixed inset-0 z-[95] bg-black/60 backdrop-blur-xs pointer-events-auto animate-in fade-in duration-150"
-        />
-      )}
-
-      {/* Audio & Subtitles menu (forced bottom-sheet on touch) */}
+      {/* Fullscreen Mobile Audio & Subtitles Menu */}
       {audioSubsOpen && (
         <AudioSubtitlesMenu
           sheet
@@ -383,7 +327,7 @@ export function TouchControls({
         />
       )}
 
-      {/* Speed & Quality menu (forced bottom-sheet on touch) */}
+      {/* Fullscreen Mobile Speed & Quality Menu */}
       {speedOpen && (
         <SpeedQualityMenu
           sheet
@@ -399,48 +343,23 @@ export function TouchControls({
 
       {/* Main overlay chrome */}
       <div
-        className={`absolute inset-0 z-40 flex flex-col pointer-events-none transition-opacity duration-300 ${
+        className={`absolute inset-0 z-40 flex flex-col justify-between pointer-events-none transition-opacity duration-300 ${
           show ? "visible opacity-100" : "invisible opacity-0"
         }`}
       >
-        {/* Background gradients */}
-        <div className="pointer-events-none absolute inset-x-0 top-0 h-28 bg-gradient-to-b from-black/80 via-black/40 to-transparent" />
-        <div className="pointer-events-none absolute inset-x-0 bottom-0 h-44 bg-gradient-to-t from-black/95 via-black/60 to-transparent" />
+        {/* Top Header Bar with Back button and Title/Subtitle */}
+        <PlayerHeader
+          title={title}
+          subtitle={subtitle}
+          onBack={onBack ?? (() => window.history.back())}
+          onReport={onReport}
+          visible={show}
+        />
 
-        {/* Centered title (Figma: "S0:E0 “Episode Name”" top-center) */}
-        <div className={`pointer-events-none absolute inset-x-0 top-0 z-20 ${PAD_T}`}>
-          <div className={`mx-auto max-w-[62%] text-center ${hasParty ? "mt-12" : "mt-1"}`}>
-            <div className="truncate text-sm font-medium tracking-[-0.01em] text-white drop-shadow-md">
-              {subtitle ?? title}
-            </div>
-            {subtitle && (
-              <div className="mt-0.5 truncate text-xs font-light text-gray-300 drop-shadow-md">
-                {title}
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Top bar: Back arrow button (top-left), title (center) */}
-        <div
-          className={`relative z-30 ${pe} flex items-center justify-between ${PAD_L} ${PAD_R} ${PAD_T} ${hasParty ? "mt-12" : ""}`}
-        >
+        {/* Center transport: −10s / play-pause / +10s */}
+        <div className="relative z-30 flex flex-1 items-center justify-evenly px-6">
           <button
-            onClick={(e) => {
-              e.stopPropagation()
-              ;(onBack ?? (() => window.history.back()))()
-            }}
-            className="flex size-10 items-center justify-center rounded-full bg-[#292929]/85 text-white shadow-lg backdrop-blur-sm transition-transform hover:scale-105 active:scale-95"
-            aria-label="Go back"
-          >
-            <ArrowLeft className="size-5 stroke-[2.5]" />
-          </button>
-          <span className="size-10" />
-        </div>
-
-        {/* Center transport: −10s / play-pause / +10s spread across the middle */}
-        <div className="relative z-30 flex flex-1 items-center justify-evenly px-[8cqw]">
-          <button
+            type="button"
             onClick={(e) => {
               e.stopPropagation()
               onSkipBy(-10)
@@ -449,26 +368,28 @@ export function TouchControls({
             className={`${pe} flex size-14 items-center justify-center text-white transition-transform hover:scale-110 active:scale-90`}
             aria-label="Skip back 10 seconds"
           >
-            <IconSkipBackward className="size-9 text-white drop-shadow-[0_2px_10px_rgba(0,0,0,0.85)]" />
+            <IconSkipBackward className="size-10 text-white drop-shadow-[0_2px_10px_rgba(0,0,0,0.85)]" />
           </button>
 
           <button
+            type="button"
             onClick={(e) => {
               e.stopPropagation()
               onTogglePlay()
               onInteract()
             }}
-            className={`${pe} flex size-16 items-center justify-center text-white transition-transform hover:scale-110 active:scale-90`}
+            className={`${pe} flex size-18 items-center justify-center text-white transition-transform hover:scale-110 active:scale-90`}
             aria-label={playing ? "Pause" : "Play"}
           >
             {playing ? (
-              <IconPause className="size-11 fill-white text-white drop-shadow-[4px_4px_16px_rgba(0,0,0,0.87)]" />
+              <IconPause className="size-14 fill-white text-white drop-shadow-[4px_4px_16px_rgba(0,0,0,0.87)]" />
             ) : (
-              <IconPlay className="ml-1 size-11 fill-white text-white drop-shadow-[4px_4px_16px_rgba(0,0,0,0.87)]" />
+              <IconPlay className="ml-1 size-14 fill-white text-white drop-shadow-[4px_4px_16px_rgba(0,0,0,0.87)]" />
             )}
           </button>
 
           <button
+            type="button"
             onClick={(e) => {
               e.stopPropagation()
               onSkipBy(10)
@@ -477,12 +398,11 @@ export function TouchControls({
             className={`${pe} flex size-14 items-center justify-center text-white transition-transform hover:scale-110 active:scale-90`}
             aria-label="Skip forward 10 seconds"
           >
-            <IconSkipForward className="size-9 text-white drop-shadow-[0_2px_10px_rgba(0,0,0,0.85)]" />
+            <IconSkipForward className="size-10 text-white drop-shadow-[0_2px_10px_rgba(0,0,0,0.85)]" />
           </button>
         </div>
 
-        {/* Brightness rail (left edge) — only mounted while shown so it can
-            never swallow gestures meant for the overlay toggle */}
+        {/* Brightness rail (left edge) */}
         {show && (
           <BrightnessRail
             value={brightness}
@@ -491,9 +411,9 @@ export function TouchControls({
           />
         )}
 
-        {/* Bottom stack: seek bar + timecode (Figma single-row) → action row */}
-        <div className={`relative z-30 ${pe} ${PAD_L} ${PAD_R} ${PAD_B} pt-2`}>
-          <div className="flex items-center gap-2.5 sm:gap-3 w-full">
+        {/* Bottom stack: seek bar + timecode + icon-only action row */}
+        <div className={`mt-auto relative z-30 ${pe} ${PAD_L} ${PAD_R} ${PAD_B} pt-2 bg-gradient-to-t from-black/95 via-black/60 to-transparent`}>
+          <div className="flex items-center gap-3 w-full mb-2">
             <button
               type="button"
               onClick={(e) => {
@@ -501,11 +421,12 @@ export function TouchControls({
                 toggleRemainingTime()
                 onInteract()
               }}
-              className="shrink-0 text-xs font-semibold tabular-nums text-white/90 active:text-accent transition-colors select-none cursor-pointer"
+              className="shrink-0 text-xs font-semibold tabular-nums text-white/90 active:text-cyan transition-colors select-none cursor-pointer"
               title={showRemaining ? "Tap to show total duration" : "Tap to show remaining time"}
             >
               {formatTimecode(currentTime)}
             </button>
+
             <div className="flex-1 min-w-0">
               <SeekBar
                 currentTime={currentTime}
@@ -521,6 +442,7 @@ export function TouchControls({
                 }}
               />
             </div>
+
             <button
               type="button"
               onClick={(e) => {
@@ -528,7 +450,7 @@ export function TouchControls({
                 toggleRemainingTime()
                 onInteract()
               }}
-              className="shrink-0 text-xs font-semibold tabular-nums text-white/90 active:text-accent transition-colors select-none cursor-pointer"
+              className="shrink-0 text-xs font-semibold tabular-nums text-white/90 active:text-cyan transition-colors select-none cursor-pointer"
               title={showRemaining ? "Tap to show total duration" : "Tap to show remaining time"}
             >
               {showRemaining
@@ -537,68 +459,72 @@ export function TouchControls({
             </button>
           </div>
 
-          {/* Action row (Figma: Speed (1x) · Lock · Episodes · Audio & Subtitles) */}
-          <div className="mt-2.5 flex items-center justify-between w-full px-1 sm:px-4">
-            <ActionButton
-              icon={<IconSpeed className="size-5 shrink-0" />}
-              label={speedLabel}
-              active={speedOpen}
-              ariaExpanded={speedOpen}
-              onClick={() => {
+          {/* Mobile Icon-only Action Row (Clean, uncluttered, no redundant fullscreen button) */}
+          <div className="mt-1 flex items-center justify-center gap-6 sm:gap-8 w-full py-1">
+            {/* Speed & Quality Button */}
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation()
                 setSpeedOpen((o) => !o)
                 setAudioSubsOpen(false)
                 onInteract()
               }}
-            />
-            <ActionButton
-              icon={<IconSubtitles className="size-5 shrink-0" />}
-              label="Audio & Subtitles"
-              active={audioSubsOpen}
-              ariaExpanded={audioSubsOpen}
-              onClick={() => {
+              className={`flex size-11 items-center justify-center rounded-full transition-all active:scale-95 ${
+                speedOpen
+                  ? "bg-cyan text-black shadow-lg"
+                  : "bg-white/10 text-white hover:bg-white/20"
+              }`}
+              aria-label="Playback speed and video quality"
+              title="Speed & Quality"
+              aria-expanded={speedOpen}
+            >
+              <IconSpeed className="size-6" />
+            </button>
+
+            {/* Audio & Subtitles Button */}
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation()
                 setAudioSubsOpen((o) => !o)
                 setSpeedOpen(false)
                 onInteract()
               }}
-            />
+              className={`flex size-11 items-center justify-center rounded-full transition-all active:scale-95 ${
+                audioSubsOpen
+                  ? "bg-cyan text-black shadow-lg"
+                  : "bg-white/10 text-white hover:bg-white/20"
+              }`}
+              aria-label="Audio and subtitles"
+              title="Audio & Subtitles"
+              aria-expanded={audioSubsOpen}
+            >
+              <IconSubtitles className="size-6" />
+            </button>
+
+            {/* Episode Browser Button (when TV series) */}
             {seriesId && onSelectEpisode && episodes && episodes.length > 0 && (
-              <ActionButton
-                icon={
-                  <Image
-                    src="/icons/ep-browser.svg"
-                    alt=""
-                    width={40}
-                    height={40}
-                    className="size-5 shrink-0"
-                  />
-                }
-                label="Episodes"
-                active={episodeBrowserOpen}
-                ariaExpanded={episodeBrowserOpen}
-                onClick={() => {
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation()
                   setAudioSubsOpen(false)
                   setSpeedOpen(false)
                   onToggleEpisodeBrowser()
                 }}
-              />
+                className={`flex size-11 items-center justify-center rounded-full transition-all active:scale-95 ${
+                  episodeBrowserOpen
+                    ? "bg-cyan text-black shadow-lg"
+                    : "bg-white/10 text-white hover:bg-white/20"
+                }`}
+                aria-label="Browse episodes"
+                title="Episodes"
+                aria-expanded={episodeBrowserOpen}
+              >
+                <IconVideoLibrary className="size-6" />
+              </button>
             )}
-            <ActionButton
-              icon={
-                isFullscreen ? (
-                  <Minimize className="size-5 shrink-0" />
-                ) : (
-                  <Maximize className="size-5 shrink-0" />
-                )
-              }
-              label={isFullscreen ? "Exit Fullscreen" : "Fullscreen"}
-              active={isFullscreen}
-              onClick={() => {
-                setAudioSubsOpen(false)
-                setSpeedOpen(false)
-                onToggleFullscreen?.()
-                onInteract()
-              }}
-            />
           </div>
         </div>
       </div>

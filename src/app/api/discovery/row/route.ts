@@ -4,6 +4,7 @@ import { getUserDiscoveryProfile } from "@/lib/discovery/profile"
 import { getFacetScoredItems } from "@/lib/discovery/rows"
 import { scoreItem, serveDemotion } from "@/lib/discovery/ranking"
 import { getServeLog, recordServeLog } from "@/lib/discovery/store"
+import { enrichMediaItemsWithPosters } from "@/lib/horizontal-posters"
 
 export const dynamic = "force-dynamic"
 
@@ -70,7 +71,10 @@ export async function GET(req: Request) {
       void recordServeLog(userId, "default", servedKeys)
     }
 
-    return NextResponse.json({ results: rankedItems.map((i) => i.rowItem) })
+    const rowItems = rankedItems.map((i) => i.rowItem)
+    await enrichMediaItemsWithPosters(rowItems)
+
+    return NextResponse.json({ results: rowItems })
   } catch (err) {
     console.error("[Discovery] Row facet endpoint failed:", err)
     return NextResponse.json({ results: [] })

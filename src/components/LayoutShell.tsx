@@ -11,14 +11,18 @@ import { Footer } from "@/components/Footer"
 export function LayoutShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
 
-  if (pathname?.startsWith("/watch") || pathname?.startsWith("/login")) {
-    return <main className="flex-1 bg-black">{children}</main>
+  if (pathname?.startsWith("/login")) {
+    return <main className="flex-1 min-w-0 max-w-full overflow-x-hidden bg-penpot-bg">{children}</main>
+  }
+
+  if (pathname?.startsWith("/watch")) {
+    return <main className="flex-1 min-w-0 max-w-full overflow-x-hidden bg-black">{children}</main>
   }
 
   return (
     <>
       <Navbar />
-      <main className="flex-1">{children}</main>
+      <main className="flex-1 min-w-0 max-w-full overflow-x-hidden">{children}</main>
       <Footer />
     </>
   )

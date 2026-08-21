@@ -1,28 +1,55 @@
 "use client"
 
 import Link from "next/link"
-import Image from "next/image"
 import { usePathname } from "next/navigation"
-import { Suspense, useState, useEffect, useRef } from "react"
-import { SearchBar } from "@/components/SearchBar"
-import { ChevronDown, Menu } from "lucide-react"
-import { IconSearch, IconClose, IconDownloadNav } from "@/components/ui/icons"
+import { useState, useEffect, useRef } from "react"
+import {
+  IconHome,
+  IconTv,
+  IconMovie,
+  IconVideoLibrary,
+  IconStar,
+  IconExpandMore,
+  IconPlus,
+  IconSearch,
+  IconClose,
+} from "@/components/ui/icons"
 import { UserProfileMenu } from "@/components/UserProfileMenu"
 import { NotificationBell } from "@/components/NotificationBell"
 import { useEventStream } from "@/lib/use-event-stream"
 import { ServiceHealthBanner } from "@/components/ServiceHealthBanner"
 import { GENRE_CATALOG } from "@/lib/genres"
 
-const NAV_LINKS = [
-  { href: "/popular", label: "Popular" },
-  { href: "/movies", label: "Movies" },
-  { href: "/tv-shows", label: "Tv Shows" },
-  { href: "/my-list", label: "My List" },
+const NAV_ITEMS = [
+  {
+    href: "/",
+    label: "Home",
+    icon: IconHome,
+    exact: true,
+  },
+  {
+    href: "/tvshows",
+    label: "Series",
+    icon: IconTv,
+    matchPrefixes: ["/tvshows", "/tv-shows", "/tv"],
+  },
+  {
+    href: "/movies",
+    label: "Movies",
+    icon: IconMovie,
+    matchPrefixes: ["/movies", "/movie"],
+  },
+  {
+    href: "/my-list",
+    label: "My List",
+    icon: IconPlus,
+    matchPrefixes: ["/my-list"],
+  },
 ]
 
 const QUICK_LINKS = [
   { href: "/popular", label: "Popular Movies" },
-  { href: "/tv-shows", label: "TV Shows" },
+  { href: "/tvshows", label: "TV Shows" },
   { href: "/library", label: "My Library" },
 ]
 
@@ -32,9 +59,7 @@ export function Navbar() {
   const pathname = usePathname()
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [categoriesOpen, setCategoriesOpen] = useState(false)
-  const [searchOpen, setSearchOpen] = useState(false)
   const [scrolled, setScrolled] = useState(false)
-  const searchContainerRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     const handleScroll = () => {
@@ -45,250 +70,344 @@ export function Navbar() {
     return () => window.removeEventListener("scroll", handleScroll)
   }, [])
 
-  // Close search menu on route change
+  // Close menus on route change during render
   const [prevPathname, setPrevPathname] = useState(pathname)
   if (prevPathname !== pathname) {
     setPrevPathname(pathname)
-    setSearchOpen(false)
+    setMobileMenuOpen(false)
+    setCategoriesOpen(false)
   }
 
+  // Handle escape key
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
       if (e.key === "Escape") {
-        setSearchOpen(false)
+        setCategoriesOpen(false)
+        setMobileMenuOpen(false)
       }
     }
     document.addEventListener("keydown", handleKeyDown)
     return () => document.removeEventListener("keydown", handleKeyDown)
   }, [])
 
+  const categoriesTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+
+  const handleOpenCategories = () => {
+    if (categoriesTimeoutRef.current) {
+      clearTimeout(categoriesTimeoutRef.current)
+      categoriesTimeoutRef.current = null
+    }
+    setCategoriesOpen(true)
+  }
+
+  const handleCloseCategories = () => {
+    if (categoriesTimeoutRef.current) {
+      clearTimeout(categoriesTimeoutRef.current)
+    }
+    categoriesTimeoutRef.current = setTimeout(() => {
+      setCategoriesOpen(false)
+    }, 180)
+  }
+
+  useEffect(() => {
+    return () => {
+      if (categoriesTimeoutRef.current) {
+        clearTimeout(categoriesTimeoutRef.current)
+      }
+    }
+  }, [])
+
+  function isNavItemActive(item: typeof NAV_ITEMS[number]) {
+    if (item.exact) {
+      return pathname === item.href
+    }
+    if (item.matchPrefixes) {
+      return item.matchPrefixes.some((p) => pathname === p || pathname?.startsWith(`${p}/`))
+    }
+    return pathname === item.href
+  }
+
   return (
     <header
-      className={`fixed top-0 z-50 w-full pt-safe transition-all duration-300 ${
+      className={`fixed top-0 z-50 w-full pt-safe transition-colors duration-300 ${
         scrolled
-          ? "bg-black/90 backdrop-blur-md shadow-lg"
-          : "bg-gradient-to-b from-black/90 via-black/40 to-transparent"
+          ? "bg-penpot-neutral-700/95 backdrop-blur-md shadow-xl"
+          : "bg-gradient-to-b from-penpot-header-dark via-penpot-header-dark/80 to-transparent"
       }`}
     >
       <ServiceHealthBanner />
-      <div className="mx-auto flex h-16 max-w-[1600px] items-center justify-between px-4 sm:px-6 md:px-8 relative">
+      <div className="mx-auto flex h-20 max-w-[1600px] 2xl:max-w-[1920px] 3xl:max-w-[2300px] 4xl:max-w-[2700px] items-center justify-between px-4 sm:px-6 md:px-8 lg:px-12 2xl:px-16 relative">
 
-        {/* Normal Header View */}
-        <div className="flex items-center gap-6 h-full">
-          <Link href="/" className="flex items-center gap-2 group pr-2">
-            <Image
-              src="/logo_header.png"
-              alt="UmrFlix Logo"
-              width={140}
-              height={36}
-              className="hidden sm:block h-8 w-auto object-contain transition-all duration-200 group-hover:brightness-0 group-hover:invert"
-              priority
-            />
-            <Image
-              src="/logo-nav-small.svg"
-              alt="UmrFlix Logo"
-              width={36}
-              height={36}
-              className="block sm:hidden h-8 w-auto object-contain transition-all duration-200 group-hover:brightness-0 group-hover:invert"
-              priority
+        {/* Left Section: Logo & Nav Links */}
+        <div className="flex items-center gap-6 lg:gap-8 h-full">
+
+          {/* UmrFlix Penpot Vector Brand Logo */}
+          <Link
+            href="/"
+            className="flex items-center gap-2.5 transition-transform hover:scale-105 duration-200 focus:outline-none shrink-0"
+            aria-label="UmrFlix Home"
+          >
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src="/umrflix-logo.svg"
+              alt="UmrFlix"
+              className="h-9 sm:h-10 w-auto object-contain"
             />
           </Link>
 
-          {/* Desktop Nav Items */}
-          <nav className="hidden items-center h-full md:flex">
-            {NAV_LINKS.map((link) => {
-              const isActive = pathname === link.href
+          {/* Desktop Nav Links (Penpot Frame 43) */}
+          <nav className="hidden md:flex items-center gap-1.5 lg:gap-2 h-full" aria-label="Main Navigation">
+            {NAV_ITEMS.map((item) => {
+              const active = isNavItemActive(item)
+              const Icon = item.icon
               return (
                 <Link
-                  key={link.href}
-                  href={link.href}
-                  className={`h-full flex items-center px-3.5 text-sm font-medium transition-colors ${
-                    isActive
-                      ? "text-white font-bold"
-                      : "text-grey-100 hover:text-grey-10"
+                  key={item.href}
+                  href={item.href}
+                  className={`group h-10 flex items-center gap-2 px-3.5 rounded-[4px] text-sm font-medium transition-all ${
+                    active
+                      ? "text-white font-bold bg-penpot-opacity-white-10"
+                      : "text-penpot-text-medium hover:text-white hover:bg-penpot-opacity-white-10"
                   }`}
                 >
-                  {link.label}
+                  <Icon
+                    className={`size-5 transition-colors ${
+                      active ? "text-penpot-secondary-200" : "text-penpot-text-medium group-hover:text-penpot-secondary-200"
+                    }`}
+                  />
+                  <span>{item.label}</span>
                 </Link>
               )
             })}
 
-            {/* Categories Dropdown Container */}
-            <div className="relative h-full flex items-center" onMouseLeave={() => setCategoriesOpen(false)}>
+            {/* Browse By Genre Dropdown with Invisible Bridge and Grace Window */}
+            <div
+              className="relative h-full flex items-center"
+              onMouseEnter={handleOpenCategories}
+              onMouseLeave={handleCloseCategories}
+            >
               <button
-                onMouseEnter={() => setCategoriesOpen(true)}
-                onClick={() => setCategoriesOpen(!categoriesOpen)}
-                className={`h-full flex items-center gap-1.5 px-3.5 text-sm font-semibold transition-colors ${
-                  categoriesOpen
-                    ? "text-gray-300"
-                    : "text-white/80 hover:text-gray-300"
+                onClick={() => setCategoriesOpen((prev) => !prev)}
+                className={`group h-10 flex items-center gap-2 px-3.5 rounded-[4px] text-sm font-medium transition-all cursor-pointer ${
+                  categoriesOpen || pathname?.startsWith("/genre/")
+                    ? "text-white font-bold bg-penpot-opacity-white-10"
+                    : "text-penpot-text-medium hover:text-white hover:bg-penpot-opacity-white-10"
                 }`}
+                aria-expanded={categoriesOpen}
+                aria-haspopup="true"
               >
-                <span>Browse By Genre</span>
-                <ChevronDown
+                <IconStar
+                  className={`size-5 transition-colors ${
+                    categoriesOpen || pathname?.startsWith("/genre/")
+                      ? "text-penpot-secondary-200"
+                      : "text-penpot-text-medium group-hover:text-penpot-secondary-200"
+                  }`}
+                />
+                <span>Browse by Genre</span>
+                <IconExpandMore
                   className={`size-4 transition-transform duration-200 ${
-                    categoriesOpen ? "rotate-180 text-gray-300" : "text-white/80"
+                    categoriesOpen ? "rotate-180 text-penpot-secondary-200" : "text-penpot-text-subtle"
                   }`}
                 />
               </button>
 
+              {/* Mega-Dropdown Menu */}
               {categoriesOpen && (
                 <div
-                  className="absolute top-full left-1/2 -translate-x-1/2 md:left-0 md:translate-x-0 w-[calc(100vw-2rem)] md:w-[640px] max-w-2xl bg-black/95 p-4 md:p-6 shadow-2xl backdrop-blur-xl flex flex-col md:flex-row gap-4 md:gap-6 animate-in fade-in slide-in-from-top-1 duration-150 z-50 rounded-lg md:rounded-none"
-                  onMouseEnter={() => setCategoriesOpen(true)}
+                  className="absolute top-full left-0 pt-2 w-[580px] max-w-[90vw] z-50 animate-in fade-in slide-in-from-top-1 duration-150"
+                  onMouseEnter={handleOpenCategories}
+                  onMouseLeave={handleCloseCategories}
                 >
-                  {/* Left Column: Quick links */}
-                  <div className="w-full md:w-52 flex flex-col gap-1.5 pr-0 md:pr-6 shrink-0">
-                    {QUICK_LINKS.map((quick) => (
-                      <Link
-                        key={quick.href}
-                        href={quick.href}
-                        className="rounded-none px-3 py-2 text-sm font-medium text-white hover:text-gray-300 hover:bg-white/10 transition-colors"
-                        onClick={() => setCategoriesOpen(false)}
-                      >
-                        {quick.label}
-                      </Link>
-                    ))}
-                  </div>
+                  {/* Pointer Triangle (Penpot Vector 2 & 3) */}
+                  <div className="relative">
+                    <svg
+                      className="absolute -top-3 left-6 w-4 h-3 z-10 drop-shadow-sm pointer-events-none"
+                      viewBox="0 0 18 14"
+                      fill="none"
+                    >
+                      <path
+                        d="M9 1L17 13H1L9 1Z"
+                        className="fill-penpot-neutral-700 stroke-penpot-border"
+                        strokeWidth="1.5"
+                        strokeLinejoin="round"
+                      />
+                      <line x1="1.5" y1="13.5" x2="16.5" y2="13.5" className="stroke-penpot-neutral-700" strokeWidth="2" />
+                    </svg>
 
-                  {/* Right Column: Genres Grid */}
-                  <div className="flex-1">
-                    <span className="text-[11px] font-bold text-gray-400 uppercase tracking-wider mb-3.5 block">
-                      GENRES
-                    </span>
-                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-4 sm:gap-x-6 gap-y-2.5 sm:gap-y-3">
-                      {GENRE_CATALOG.map((genre) => (
-                        <Link
-                          key={genre.slug}
-                          href={`/genre/${genre.slug}`}
-                          className="text-sm font-medium text-white/80 hover:text-gray-300 transition-colors"
-                          onClick={() => setCategoriesOpen(false)}
-                        >
-                          {genre.name}
-                        </Link>
-                      ))}
+                    {/* Main Container */}
+                    <div className="w-full bg-penpot-neutral-700 border border-penpot-border rounded-[8px] p-6 shadow-2xl backdrop-blur-xl flex flex-col md:flex-row gap-6">
+                      
+                      {/* Left Column: Featured links */}
+                      <div className="w-44 flex flex-col gap-2 pr-5 border-r border-penpot-border/60 shrink-0">
+                        <span className="text-xs font-normal text-white/40 mb-1 block">
+                          Featured
+                        </span>
+                        {QUICK_LINKS.map((quick) => (
+                          <Link
+                            key={quick.href}
+                            href={quick.href}
+                            className="text-base font-normal text-white hover:text-penpot-secondary-200 transition-colors py-1 truncate"
+                            onClick={() => setCategoriesOpen(false)}
+                          >
+                            {quick.label}
+                          </Link>
+                        ))}
+                      </div>
+
+                      {/* Right Column: All Genres Grid */}
+                      <div className="flex-1">
+                        <span className="text-xs font-normal text-white/40 mb-2 block">
+                          All Genres
+                        </span>
+                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-6 gap-y-2">
+                          {GENRE_CATALOG.map((genre) => (
+                            <Link
+                              key={genre.slug}
+                              href={`/genre/${genre.slug}`}
+                              className="text-sm font-normal text-white/90 hover:text-penpot-secondary-200 transition-colors py-1 truncate"
+                              onClick={() => setCategoriesOpen(false)}
+                            >
+                              {genre.name}
+                            </Link>
+                          ))}
+                        </div>
+                      </div>
+
                     </div>
                   </div>
                 </div>
               )}
             </div>
-
-            {/* My Library */}
-            <Link
-              href="/library"
-              className={`h-full flex items-center px-3.5 text-sm font-semibold transition-colors ${
-                pathname === "/library"
-                  ? "text-white font-bold"
-                  : "text-white/80 hover:text-gray-300"
-              }`}
-            >
-              My Library
-            </Link>
           </nav>
         </div>
 
-        {/* Right Section */}
-        <div className="flex items-center h-full">
-          {/* Search Button */}
+        {/* Right Section (Penpot Frame 44): Search, My List, Notifications, Avatar */}
+        <div className="flex items-center gap-2 sm:gap-3 h-full">
+
+          {/* Penpot Search (searchInput Board) */}
           <Link
             href="/search"
-            className="h-full min-w-[44px] min-h-[44px] flex items-center justify-center px-3 text-white/80 hover:text-gray-300 transition-colors"
+            className={`h-10 px-3 flex items-center gap-2 rounded-[4px] transition-all ${
+              pathname === "/search"
+                ? "bg-penpot-opacity-white-10 text-white"
+                : "text-penpot-text-medium hover:text-white hover:bg-penpot-opacity-white-10"
+            }`}
             title="Search Catalog"
             aria-label="Search media catalog"
           >
-            <IconSearch className="size-5" />
+            <IconSearch className="size-5 text-penpot-text-medium group-hover:text-penpot-secondary-200" />
+            <span className="text-xs font-medium hidden xl:inline-block">Search</span>
           </Link>
 
-          {/* Watchlist */}
+          {/* Quick Action: My List / Watchlist (Penpot icon/plus) */}
           <Link
             href="/library"
-            title="Watchlist / My Library"
-            aria-label="View Watchlist and Downloads"
-            className="h-full min-w-[44px] min-h-[44px] flex items-center justify-center px-3 text-white/80 hover:text-gray-300 transition-colors"
+            className={`h-10 px-3 flex items-center gap-2 rounded-[4px] transition-all ${
+              pathname === "/my-list"
+                ? "bg-penpot-opacity-white-10 text-white"
+                : "text-penpot-text-medium hover:text-white hover:bg-penpot-opacity-white-10"
+            }`}
+            title="Library"
+            aria-label="View My Library"
           >
-            <IconDownloadNav className="size-5" />
+            <IconVideoLibrary className="size-5 text-penpot-text-medium hover:text-penpot-secondary-200" />
+            <span className="text-xs font-medium hidden xl:inline-block">Library</span>
           </Link>
 
-          {/* Notification Bell */}
-          <div className="h-full flex items-center">
-            <NotificationBell />
-          </div>
+          {/* Notifications Dropdown (Cohesive with MenuUser Penpot standards) */}
+          <NotificationBell />
 
-          {/* User Profile & Settings Menu */}
-          <div className="px-1 flex items-center h-full">
-            <UserProfileMenu />
-          </div>
+          {/* User Account / Avatar Dropdown (Penpot MenuUser Component) */}
+          <UserProfileMenu />
 
-          {/* Mobile Drawer Trigger */}
+          {/* Mobile Menu Hamburger Button */}
           <button
             onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-            className="h-full min-w-[44px] min-h-[44px] flex items-center justify-center px-3 text-white hover:text-gray-300 md:hidden transition-colors"
-            aria-label={mobileMenuOpen ? "Close navigation menu" : "Open navigation menu"}
+            className="min-h-12 min-w-12 flex items-center justify-center text-penpot-text-high hover:text-penpot-secondary-200 md:hidden transition-colors rounded-[4px] hover:bg-penpot-opacity-white-10 cursor-pointer touch-manipulation select-none"
+            aria-label="Toggle mobile menu"
+            aria-expanded={mobileMenuOpen}
           >
-            {mobileMenuOpen ? <IconClose className="size-6" /> : <Menu className="size-6" />}
-          </button>
-        </div>
-
-        {/* Sliding Full-Width Search Overlay */}
-        {searchOpen && (
-          <div
-            ref={searchContainerRef}
-            className="absolute inset-x-0 top-0 h-16 bg-black/95 backdrop-blur-md flex items-center justify-between px-4 sm:px-6 md:px-8 z-50 animate-in fade-in slide-in-from-top-4 duration-200"
-          >
-            <div className="flex-1 max-w-4xl mx-auto flex items-center gap-4">
-              <div className="flex-1">
-                <Suspense fallback={<div className="h-9 w-full bg-white/10 rounded-none animate-pulse" />}>
-                  <SearchBar />
-                </Suspense>
+            {mobileMenuOpen ? (
+              <IconClose className="size-6 text-penpot-text-high" />
+            ) : (
+              <div className="flex flex-col gap-1.5 items-center justify-center">
+                <span className="block h-0.5 w-5 bg-penpot-text-high rounded-full" />
+                <span className="block h-0.5 w-5 bg-penpot-text-high rounded-full" />
+                <span className="block h-0.5 w-5 bg-penpot-text-high rounded-full" />
               </div>
-              <button
-                onClick={() => setSearchOpen(false)}
-                className="flex items-center justify-center p-2 text-white hover:text-gray-300 rounded-none transition-colors"
-                title="Close Search"
-              >
-                <IconClose className="size-5" />
-              </button>
-            </div>
-          </div>
-        )}
+            )}
+          </button>
 
+        </div>
       </div>
 
-      {/* Mobile Drawer Navigation */}
+      {/* Mobile Drawer (Penpot Dark Theme) */}
       {mobileMenuOpen && (
-        <div className="bg-black/95 backdrop-blur-xl px-6 py-5 md:hidden space-y-4 animate-in fade-in duration-200">
-          <div className="space-y-1">
-            {NAV_LINKS.map((link) => (
-              <Link
-                key={link.href}
-                href={link.href}
-                onClick={() => setMobileMenuOpen(false)}
-                className="block px-3 py-2 rounded-none text-base font-semibold text-white hover:text-gray-300 transition-colors"
-              >
-                {link.label}
-              </Link>
-            ))}
-            <Link
-              href="/library"
-              onClick={() => setMobileMenuOpen(false)}
-              className="block px-3 py-2 rounded-none text-base font-semibold text-white hover:text-gray-300 transition-colors"
-            >
-              My Library
-            </Link>
-          </div>
-          <div className="pt-3">
-            <p className="text-[11px] font-bold text-gray-400 uppercase tracking-wider mb-3">Genres</p>
-            <div className="grid grid-cols-2 gap-2.5">
-              {GENRE_CATALOG.map((genre) => (
+        <div className="md:hidden border-t border-penpot-border bg-penpot-neutral-700/98 backdrop-blur-xl px-4 py-6 animate-in slide-in-from-top duration-200 max-h-[calc(100dvh-5rem)] overflow-y-auto overscroll-contain">
+          <div className="flex flex-col gap-2">
+            {NAV_ITEMS.map((item) => {
+              const active = isNavItemActive(item)
+              const Icon = item.icon
+              return (
                 <Link
-                  key={genre.slug}
-                  href={`/genre/${genre.slug}`}
+                  key={item.href}
+                  href={item.href}
                   onClick={() => setMobileMenuOpen(false)}
-                  className="text-sm font-medium text-white hover:text-gray-300 transition-colors"
+                  className={`flex items-center gap-3 px-4 py-3 rounded-[4px] text-base font-medium transition-colors touch-manipulation select-none ${
+                    active
+                      ? "text-penpot-secondary-200 bg-penpot-surface"
+                      : "text-penpot-text-high hover:text-penpot-secondary-200 hover:bg-penpot-surface"
+                  }`}
                 >
-                  {genre.name}
+                  <Icon className={`size-5 ${active ? "text-penpot-secondary-200" : "text-penpot-text-subtle"}`} />
+                  <span>{item.label}</span>
                 </Link>
-              ))}
+              )
+            })}
+
+            <Link
+              href="/my-list"
+              onClick={() => setMobileMenuOpen(false)}
+              className={`flex items-center gap-3 px-4 py-3 rounded-[4px] text-base font-medium transition-colors touch-manipulation select-none ${
+                pathname === "/my-list"
+                  ? "text-penpot-secondary-200 bg-penpot-surface"
+                  : "text-penpot-text-high hover:text-penpot-secondary-200 hover:bg-penpot-surface"
+              }`}
+            >
+              <IconPlus className="size-5 text-penpot-text-subtle" />
+              <span>My List</span>
+            </Link>
+
+            <Link
+              href="/search"
+              onClick={() => setMobileMenuOpen(false)}
+              className={`flex items-center gap-3 px-4 py-3 rounded-[4px] text-base font-medium transition-colors touch-manipulation select-none ${
+                pathname === "/search"
+                  ? "text-penpot-secondary-200 bg-penpot-surface"
+                  : "text-penpot-text-high hover:text-penpot-secondary-200 hover:bg-penpot-surface"
+              }`}
+            >
+              <IconSearch className="size-5 text-penpot-text-subtle" />
+              <span>Search</span>
+            </Link>
+
+            {/* Mobile Genre Links */}
+            <div className="pt-4 mt-2 border-t border-penpot-border">
+              <p className="px-4 text-xs font-bold text-penpot-text-subtle uppercase tracking-wider mb-2 select-none">
+                Genres
+              </p>
+              <div className="grid grid-cols-2 gap-1.5 px-2">
+                {GENRE_CATALOG.slice(0, 12).map((genre) => (
+                  <Link
+                    key={genre.slug}
+                    href={`/genre/${genre.slug}`}
+                    onClick={() => setMobileMenuOpen(false)}
+                    className="text-xs font-medium text-penpot-text-medium hover:text-penpot-secondary-200 transition-colors py-2 px-2 rounded-[4px] hover:bg-penpot-surface touch-manipulation select-none"
+                  >
+                    {genre.name}
+                  </Link>
+                ))}
+              </div>
             </div>
           </div>
         </div>
@@ -296,4 +415,5 @@ export function Navbar() {
     </header>
   )
 }
+
 

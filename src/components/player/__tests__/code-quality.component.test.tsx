@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { loadPlayerSettings, updatePlayerSettings } from "@/lib/player-settings"
 import { useReportToast } from "../hooks/useReportToast"
 import { useReporterCleanup } from "../hooks/useReporterCleanup"
+import { usePlayerControls } from "../hooks/usePlayerControls"
 
 describe("Code Quality & Maintainability Tests (Audit 10.1 - 10.5)", () => {
   beforeEach(() => {
@@ -98,6 +99,72 @@ describe("Code Quality & Maintainability Tests (Audit 10.1 - 10.5)", () => {
 
       unmount()
       expect(stop).toHaveBeenCalledTimes(2)
+    })
+  })
+
+  describe("10.7 — usePlayerControls and cursor auto-hide", () => {
+    it("auto-hides controls after 3500ms when playing", () => {
+      const { result } = renderHook(() =>
+        usePlayerControls({
+          playing: true,
+          episodeBrowserOpen: false,
+        }),
+      )
+
+      expect(result.current.controlsVisible).toBe(true)
+
+      act(() => {
+        vi.advanceTimersByTime(3500)
+      })
+
+      expect(result.current.controlsVisible).toBe(false)
+    })
+
+    it("resets auto-hide timer when pokeControls is invoked", () => {
+      const { result } = renderHook(() =>
+        usePlayerControls({
+          playing: true,
+          episodeBrowserOpen: false,
+        }),
+      )
+
+      act(() => {
+        vi.advanceTimersByTime(2000)
+      })
+      expect(result.current.controlsVisible).toBe(true)
+
+      act(() => {
+        result.current.pokeControls()
+      })
+
+      act(() => {
+        vi.advanceTimersByTime(2000)
+      })
+      expect(result.current.controlsVisible).toBe(true)
+
+      act(() => {
+        vi.advanceTimersByTime(1500)
+      })
+      expect(result.current.controlsVisible).toBe(false)
+    })
+
+    it("keeps controls visible when paused or when episode browser is open", () => {
+      const { result, rerender } = renderHook(
+        ({ playing, episodeBrowserOpen }) =>
+          usePlayerControls({ playing, episodeBrowserOpen }),
+        { initialProps: { playing: false, episodeBrowserOpen: false } },
+      )
+
+      act(() => {
+        vi.advanceTimersByTime(5000)
+      })
+      expect(result.current.controlsVisible).toBe(true)
+
+      rerender({ playing: true, episodeBrowserOpen: true })
+      act(() => {
+        vi.advanceTimersByTime(5000)
+      })
+      expect(result.current.controlsVisible).toBe(true)
     })
   })
 })

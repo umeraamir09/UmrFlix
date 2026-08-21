@@ -66,7 +66,7 @@ export default function AvatarSelectionPage() {
   }
 
   return (
-    <div className="min-h-screen bg-black text-white pt-24 pb-20 px-4 sm:px-6 md:px-12">
+    <div className="min-h-[100dvh] bg-black text-white pt-24 pb-20 px-4 sm:px-6 md:px-12">
       <div className="max-w-7xl mx-auto space-y-8">
         
         {/* Minimal Heading */}

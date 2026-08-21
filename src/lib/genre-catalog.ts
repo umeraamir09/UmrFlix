@@ -3,12 +3,12 @@ import {
   tmdbFetch,
   discoverMovies,
   discoverTv,
-  getItemLogo,
   type TmdbMovie,
   type TmdbTvShow,
 } from "./tmdb"
 import { filterReleasedContent, filterDisplayableContent } from "./catalog"
 import { toRowItem, dedupeByTmdbId, type RowItem } from "./recommendations"
+import { enrichMediaItemsWithPosters } from "./horizontal-posters"
 import {
   getUserGenreProfile,
   getGenreTopPicks,
@@ -27,7 +27,6 @@ import { SingleFlight } from "./circuit-breaker"
 import { authenticate, getAllItems } from "./jellyfin"
 import * as radarr from "./radarr"
 import * as sonarr from "./sonarr"
-import type { BillboardItem } from "@/components/HeroBillboard"
 
 /**
  * Dedicated genre page row builder.
@@ -49,7 +48,6 @@ export type GenreRow = {
 
 export type GenrePageData = {
   genre: GenreDef
-  heroItems: BillboardItem[]
   rows: GenreRow[]
 }
 
@@ -143,7 +141,9 @@ async function fetchMixedDiscover(
 
   const movieItems = toRowItems(movieData?.results ?? [], "movie", options)
   const tvItems = toRowItems(tvData?.results ?? [], "tv", options)
-  return dedupeByTmdbId([...movieItems, ...tvItems]).slice(0, limit)
+  const combined = dedupeByTmdbId([...movieItems, ...tvItems]).slice(0, limit)
+  await enrichMediaItemsWithPosters(combined)
+  return combined
 }
 
 // ── Availability maps ──
@@ -308,30 +308,6 @@ async function buildAvailableRowItems(genre: GenreDef): Promise<RowItem[]> {
   }))
 }
 
-// ── Hero ──
-
-async function buildHeroItems(genre: GenreDef): Promise<BillboardItem[]> {
-  const items = await fetchMixedDiscover(genre, { sortBy: "popularity" }, 8)
-  const top = items.slice(0, 5)
-
-  return Promise.all(
-    top.map(async (item) => {
-      const mediaType = item.media_type === "tv" ? "tv" : "movie"
-      const logo_path = await getItemLogo(mediaType, item.id).catch(() => null)
-      return {
-        id: item.id,
-        title: item.title || item.name || "",
-        overview: item.overview,
-        backdrop_path: item.backdrop_path,
-        poster_path: item.poster_path,
-        media_type: mediaType,
-        vote_average: item.vote_average,
-        release_date: item.release_date || item.first_air_date,
-        logo_path,
-      }
-    })
-  )
-}
 
 // ── Row cache (slug:userId:row) ──
 
@@ -412,14 +388,8 @@ export async function getGenrePageData(
   const profile = await getUserGenreProfile(uid)
   const personalize = profile.hasEnoughSignals
 
-  // The hero is identical for every user of a genre, so it is cached under a
-  // shared key instead of being rebuilt (2 discover calls + up to 5 logo
-  // fetches) on every request.
-  const heroCacheKey = rowCacheKey(slug, "shared", "hero")
-
-  const [heroItems, topPicks, trending, worldLeading, available, acclaimed, newRecent, hiddenGems, because, decadeItems] =
+  const [topPicks, trending, worldLeading, available, acclaimed, newRecent, hiddenGems, because, decadeItems] =
     await Promise.all([
-      getCachedRow<BillboardItem[]>(heroCacheKey, () => buildHeroItems(genre)),
       personalize
         ? getCachedRow<RowItem[]>(key("top-picks"), () => getGenreTopPicks(uid, genre, ROW_LIMIT))
         : Promise.resolve([] as RowItem[]),
@@ -580,5 +550,5 @@ export async function getGenrePageData(
     )
   }
 
-  return { genre, heroItems, rows }
+  return { genre, rows }
 }

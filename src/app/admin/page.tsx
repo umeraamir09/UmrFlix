@@ -178,7 +178,7 @@ export default function AdminDashboardPage() {
   }
 
   return (
-    <main className="min-h-screen bg-[#0a0b0d] text-foreground pb-20 pt-24 px-4 sm:px-6 lg:px-8">
+    <main className="min-h-[100dvh] bg-[#0a0b0d] text-foreground pb-20 pt-24 px-4 sm:px-6 lg:px-8">
       <div className="max-w-7xl mx-auto space-y-8">
         
         {/* Header */}

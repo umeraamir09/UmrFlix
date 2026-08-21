@@ -4,6 +4,7 @@ import { useEffect, useState } from "react"
 import useSWR from "swr"
 import { MovieRow } from "@/components/MovieRow"
 import type { MovieCardItem } from "@/components/MovieCard"
+import { ContinueWatchingSection } from "@/components/ContinueWatchingSection"
 
 type FeedRow = {
   key: string
@@ -14,8 +15,6 @@ type FeedRow = {
 }
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json())
-
-import { ContinueWatchingSection } from "@/components/ContinueWatchingSection"
 
 export function PersonalizedFeed({
   mediaType,
@@ -49,10 +48,13 @@ export function PersonalizedFeed({
       <>
         {[0, 1].map((i) => (
           <section key={i} className="relative my-8 space-y-3" aria-hidden>
-            <div className="h-6 w-56 animate-shimmer rounded-md" />
-            <div className="grid grid-flow-col auto-cols-[175px] sm:auto-cols-[220px] md:auto-cols-[255px] lg:auto-cols-[275px] gap-4 sm:gap-5 md:gap-6 overflow-hidden py-3 px-1">
-              {Array.from({ length: 7 }).map((_, j) => (
-                <div key={j} className="animate-shimmer rounded-md aspect-[2/3] w-full" />
+            <div className="h-6 w-56 bg-penpot-surface/60 border border-penpot-border/40 animate-pulse rounded-[4px]" />
+            <div className="grid grid-flow-col auto-cols-[270px] sm:auto-cols-[290px] md:auto-cols-[320px] lg:auto-cols-[350px] gap-5 overflow-hidden py-3 px-1">
+              {Array.from({ length: 6 }).map((_, j) => (
+                <div
+                  key={j}
+                  className="aspect-[240/136] w-full rounded-[8px] bg-penpot-surface/60 border border-penpot-border/40 animate-pulse"
+                />
               ))}
             </div>
           </section>

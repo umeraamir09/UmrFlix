@@ -7,13 +7,18 @@ export function cn(...inputs: ClassValue[]) {
 
 export function getImageUrl(
   path: string | null | undefined,
-  size: "w92" | "w154" | "w185" | "w342" | "w500" | "w780" | "w1280" | "original" = "w500"
+  size: "w92" | "w154" | "w185" | "w300" | "w342" | "w500" | "w780" | "w1280" | "original" = "w780"
 ): string {
   if (!path) return "/placeholder-poster.svg"
 
   // Handle full HTTP / HTTPS URLs
   if (path.startsWith("http://") || path.startsWith("https://")) {
     if (path.includes("image.tmdb.org/t/p/")) {
+      const parts = path.split(/\/t\/p\/[^/]+/)
+      const afterPart = parts[1] || ""
+      if (afterPart.startsWith("/api/") || afterPart.startsWith("/placeholder")) {
+        return afterPart
+      }
       return path.replace(/\/t\/p\/[^/]+/, `/t/p/${size}`)
     }
     return path

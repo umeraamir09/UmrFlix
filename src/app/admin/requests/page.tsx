@@ -111,7 +111,7 @@ export default function AdminRequestsPage() {
   const deniedCount = requests.filter((r) => r.status === "denied").length
 
   return (
-    <main className="min-h-screen bg-[#0a0b0d] text-foreground pb-20 pt-24 px-4 sm:px-6 lg:px-8">
+    <main className="min-h-[100dvh] bg-[#0a0b0d] text-foreground pb-20 pt-24 px-4 sm:px-6 lg:px-8">
       <div className="max-w-7xl mx-auto space-y-8">
         
         {/* Header & Navigation */}
@@ -161,7 +161,7 @@ export default function AdminRequestsPage() {
               placeholder="Search title, user, or path..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full bg-surface border border-border px-3 py-2 pl-9 text-xs text-white placeholder-gray-500 focus:outline-none focus:border-amber-400"
+              className="w-full bg-surface border border-border px-3 py-2 pl-9 text-base sm:text-xs text-white placeholder-gray-500 focus:outline-none focus:border-amber-400 touch-manipulation"
             />
           </div>
         </div>

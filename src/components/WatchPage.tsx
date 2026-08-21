@@ -65,8 +65,16 @@ export function WatchPage() {
     }
     const playSeries = async (seriesId: string) => {
       const res = await fetch(`/api/jellyfin/series/${seriesId}/episodes`)
+      const contentType = res.headers.get("content-type") || ""
+      if (!res.ok || !contentType.includes("application/json")) {
+        let errMsg = `Failed to load episodes (HTTP ${res.status})`
+        try {
+          const d = await res.json()
+          if (d?.error) errMsg = d.error
+        } catch {}
+        throw new Error(errMsg)
+      }
       const data = await res.json()
-      if (!res.ok) throw new Error(data.error ?? "Failed to load episodes")
       const target = pickSeriesEpisode(data.episodes)
       if (!target) {
         fail({ message: "No playable episodes found in your library for this series yet." })
@@ -86,8 +94,8 @@ export function WatchPage() {
         if (partyParam) {
           const partyRes = await fetch(`/api/party/${partyParam}`)
           if (partyRes.ok) {
-            const snap: PartyRoomSnapshot = await partyRes.json()
-            if (!cancelled) {
+            const snap: PartyRoomSnapshot = await partyRes.json().catch(() => null)
+            if (snap && !cancelled) {
               setPartyInfo({ partyId: partyParam, isOwner: snap.isOwner })
               if (snap.state) {
                 const estPos = predictedPosition(snap.state, snap.serverNow)
@@ -113,6 +121,10 @@ export function WatchPage() {
         if (tmdbParam) {
           const mediaType = typeParam === "tv" ? "tv" : "movie"
           const res = await fetch(`/api/availability?tmdbId=${tmdbParam}&type=${mediaType}`)
+          const contentType = res.headers.get("content-type") || ""
+          if (!res.ok || !contentType.includes("application/json")) {
+            throw new Error(`Failed to check availability (HTTP ${res.status})`)
+          }
           const data = await res.json()
           const av: AvailabilityResult | undefined = data.results?.[`${mediaType}-${tmdbParam}`]
           if (av?.status === "in_library" && av.jellyfinItemId) {
@@ -149,9 +161,23 @@ export function WatchPage() {
     let cancelled = false
     fetch(`/api/jellyfin/playback/${resolvedId}`)
       .then(async (r) => {
-        const raw = await r.json()
-        if (!r.ok || (raw && typeof raw === "object" && raw.error && !raw.itemId)) {
-          throw new Error(raw?.error ?? "Failed to load stream info")
+        const contentType = r.headers.get("content-type") || ""
+        if (!r.ok || !contentType.includes("application/json")) {
+          let errorMsg = `Failed to load stream info (HTTP ${r.status})`
+          try {
+            const errData = await r.json()
+            if (errData?.error) errorMsg = errData.error
+          } catch {}
+          throw new Error(errorMsg)
+        }
+        let raw: unknown
+        try {
+          raw = await r.json()
+        } catch {
+          throw new Error("Malformed playback data received")
+        }
+        if (!raw || (typeof raw === "object" && "error" in raw && !("itemId" in raw))) {
+          throw new Error((raw as { error?: string })?.error ?? "Failed to load stream info")
         }
         return parsePlaybackPayload(raw)
       })
@@ -160,9 +186,9 @@ export function WatchPage() {
         setPayload(p)
         if (p.series?.id) {
           fetch(`/api/jellyfin/series/${p.series.id}/episodes`)
-            .then((r) => r.json())
+            .then((r) => (r.ok ? r.json() : null))
             .then((d) => {
-              if (!cancelled) {
+              if (d && !cancelled) {
                 setEpisodes(d.episodes ?? [])
                 setSeasons(d.seasons ?? [])
               }

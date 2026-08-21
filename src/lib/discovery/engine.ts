@@ -21,6 +21,7 @@ import {
 } from "./ranking"
 import { cosineSimilarity } from "./vector"
 import type { RowItem } from "../recommendations"
+import { enrichMediaItemsWithPosters } from "../horizontal-posters"
 
 /**
  * Feed orchestrator: candidate row synthesis → Tier-1 item ranking → Tier-2
@@ -214,6 +215,12 @@ export async function getPersonalizedFeed(
     })
 
     if (finalFeed.length >= maxRows) break
+  }
+
+  // Enrich row items with English logo-treated backdrops
+  const allRowItems = finalFeed.flatMap((row) => row.items)
+  if (allRowItems.length > 0) {
+    await enrichMediaItemsWithPosters(allRowItems)
   }
 
   if (feedMemoryCache.size > 200) {
