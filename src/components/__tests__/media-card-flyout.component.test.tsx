@@ -101,3 +101,81 @@ describe("MediaCardFlyout Options Menu & Delete", () => {
     expect(onDelete).toHaveBeenCalledTimes(1)
   })
 })
+
+describe("MediaCardFlyout play URL resolution", () => {
+  const rect = { top: 100, left: 100, width: 240, height: 136 }
+
+  const renderFlyout = (item: Parameters<typeof MediaCardFlyout>[0]["item"], mediaType: "movie" | "tv") =>
+    render(<MediaCardFlyout item={item} rect={rect} open={true} mediaType={mediaType} />)
+
+  it("routes series-level tv items through /watch series resolution (&type=tv)", () => {
+    renderFlyout(
+      {
+        id: 999,
+        name: "Test Series",
+        overview: "A test series",
+        poster_path: "/series.jpg",
+        jellyfinItemId: "jf-series-1",
+      },
+      "tv",
+    )
+
+    const playLink = screen.getByRole("link", { name: /Play Test Series/i })
+    expect(playLink.getAttribute("href")).toBe("/watch?id=jf-series-1&type=tv")
+  })
+
+  it("plays continue-watching episode ids directly (no &type=tv)", () => {
+    renderFlyout(
+      {
+        id: 999,
+        name: "Test Series",
+        overview: "A test series",
+        poster_path: "/series.jpg",
+        jellyfinItemId: "jf-episode-7",
+        episodeNumber: "S1:E7",
+        episodeTitle: "The Pilot",
+        progressPercent: 42,
+      },
+      "tv",
+    )
+
+    const playLink = screen.getByRole("link", { name: /Play Test Series/i })
+    expect(playLink.getAttribute("href")).toBe("/watch?id=jf-episode-7")
+  })
+
+  it("plays movie ids directly (no &type=tv)", () => {
+    renderFlyout(
+      {
+        id: 12345,
+        title: "Test Movie",
+        overview: "A test movie overview description",
+        poster_path: "/test.jpg",
+        jellyfinItemId: "jf-movie-1",
+      },
+      "movie",
+    )
+
+    const playLink = screen.getByRole("link", { name: /Play Test Movie/i })
+    expect(playLink.getAttribute("href")).toBe("/watch?id=jf-movie-1")
+  })
+
+  it("falls back to tmdb-based play url when no jellyfin item id exists", () => {
+    render(
+      <MediaCardFlyout
+        item={{
+          id: 999,
+          name: "Test Series",
+          overview: "A test series",
+          poster_path: "/series.jpg",
+        }}
+        rect={rect}
+        open={true}
+        mediaType="tv"
+        availabilityState={{ status: "in_library" }}
+      />,
+    )
+
+    const playLink = screen.getByRole("link", { name: /Play Test Series/i })
+    expect(playLink.getAttribute("href")).toBe("/watch?tmdb=999&type=tv")
+  })
+})

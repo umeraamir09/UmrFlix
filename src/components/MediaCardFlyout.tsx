@@ -165,8 +165,18 @@ export function MediaCardFlyout({
       ? formatRuntime(runtimeMin)
       : ""
 
+  // Continue-watching cards carry an episode-level Jellyfin id that can be
+  // played directly. Catalog/library cards carry a series-level id that must
+  // go through /watch's series resolution (&type=tv) to load episodes and
+  // pick one — playing a series id directly fails with a playback error.
+  const isEpisodeLevelItem =
+    Boolean(item.episodeNumber || item.episodeTitle || item.isNextUp) ||
+    item.progressPercent !== undefined
+
   const playHref = item.jellyfinItemId
-    ? `/watch?id=${item.jellyfinItemId}`
+    ? `/watch?id=${item.jellyfinItemId}${
+        mediaType === "tv" && !isEpisodeLevelItem ? "&type=tv" : ""
+      }`
     : `/watch?tmdb=${item.id}&type=${mediaType}`
 
   const detailHref = `/${mediaType}/${item.id}`
