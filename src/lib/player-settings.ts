@@ -13,16 +13,46 @@ import { useSyncExternalStore } from "react"
  *    Jellyfin transcoder (requires a transcoded HLS stream rebuild).
  */
 export type SubtitleMode = "client" | "burn"
+export type SubtitleSize = "small" | "medium" | "large" | "extra-large"
+export type SubtitleColor = "white" | "yellow" | "cyan"
+export type SubtitleBgOpacity = 0 | 25 | 50 | 75 | 100
 
 export type PlayerSettings = {
   subtitleMode: SubtitleMode
   /** Persisted quality preference. "auto" enables adaptive quality. */
   qualityPreference: string
+  /** Whether to automatically play the next episode when the current one ends. */
+  autoPlayNext: boolean
+  /** Whether to automatically skip detected intro segments. */
+  autoSkipIntro: boolean
+  /** Step size in seconds for forward/backward skip buttons and keyboard shortcuts. */
+  skipInterval: number
+  /** Default playback speed (e.g. 1.0, 1.25, 1.5). */
+  defaultPlaybackRate: number
+  /** Preferred audio language tag (e.g. "original", "eng", "jpn", "spa", "fre", "deu"). */
+  preferredAudioLanguage: string
+  /** Preferred subtitle language tag (e.g. "none", "eng", "spa", "fre", "jpn", "deu"). */
+  preferredSubtitleLanguage: string
+  /** Subtitle display text size */
+  subtitleSize: SubtitleSize
+  /** Subtitle display font color */
+  subtitleColor: SubtitleColor
+  /** Subtitle background box opacity percentage */
+  subtitleBgOpacity: SubtitleBgOpacity
 }
 
 export const DEFAULT_PLAYER_SETTINGS: PlayerSettings = {
   subtitleMode: "client",
   qualityPreference: "auto",
+  autoPlayNext: true,
+  autoSkipIntro: false,
+  skipInterval: 10,
+  defaultPlaybackRate: 1.0,
+  preferredAudioLanguage: "original",
+  preferredSubtitleLanguage: "none",
+  subtitleSize: "medium",
+  subtitleColor: "white",
+  subtitleBgOpacity: 50,
 }
 
 const STORAGE_KEY = "umrflix.playerSettings"
