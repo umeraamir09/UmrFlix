@@ -25,11 +25,14 @@ import {
 import {
   usePlayerSettings,
   type SubtitleMode,
-  type SubtitleSize,
-  type SubtitleColor,
-  type SubtitleBgOpacity,
   DEFAULT_PLAYER_SETTINGS,
 } from "@/lib/player-settings"
+import {
+  loadSubtitleStyle,
+  saveSubtitleStyle,
+  DEFAULT_SUBTITLE_STYLE,
+  type SubtitleStyle,
+} from "@/components/player/SubtitleOverlay"
 
 type UserProfile = {
   userId: string
@@ -56,7 +59,7 @@ const SUBTITLE_MODE_OPTIONS: { id: SubtitleMode; label: string; badge: string; d
     label: "Server Burn-In Subtitles",
     badge: "Transcoded",
     description:
-      "Burns subtitles directly into the video stream via Jellyfin transcoder. Recommended only if your browser has issues rendering complex subtitle tracks.",
+      "Burns subtitles directly into the video stream via Jellyfin transcoder. Recommended only if your browser has issues rendering complex subtitle tracks. Burned subtitles are rendered by the server and do not use the appearance settings below.",
   },
 ]
 
@@ -91,25 +94,25 @@ const SUBTITLE_LANGUAGES = [
 const SKIP_INTERVALS = [5, 10, 15, 30]
 const PLAYBACK_SPEEDS = [0.75, 1.0, 1.25, 1.5, 2.0]
 
-const SUBTITLE_SIZES: { id: SubtitleSize; label: string; cssSize: string }[] = [
-  { id: "small", label: "Small", cssSize: "text-sm" },
-  { id: "medium", label: "Medium", cssSize: "text-base sm:text-lg" },
-  { id: "large", label: "Large", cssSize: "text-xl sm:text-2xl" },
-  { id: "extra-large", label: "Extra Large", cssSize: "text-2xl sm:text-3xl" },
+const SUBTITLE_SIZES: { id: string; label: string; cssSize: string; mult: number }[] = [
+  { id: "small", label: "Small", cssSize: "text-sm", mult: 0.7 },
+  { id: "medium", label: "Medium", cssSize: "text-base sm:text-lg", mult: 1 },
+  { id: "large", label: "Large", cssSize: "text-xl sm:text-2xl", mult: 1.4 },
+  { id: "extra-large", label: "Extra Large", cssSize: "text-2xl sm:text-3xl", mult: 1.8 },
 ]
 
-const SUBTITLE_COLORS: { id: SubtitleColor; label: string; colorClass: string; hex: string }[] = [
-  { id: "white", label: "Classic White", colorClass: "text-white", hex: "#FFFFFF" },
-  { id: "yellow", label: "Cinema Yellow", colorClass: "text-[#FFD700]", hex: "#FFD700" },
-  { id: "cyan", label: "Cyan Blue", colorClass: "text-penpot-secondary-200", hex: "#02E7F5" },
+const SUBTITLE_COLORS: { id: string; label: string; hex: string }[] = [
+  { id: "white", label: "Classic White", hex: "#FFFFFF" },
+  { id: "yellow", label: "Cinema Yellow", hex: "#FFD700" },
+  { id: "cyan", label: "Cyan Blue", hex: "#02E7F5" },
 ]
 
-const OPACITY_OPTIONS: { id: SubtitleBgOpacity; label: string; bgClass: string }[] = [
-  { id: 0, label: "0% (None)", bgClass: "bg-transparent" },
-  { id: 25, label: "25%", bgClass: "bg-black/25" },
-  { id: 50, label: "50%", bgClass: "bg-black/50" },
-  { id: 75, label: "75%", bgClass: "bg-black/75" },
-  { id: 100, label: "100%", bgClass: "bg-black" },
+const OPACITY_OPTIONS: { id: number; label: string }[] = [
+  { id: 0, label: "0% (None)" },
+  { id: 25, label: "25%" },
+  { id: 50, label: "50%" },
+  { id: 75, label: "75%" },
+  { id: 100, label: "100%" },
 ]
 
 const KEYBOARD_SHORTCUTS = [
@@ -167,9 +170,24 @@ export default function AccountPreferencesPage() {
     setTimeout(() => setSavedBanner(false), 2200)
   }
 
+  // Subtitle appearance (size / color / background) lives in the same
+  // localStorage store the player overlay reads from ("umrflix.substyle"),
+  // so settings saved here take effect during playback immediately.
+  const [subStyle, setSubStyle] = useState<SubtitleStyle>(() => loadSubtitleStyle())
+
+  const handleSubStyle = (patch: Partial<SubtitleStyle>) => {
+    const next = { ...subStyle, ...patch }
+    setSubStyle(next)
+    saveSubtitleStyle(next)
+    setSavedBanner(true)
+    setTimeout(() => setSavedBanner(false), 2200)
+  }
+
   const handleResetDefaults = () => {
     if (confirm("Reset all player and subtitle preferences to their default settings?")) {
       updatePlayerSettings(DEFAULT_PLAYER_SETTINGS)
+      setSubStyle(DEFAULT_SUBTITLE_STYLE)
+      saveSubtitleStyle(DEFAULT_SUBTITLE_STYLE)
       setSavedBanner(true)
       setTimeout(() => setSavedBanner(false), 2200)
     }
@@ -178,6 +196,7 @@ export default function AccountPreferencesPage() {
   const handleClearCache = () => {
     if (confirm("Clear local playback cache and stored player preferences?")) {
       localStorage.removeItem("umrflix.playerSettings")
+      localStorage.removeItem("umrflix.substyle")
       localStorage.removeItem("umrflix.session")
       window.location.reload()
     }
@@ -206,9 +225,8 @@ export default function AccountPreferencesPage() {
     }
   }
 
-  const currentSizeObj = SUBTITLE_SIZES.find((s) => s.id === playerSettings.subtitleSize) || SUBTITLE_SIZES[1]
-  const currentColorObj = SUBTITLE_COLORS.find((c) => c.id === playerSettings.subtitleColor) || SUBTITLE_COLORS[0]
-  const currentOpacityObj = OPACITY_OPTIONS.find((o) => o.id === playerSettings.subtitleBgOpacity) || OPACITY_OPTIONS[2]
+  const previewSizeClass =
+    (SUBTITLE_SIZES.find((s) => s.mult === subStyle.size) ?? SUBTITLE_SIZES[1]).cssSize
 
   return (
     <div className="min-h-[100dvh] bg-penpot-bg text-penpot-text-high pt-24 pb-20 px-4 sm:px-6 md:px-10 max-w-[1380px] mx-auto space-y-8 font-sans">
@@ -613,8 +631,10 @@ export default function AccountPreferencesPage() {
                   {/* Centered Live Subtitle Text Overlay */}
                   <div className="relative z-10 text-center pb-2">
                     <span
-                      className={`inline-block font-medium tracking-wide px-3 py-1 rounded-[4px] shadow-lg transition-all duration-150 ${currentSizeObj.cssSize} ${currentColorObj.colorClass} ${currentOpacityObj.bgClass}`}
+                      className={`inline-block font-medium tracking-wide px-3 py-1 rounded-[4px] shadow-lg transition-all duration-150 ${previewSizeClass}`}
                       style={{
+                        color: subStyle.color,
+                        backgroundColor: `rgba(0, 0, 0, ${subStyle.bgOpacity})`,
                         textShadow: "0 2px 4px rgba(0, 0, 0, 0.9), 0 0 2px rgba(0,0,0,0.8)",
                       }}
                     >
@@ -633,11 +653,11 @@ export default function AccountPreferencesPage() {
                     </label>
                     <div className="grid grid-cols-2 gap-2">
                       {SUBTITLE_SIZES.map((size) => {
-                        const isSelected = (playerSettings.subtitleSize || "medium") === size.id
+                        const isSelected = subStyle.size === size.mult
                         return (
                           <button
                             key={size.id}
-                            onClick={() => handleUpdate({ subtitleSize: size.id })}
+                            onClick={() => handleSubStyle({ size: size.mult })}
                             className={`px-3 py-2 rounded-[8px] text-xs font-semibold transition-all border cursor-pointer ${
                               isSelected
                                 ? "bg-penpot-primary-300 border-penpot-primary-300 text-white shadow-sm"
@@ -658,11 +678,11 @@ export default function AccountPreferencesPage() {
                     </label>
                     <div className="flex flex-col gap-2">
                       {SUBTITLE_COLORS.map((col) => {
-                        const isSelected = (playerSettings.subtitleColor || "white") === col.id
+                        const isSelected = subStyle.color.toLowerCase() === col.hex.toLowerCase()
                         return (
                           <button
                             key={col.id}
-                            onClick={() => handleUpdate({ subtitleColor: col.id })}
+                            onClick={() => handleSubStyle({ color: col.hex })}
                             className={`flex items-center gap-2.5 px-3 py-2 rounded-[8px] text-xs font-semibold transition-all border cursor-pointer ${
                               isSelected
                                 ? "bg-penpot-primary-300/20 border-penpot-primary-300 text-white"
@@ -687,11 +707,11 @@ export default function AccountPreferencesPage() {
                     </label>
                     <div className="grid grid-cols-2 gap-2">
                       {OPACITY_OPTIONS.map((op) => {
-                        const isSelected = (playerSettings.subtitleBgOpacity ?? 50) === op.id
+                        const isSelected = Math.round(subStyle.bgOpacity * 100) === op.id
                         return (
                           <button
                             key={op.id}
-                            onClick={() => handleUpdate({ subtitleBgOpacity: op.id })}
+                            onClick={() => handleSubStyle({ bgOpacity: op.id / 100 })}
                             className={`px-3 py-2 rounded-[8px] text-xs font-semibold transition-all border cursor-pointer ${
                               isSelected
                                 ? "bg-penpot-primary-300 border-penpot-primary-300 text-white shadow-sm"

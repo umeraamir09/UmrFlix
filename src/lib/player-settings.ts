@@ -13,9 +13,6 @@ import { useSyncExternalStore } from "react"
  *    Jellyfin transcoder (requires a transcoded HLS stream rebuild).
  */
 export type SubtitleMode = "client" | "burn"
-export type SubtitleSize = "small" | "medium" | "large" | "extra-large"
-export type SubtitleColor = "white" | "yellow" | "cyan"
-export type SubtitleBgOpacity = 0 | 25 | 50 | 75 | 100
 
 export type PlayerSettings = {
   subtitleMode: SubtitleMode
@@ -33,12 +30,6 @@ export type PlayerSettings = {
   preferredAudioLanguage: string
   /** Preferred subtitle language tag (e.g. "none", "eng", "spa", "fre", "jpn", "deu"). */
   preferredSubtitleLanguage: string
-  /** Subtitle display text size */
-  subtitleSize: SubtitleSize
-  /** Subtitle display font color */
-  subtitleColor: SubtitleColor
-  /** Subtitle background box opacity percentage */
-  subtitleBgOpacity: SubtitleBgOpacity
 }
 
 export const DEFAULT_PLAYER_SETTINGS: PlayerSettings = {
@@ -50,9 +41,6 @@ export const DEFAULT_PLAYER_SETTINGS: PlayerSettings = {
   defaultPlaybackRate: 1.0,
   preferredAudioLanguage: "original",
   preferredSubtitleLanguage: "none",
-  subtitleSize: "medium",
-  subtitleColor: "white",
-  subtitleBgOpacity: 50,
 }
 
 const STORAGE_KEY = "umrflix.playerSettings"
