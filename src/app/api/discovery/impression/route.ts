@@ -40,16 +40,20 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: true })
   }
   const userId = session.userId
+  // §7.13: profileId plumbing — store is already profile-aware.
+  const url = new URL(request.url)
+  const profileIdParam = url.searchParams.get("profileId")
+  const profileId = profileIdParam && /^[\w-]{1,64}$/.test(profileIdParam) ? profileIdParam : "default"
 
   if (action === "view") {
     await Promise.all([
       recordRowImpression(rowCategoryKey),
-      recordRowFatigueImpression(userId, "default", rowCategoryKey),
+      recordRowFatigueImpression(userId, profileId, rowCategoryKey),
     ])
   } else {
     await Promise.all([
       recordRowImpression(rowCategoryKey, { clicked: true }),
-      resetRowFatigue(userId, "default", rowCategoryKey),
+      resetRowFatigue(userId, profileId, rowCategoryKey),
     ])
   }
 

@@ -1,10 +1,11 @@
 import Image from "next/image"
 import { HeroBillboard, BillboardItem } from "@/components/HeroBillboard"
-import { MovieRow } from "@/components/MovieRow"
 import { SpotlightBanner, SpotlightItem } from "@/components/SpotlightBanner"
 import { PersonalizedFeed } from "@/components/PersonalizedFeed"
+import { FacetRails } from "@/components/FacetRails"
 import { getTrending, getItemLogo } from "@/lib/tmdb"
 import { filterReleasedContent } from "@/lib/catalog"
+import { curateTrending } from "@/lib/content-policy"
 import { getNextEpisode, getAiringLabel, lookupShowByTvdbId } from "@/lib/tvmaze"
 import { authenticate, getAllItems } from "@/lib/jellyfin"
 
@@ -61,10 +62,6 @@ function getTimeSeed(): number {
   return Math.floor(Date.now() / (1000 * 60 * 60))
 }
 
-function getThirtyDaysAgo(): string {
-  return new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split("T")[0]
-}
-
 export default async function HomePage() {
   let heroItems: BillboardItem[] = []
   let spotlightItem1: SpotlightItem | null = null
@@ -73,16 +70,48 @@ export default async function HomePage() {
   const airingMap: Record<number, string> = {} // TMDB ID -> airing label
 
   const timeSeed = getTimeSeed() // Rotates every hour
-  const thirtyDaysAgo = getThirtyDaysAgo()
 
   try {
-    // 1. Fetch trending with release filtering
+    // 1. Fetch trending with release filtering + shared curation (§1.7):
+    //    hero rotation requires backdrop quality and a minimum rating, and
+    //    every trending consumer demotes explicit-suspect titles.
     const trendingTvData = await getTrending("tv", "week")
     const trendingMovieData = await getTrending("movie", "week")
 
-    // Filter released content only
-    const tvResults = filterReleasedContent(trendingTvData?.results || [])
-    const movieResults = filterReleasedContent(trendingMovieData?.results || [])
+    const tvResults = filterReleasedContent(
+      curateTrending(
+        (trendingTvData?.results || []).map((item) => ({
+          id: item.id,
+          popularity: item.popularity,
+          voteAverage: item.vote_average,
+          voteCount: item.vote_count,
+          adult: (item as { adult?: boolean }).adult ?? undefined,
+          name: "title" in item ? undefined : item.name,
+          posterPath: item.poster_path,
+          backdropPath: item.backdrop_path,
+          raw: item,
+        }))
+      ).map((e) => e.raw as TrendingMedia)
+    )
+    const movieResults = filterReleasedContent(
+      curateTrending(
+        (trendingMovieData?.results || []).map((item) => ({
+          id: item.id,
+          popularity: item.popularity,
+          voteAverage: item.vote_average,
+          voteCount: item.vote_count,
+          adult: (item as { adult?: boolean }).adult ?? undefined,
+          title: "title" in item ? item.title : undefined,
+          posterPath: item.poster_path,
+          backdropPath: item.backdrop_path,
+          raw: item,
+        }))
+      ).map((e) => e.raw as TrendingMedia)
+    )
+    // §1.7: hero candidates must have a backdrop and clear a rating bar.
+    const heroEligible = [...tvResults, ...movieResults].filter(
+      (item) => item.backdrop_path && item.vote_average >= 6.5
+    )
 
     // 2. Get Jellyfin items for badge lookup & recently-added row
     let jellyfinSeries: JellyfinApiItem[] = []
@@ -134,7 +163,9 @@ export default async function HomePage() {
     //    shareable across users (see Discovery Engine in AGENTS.md).
 
     // 5. Build hero items (Rotated using timeSeed for dynamic homepage hero presentation)
-    const rawHeroCandidates = [...tvResults.slice(0, 8), ...movieResults.slice(0, 8)]
+    const heroTv = heroEligible.filter((i) => !i.title).slice(0, 8)
+    const heroMovies = heroEligible.filter((i) => i.title).slice(0, 8)
+    const rawHeroCandidates = [...heroTv, ...heroMovies]
     const shuffledHeroCandidates = seededShuffle(rawHeroCandidates, timeSeed).slice(0, 5)
 
     heroItems = await Promise.all(
@@ -193,43 +224,56 @@ export default async function HomePage() {
         {/* 2. Personalized Discovery Feed: Top Picks For You at row 1, Continue Watching at row 2, followed by remaining personalized rows */}
         <PersonalizedFeed includeContinueWatching />
 
-        {/* 4. Trending Right Now */}
-        <MovieRow
-          title="Trending Right Now"
-          subtitle="What everyone is watching this week"
-          type="tv"
-          endpoint="/api/tmdb/trending/all/week"
-          cardVariant="large"
-        />
+        {/* 4. Trending Right Now (§2.6: shared facet registry, server-filtered) */}
+        <FacetRails keys={["trending-movies"]} cardVariant="large" />
 
         {/* 5. Mid-Page Featured Spotlight Banner 1 */}
         {spotlightItem1 && <SpotlightBanner item={spotlightItem1} />}
 
-        {/* 6. Something New To You */}
-        <MovieRow
-          title="Something New To You"
-          subtitle="Freshly released movies available for home streaming"
-          type="movie"
-          endpoint={`/api/tmdb/discover/movie?sort_by=primary_release_date.desc&primary_release_date.lte=${thirtyDaysAgo}&vote_count.gte=5&popularity.gte=2.0&with_runtime.gte=20`}
+        {/* 6. Curated cross-genre rails (§2.6: 15+ shared facet rows) */}
+        <FacetRails
+          keys={[
+            "recently-released-movies",
+            "top-10-movies",
+            "top-rated-movies",
+            "on-the-air-shows",
+            "top-10-shows",
+          ]}
         />
 
-        {/* 7. Critically Acclaimed */}
-        <MovieRow
-          title="Critically Acclaimed"
-          subtitle="Highest rated masterworks and critically acclaimed cinema"
-          type="movie"
-          endpoint="/api/tmdb/discover/movie?sort_by=vote_average.desc&vote_count.gte=300&popularity.gte=3.0&with_runtime.gte=30"
+        {/* 7. Global Hits */}
+        <FacetRails keys={["popular-movies"]} />
+
+        {/* 8. Genre rails (movie) */}
+        <FacetRails
+          keys={[
+            "genre-action-movie-popular",
+            "genre-sci-fi-movie-popular",
+            "genre-comedy-movie-popular",
+            "genre-horror-movie-popular",
+            "genre-drama-movie-top-rated",
+          ]}
         />
 
-        {/* 8. Global Hits */}
-        <MovieRow
-          title="Global Hits"
-          subtitle="Worldwide blockbusters and top chart toppers"
-          type="movie"
-          endpoint="/api/tmdb/trending/movie/week"
+        {/* 9. Mid-Page Featured Spotlight Banner 2 */}
+        {spotlightItem2 && <SpotlightBanner item={spotlightItem2} />}
+
+        {/* 10. Genre rails (TV) */}
+        <FacetRails
+          keys={[
+            "genre-sci-fi-tv-popular",
+            "genre-crime-tv-popular",
+            "genre-comedy-tv-popular",
+            "genre-animation-tv-popular",
+            "top-rated-shows",
+          ]}
         />
 
-        {/* 9. Recently Added to Your Library */}
+        {/* 11. Specialty rails (R2-4: network + language; §7.8 coming soon) */}
+        <FacetRails keys={["coming-soon"]} />
+        <FacetRails keys={["hbo-series", "netflix-originals", "k-dramas", "anime-series", "studio-ghibli", "bollywood"]} />
+
+        {/* 12. Recently Added to Your Library */}
         {recentlyAddedItems.length > 0 && (
           <section className="space-y-3">
             <h2 className="text-xl sm:text-2xl font-bold tracking-tight text-white flex items-center gap-2">
@@ -263,9 +307,6 @@ export default async function HomePage() {
             </div>
           </section>
         )}
-
-        {/* 10. Mid-Page Featured Spotlight Banner 2 */}
-        {spotlightItem2 && <SpotlightBanner item={spotlightItem2} />}
       </div>
     </div>
   )

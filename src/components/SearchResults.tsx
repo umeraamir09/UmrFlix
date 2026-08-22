@@ -11,6 +11,7 @@ import { useBatchHorizontalPosters } from "@/lib/use-horizontal-posters"
 import { AvailabilityBadge } from "@/components/AvailabilityBadge"
 import { getGenreByParam, getGenreIdsForMediaType, getGenreDiscoverParams } from "@/lib/genres"
 import { filterDisplayableContent } from "@/lib/catalog"
+import { qualityFloorParams } from "@/lib/catalog-quality"
 import { getImageUrl } from "@/lib/utils"
 
 const RECENT_SEARCHES_KEY = "umrflix_recent_searches"
@@ -266,14 +267,18 @@ export function SearchResults() {
 
     if (genreId && endpoint.includes("trending")) {
       // trending doesn't support filter params, use discover instead
+      // (R0-2: floors from the central config — the old 20/10-vote,
+      // 1.5-popularity literals let soap/daily content through)
       const mediaType = type || "movie"
       const extras = new URLSearchParams(
         getGenreDiscoverParams(genreDef!, mediaType as "movie" | "tv")
       ).toString()
       const extrasSuffix = extras ? `&${extras}` : ""
-      let url = `/api/tmdb/discover/${mediaType}?sort_by=popularity.desc&vote_count.gte=20&popularity.gte=1.5&with_runtime.gte=20&with_genres=${genreId}&primary_release_date.lte=${today}${extrasSuffix}`
+      const browseMovie = new URLSearchParams(qualityFloorParams("browse", "movie")).toString()
+      const browseTv = new URLSearchParams(qualityFloorParams("browse", "tv")).toString()
+      let url = `/api/tmdb/discover/${mediaType}?sort_by=popularity.desc&${browseMovie}&with_runtime.gte=20&with_genres=${genreId}&primary_release_date.lte=${today}${extrasSuffix}`
       if (mediaType === "tv") {
-        url = `/api/tmdb/discover/tv?sort_by=popularity.desc&vote_count.gte=10&popularity.gte=1.5&with_genres=${genreId}&air_date.lte=${today}${extrasSuffix}`
+        url = `/api/tmdb/discover/tv?sort_by=popularity.desc&${browseTv}&with_genres=${genreId}&air_date.lte=${today}${extrasSuffix}`
       }
       return url
     }

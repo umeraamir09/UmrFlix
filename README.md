@@ -81,6 +81,11 @@ cp .env.example .env.local
 - `WEBHOOK_SECRET` — optional shared secret for `/api/webhooks`. When set, webhook POSTs must send it via the `x-webhook-secret` header or `?secret=` query param; without it, webhook events still broadcast over SSE but notification persistence is skipped.
 - `NOTIF_DEBUG` — set to `1` to enable verbose notification pipeline logging (includes user/admin IDs — keep off in production).
 
+#### Discovery engine settings
+
+- `CONVEX_SELF_HOSTED_URL` / `CONVEX_SELF_HOSTED_ADMIN_KEY` — optional Convex deployment for discovery persistence (signal events, vectors, fatigue, serve logs). Without it the engine falls back to in-process buffers.
+- `DISCOVERY_PRECOMPUTE_SECRET` — optional shared secret for `POST /api/discovery/precompute` (nightly item-feature cache warming). When set, schedulers authenticate via the `x-cron-secret` header; when unset the route requires a logged-in session.
+
 ### 3. Run the dev server
 
 ```bash

@@ -1,5 +1,6 @@
 import { ConvexHttpClient } from "convex/browser"
-import type { FunctionReference } from "convex/server"
+import { api } from "../../../convex/_generated/api"
+import { padToFeatureDim } from "./vector"
 
 /**
  * Persistence layer for the discovery engine.
@@ -71,78 +72,42 @@ export type ItemProfile = {
   voteAverage: number
   voteCount: number
   vector: number[]
+  /** TMDB adult flag (content policy, R0-4). */
+  adult?: boolean
+  /** US certification / TV rating when known. */
+  certification?: string | null
+  /** Resolved content-policy demotion multiplier (cached with the profile). */
+  suitability?: number
 }
 
-type QueryRef<Args extends Record<string, unknown>, Ret> = FunctionReference<"query", "public", Args, Ret>
-type MutationRef<Args extends Record<string, unknown>, Ret> = FunctionReference<"mutation", "public", Args, Ret>
-
-const logEventRef = "discovery:logEvent" as unknown as MutationRef<DiscoveryEvent, string>
-const getRecentEventsRef = "discovery:getRecentEvents" as unknown as QueryRef<
-  { userId: string; profileId: string; sinceTimestamp: number; limit?: number },
-  DiscoveryEvent[]
->
-const saveFeatureProfileRef = "discovery:saveFeatureProfile" as unknown as MutationRef<
-  {
-    userId: string
-    profileId: string
-    shortTermVectorJson: string
-    longTermVectorJson: string
-    lastActiveTimestamp: number
-  },
-  string
->
-const getFeatureProfileRef = "discovery:getFeatureProfile" as unknown as QueryRef<
-  { userId: string; profileId: string },
-  {
-    userId: string
-    profileId: string
-    shortTermVectorJson: string
-    longTermVectorJson: string
-    lastActiveTimestamp: number
-    updatedAt: number
-  } | null
->
-const recordRowImpressionRef = "discovery:recordRowImpression" as unknown as MutationRef<
-  { rowCategoryKey: string; clicked?: boolean; played?: boolean },
-  string
->
-const getRowStatsRef = "discovery:getRowStats" as unknown as QueryRef<
-  Record<string, never>,
-  (RowStats & { lastUpdated: number })[]
->
-const recordRowFatigueRef = "discovery:recordRowFatigueImpression" as unknown as MutationRef<
-  { userId: string; profileId: string; rowCategoryKey: string },
-  string
->
-const resetRowFatigueRef = "discovery:resetRowFatigue" as unknown as MutationRef<
-  { userId: string; profileId: string; rowCategoryKey: string },
-  boolean
->
-const getRowFatigueRef = "discovery:getRowFatigue" as unknown as QueryRef<
-  { userId: string; profileId: string },
-  RowFatigue[]
->
-const getItemFeatureRef = "discovery:getItemFeature" as unknown as QueryRef<
-  { itemKey: string },
-  { itemKey: string; dataJson: string; updatedAt: number } | null
->
-const setItemFeatureRef = "discovery:setItemFeature" as unknown as MutationRef<
-  { itemKey: string; dataJson: string },
-  string
->
-const getServeLogRef = "discovery:getServeLog" as unknown as QueryRef<
-  { userId: string; profileId: string },
-  { userId: string; profileId: string; servesJson: string; updatedAt: number } | null
->
-const recordServeLogRef = "discovery:recordServeLog" as unknown as MutationRef<
-  { userId: string; profileId: string; itemKeys: string[] },
-  string
->
+// §6.6: codegen-safe function references — renames now fail at compile time.
+const logEventRef = api.discovery.logEvent
+const getRecentEventsRef = api.discovery.getRecentEvents
+const saveFeatureProfileRef = api.discovery.saveFeatureProfile
+const getFeatureProfileRef = api.discovery.getFeatureProfile
+const recordRowImpressionRef = api.discovery.recordRowImpression
+const getRowStatsRef = api.discovery.getRowStats
+const recordRowFatigueRef = api.discovery.recordRowFatigueImpression
+const resetRowFatigueRef = api.discovery.resetRowFatigue
+const getItemFeatureRef = api.discovery.getItemFeature
+const setItemFeatureRef = api.discovery.setItemFeature
+const getRowFatigueRef = api.discovery.getRowFatigue
+const getServeLogRef = api.discovery.getServeLog
+const recordServeLogRef = api.discovery.recordServeLog
 
 let cachedClient: ConvexHttpClient | null | undefined
+let initFailedAt = 0
+/** §6.5: retry a failed client instantiation after this cooldown instead of
+ * locking out for the process lifetime. */
+const INIT_RETRY_COOLDOWN_MS = 30_000
 
 function getConvexClient(): ConvexHttpClient | null {
-  if (cachedClient !== undefined) return cachedClient
+  if (cachedClient) return cachedClient
+  // A previous instantiation failed — retry once the cooldown elapses
+  // (no-URL failures leave initFailedAt at 0 and re-check env cheaply).
+  if (cachedClient === null && initFailedAt !== 0 && Date.now() - initFailedAt < INIT_RETRY_COOLDOWN_MS) {
+    return null
+  }
   const url =
     process.env.CONVEX_SELF_HOSTED_URL ||
     process.env.NEXT_PUBLIC_CONVEX_SELF_HOSTED_URL ||
@@ -167,9 +132,11 @@ function getConvexClient(): ConvexHttpClient | null {
       }
     }
     cachedClient = client
+    initFailedAt = 0
   } catch (err) {
     console.error("[Discovery] Failed to instantiate ConvexHttpClient:", err)
     cachedClient = null
+    initFailedAt = Date.now()
   }
   return cachedClient
 }
@@ -225,21 +192,49 @@ export async function getRecentDiscoveryEvents(
         sinceTimestamp,
         limit,
       })
-      if (Array.isArray(rows)) events.push(...rows)
+      // Generated api returns full documents (_id, _creationTime, widened
+      // optionals) — narrow back to the DiscoveryEvent shape.
+      for (const row of rows ?? []) {
+        events.push({
+          userId: row.userId,
+          profileId: row.profileId,
+          itemId: row.itemId,
+          tmdbId: row.tmdbId,
+          mediaType: row.mediaType === "movie" || row.mediaType === "tv" ? row.mediaType : undefined,
+          title: row.title,
+          eventType: row.eventType as DiscoveryEvent["eventType"],
+          weight: row.weight,
+          completionPct: row.completionPct,
+          watchDurationSec: row.watchDurationSec,
+          context: row.context,
+          timestamp: row.timestamp,
+        })
+      }
     } catch (err) {
       console.error("[Discovery] Failed to query events:", err)
     }
   }
 
-  // Merge any locally buffered events (dev / Convex outage window).
+  // Merge any locally buffered events (dev / Convex outage window), deduped
+  // by identity — a buffered event can also have landed in Convex on a
+  // network-blip retry, which previously double-counted (§6.5).
+  const seenEventIds = new Set(events.map(eventIdentity))
   for (const e of localBuffer()) {
     if (e.userId === userId && e.profileId === profileId && e.timestamp >= sinceTimestamp) {
+      const id = eventIdentity(e)
+      if (seenEventIds.has(id)) continue
+      seenEventIds.add(id)
       events.push(e)
     }
   }
 
   events.sort((a, b) => b.timestamp - a.timestamp)
   return events.slice(0, limit)
+}
+
+/** Stable per-event identity: same item + type + moment = same signal. */
+function eventIdentity(e: DiscoveryEvent): string {
+  return `${e.itemId}|${e.eventType}|${e.timestamp}|${e.weight ?? ""}`
 }
 
 // ── Feature profiles ──
@@ -434,6 +429,11 @@ const ITEM_MEMORY_TTL = 6 * 60 * 60 * 1000 // 6 hours
 const MAX_ITEM_CACHE_SIZE = 500
 const itemMemoryCache = new Map<string, { profile: ItemProfile; timestamp: number }>()
 
+/**
+ * §6.5: true LRU/TTL sweep — evict *all* expired entries and, when still over
+ * the cap, the oldest-accessed entries (Map preserves insertion order; reads
+ * re-insert to record recency).
+ */
 function pruneItemMemoryCache() {
   const now = Date.now()
   for (const [key, entry] of itemMemoryCache.entries()) {
@@ -442,8 +442,11 @@ function pruneItemMemoryCache() {
     }
   }
   if (itemMemoryCache.size > MAX_ITEM_CACHE_SIZE) {
-    const oldestKey = itemMemoryCache.keys().next().value
-    if (oldestKey) itemMemoryCache.delete(oldestKey)
+    const overflow = itemMemoryCache.size - MAX_ITEM_CACHE_SIZE
+    const oldest = [...itemMemoryCache.entries()]
+      .sort((a, b) => a[1].timestamp - b[1].timestamp)
+      .slice(0, overflow)
+    for (const [key] of oldest) itemMemoryCache.delete(key)
   }
 }
 
@@ -454,17 +457,23 @@ export async function getCachedItemProfile(
   const itemKey = `${mediaType}:${tmdbId}`
   const memKey = `${ITEM_CACHE_PREFIX}${itemKey}`
   const mem = itemMemoryCache.get(memKey)
-  if (mem && Date.now() - mem.timestamp < ITEM_MEMORY_TTL) return mem.profile
+  if (mem && Date.now() - mem.timestamp < ITEM_MEMORY_TTL) {
+    // LRU touch: re-insert so recency reflects reads, not just writes.
+    itemMemoryCache.delete(memKey)
+    itemMemoryCache.set(memKey, mem)
+    return mem.profile
+  }
 
   const convex = getConvexClient()
   if (!convex) return null
   try {
     const entry = await convex.query(getItemFeatureRef, { itemKey })
     if (!entry) return null
-    const profile = JSON.parse(entry.dataJson) as ItemProfile
+    const parsed = JSON.parse(entry.dataJson) as ItemProfile
+    parsed.vector = padToFeatureDim(parsed.vector)
     pruneItemMemoryCache()
-    itemMemoryCache.set(memKey, { profile, timestamp: Date.now() })
-    return profile
+    itemMemoryCache.set(memKey, { profile: parsed, timestamp: Date.now() })
+    return parsed
   } catch {
     return null
   }

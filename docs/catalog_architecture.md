@@ -352,6 +352,29 @@ All Convex I/O. Falls back to in-memory buffer (2000 events) when Convex is offl
 
 ---
 
+## Quality Floors, Scoring & Content Policy (single sources of truth)
+
+Three central modules own every quality decision (audit R0-2/R0-3/R0-4 — no
+inline floor literals anywhere else):
+
+| Module | Owns | Notes |
+|---|---|---|
+| [`catalog-quality.ts`](file:///G:/umiflox/UmrFlix/src/lib/catalog-quality.ts) | TMDB discover **quality floors** | Lane taxonomy: `browse` (movies ≥75 votes & pop ≥3, TV ≥30 & ≥3), `curated` (≥300/150 & ≥8), `fresh` (low votes + `vote_average.gte` backstop, no popularity floor), `niche` (vote floor only). `withQualityFloors()` merges with max() semantics; the `/api/tmdb` proxy clamps client discovers to the browse baseline. |
+| [`scoring.ts`](file:///G:/umiflox/UmrFlix/src/lib/scoring.ts) | **Bayesian weighted rating** (IMDb Top-250 formula, C=6.8, m=300 movie / 100 TV) | Shared by the discovery ranker, the catalog quality gate, the genre engine, and the legacy engine — one scoring dialect instead of four. Thin-voted items regress to the corpus mean; no more free 0.5 for <50-vote obscurities. |
+| [`content-policy.ts`](file:///G:/umiflox/UmrFlix/src/lib/content-policy.ts) | **Content suitability** (down-rank, never hard-block) | TMDB `adult` flag, keyword denylist (strong/mild tiers), title regex, NC-17/TV-MA demotion, maturity-ceiling ladders, scripted-TV bias (`with_type=2|4`), the opt-in dailies rail, and the shared `curateTrending()` post-filter used by every trending consumer. |
+
+Supporting pieces: the **facet registry**
+([`discovery/facets.ts`](file:///G:/umiflox/UmrFlix/src/lib/discovery/facets.ts))
+data-drives ~130 facets (Popular/Top-Rated/New × genre × media type, curated
+`/tv/on_the_air` + Top-10 rails, network/language/speciality rails) from
+`genres.ts`; **row pagination** flows through `/api/discovery/row?page=` with
+an end-of-row IntersectionObserver sentinel in `MovieRow`; the **catalog
+explorer** (`/browse`) is the sanctioned home of the down-ranked long tail;
+and **item features** are pre-warmed nightly via
+`POST /api/discovery/precompute` (optional `DISCOVERY_PRECOMPUTE_SECRET`).
+
+---
+
 ## Layer 6 — Convex Database (convex/)
 
 ### [`convex/schema.ts`](file:///G:/umiflox/UmrFlix/convex/schema.ts) — Discovery Tables
@@ -359,10 +382,10 @@ All Convex I/O. Falls back to in-memory buffer (2000 events) when Convex is offl
 | Table | Purpose |
 |---|---|
 | `userEvents` | Immutable signal log (eventType, weight, completionPct, watchDurationSec, timestamp). Indexed by `[userId, profileId]` and `[timestamp]`. |
-| `userFeatureProfiles` | Persisted 64-D short+long vectors as JSON. Recovery after process restart. |
+| `userFeatureProfiles` | Persisted 128-D short+long vectors as JSON. Recovery after process restart. |
 | `rowImpressionStats` | Global UCB1 bandit stats per row category (totalImpressions, totalClicks, totalPlays). |
 | `userRowFatigue` | Per-user unclicked impression counters + lastSeenTimestamp. Indexed by `[userId, profileId, rowCategoryKey]`. |
-| `itemFeatures` | Cached 64-D item vectors + scoring metadata by `itemKey="movie:550"`. |
+| `itemFeatures` | Cached 128-D item vectors + scoring metadata (incl. suitability multiplier) by `itemKey="movie:550"`. Nightly-pruned (14d stale) + pre-warmed by the precompute route. |
 | `userServeLog` | Cross-surface serve memory: `{itemKey: {count, lastServedAt}}` JSON blob. 7-day rolling window. |
 | `myList` | User's saved watchlist (tmdbId, mediaType, title, posterPath). |
 

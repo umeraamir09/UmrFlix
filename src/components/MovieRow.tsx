@@ -49,10 +49,64 @@ export function MovieRow({
     fetcher
   )
 
+  // ── R1-1: progressive row pagination for discovery facet endpoints ──
+  const supportsPagination = !customItems && targetEndpoint.startsWith("/api/discovery/row")
+  const [extraItems, setExtraItems] = useState<MovieCardItem[]>([])
+  const [nextPage, setNextPage] = useState(2)
+  const [hasMore, setHasMore] = useState(true)
+  const [loadingMore, setLoadingMore] = useState(false)
+  const sentinelRef = useRef<HTMLDivElement>(null)
+
+  // Reset pagination state during render when the endpoint changes (the
+  // React-endorsed derive-during-render reset instead of an effect).
+  const [lastEndpoint, setLastEndpoint] = useState(targetEndpoint)
+  if (lastEndpoint !== targetEndpoint) {
+    setLastEndpoint(targetEndpoint)
+    setExtraItems([])
+    setNextPage(2)
+    setHasMore(true)
+    setLoadingMore(false)
+  }
+
+  useEffect(() => {
+    if (!supportsPagination || !hasMore || isLoading || loadingMore) return
+    const el = sentinelRef.current
+    if (!el) return
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (!entries.some((entry) => entry.isIntersecting)) return
+        setLoadingMore(true)
+        const sep = targetEndpoint.includes("?") ? "&" : "?"
+        fetch(`${targetEndpoint}${sep}page=${nextPage}`)
+          .then((r) => r.json())
+          .then((d: { results?: MovieCardItem[]; hasMore?: boolean }) => {
+            const results = d.results ?? []
+            setExtraItems((prev) => [...prev, ...results])
+            setHasMore(Boolean(d.hasMore) && results.length > 0)
+            setNextPage((p) => p + 1)
+          })
+          .catch(() => setHasMore(false))
+          .finally(() => setLoadingMore(false))
+      },
+      // Trigger slightly before the end of the horizontal track is reached.
+      { root: scrollRef.current, rootMargin: "0px 500px 0px 0px" }
+    )
+
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [supportsPagination, hasMore, isLoading, loadingMore, nextPage, targetEndpoint])
+
   const items: MovieCardItem[] = useMemo(() => {
-    const rawItems: MovieCardItem[] = customItems || (data?.results ?? [])
-    return filterDisplayableContent(rawItems)
-  }, [customItems, data])
+    if (customItems) return customItems
+    const rawItems: MovieCardItem[] = data?.results ?? []
+    // R0-6 (§1.8): filter exactly once. Discovery facet endpoints and feed
+    // payloads arrive pre-filtered server-side — only raw /api/tmdb/ proxies
+    // (default trending fallback) still need the client-side guard.
+    const clientFilter = targetEndpoint.startsWith("/api/tmdb/")
+    const filtered = clientFilter ? filterDisplayableContent(rawItems) : rawItems
+    return [...filtered, ...extraItems]
+  }, [customItems, data, extraItems, targetEndpoint])
 
   const getItemType = useCallback(
     (item: MovieCardItem): "movie" | "tv" =>
@@ -409,6 +463,15 @@ export function MovieRow({
                   </div>
                 )
               })}
+          {/* R1-1: end-of-row sentinel — fetches the next page as the user
+              nears the end of the horizontal track. */}
+          {supportsPagination && hasMore && (
+            <div ref={sentinelRef} className="w-4 shrink-0" aria-hidden data-testid="row-pagination-sentinel">
+              {loadingMore && (
+                <div className="aspect-[240/361] md:aspect-[240/136] w-[130px] sm:w-[165px] md:w-[340px] rounded-[8px] bg-penpot-surface/60 border border-penpot-border/40 animate-pulse" />
+              )}
+            </div>
+          )}
         </div>
       </div>
 

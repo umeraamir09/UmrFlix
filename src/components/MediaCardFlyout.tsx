@@ -9,7 +9,7 @@ import { BookmarkButton } from "@/components/BookmarkButton"
 import { AvailabilityBadge } from "@/components/AvailabilityBadge"
 import { Tooltip } from "@/components/ui/tooltip"
 import { IconPlay, IconGroup, IconTv, IconMovie, IconAdd, IconInfo } from "@/components/ui/icons"
-import { ChevronDown, Check, Loader2, MoreVertical, Trash2 } from "lucide-react"
+import { ChevronDown, Check, Loader2, MoreVertical, ThumbsDown, Trash2 } from "lucide-react"
 import { getImageUrl, formatYear, formatRuntime } from "@/lib/utils"
 import { RequestModal } from "@/components/RequestModal"
 import type { AvailabilityResult } from "@/app/api/availability/route"
@@ -94,6 +94,28 @@ export function MediaCardFlyout({
   const [showRequestModal, setShowRequestModal] = useState(false)
   const [isMenuOpen, setIsMenuOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
+  // §7.1 "Not Interested": explicit negative feedback — logs a −1.0 rating
+  // event and hides the item from discovery rows for 90 days.
+  const [notInterestedState, setNotInterestedState] = useState<"idle" | "sending" | "done">("idle")
+
+  const handleNotInterested = async () => {
+    if (notInterestedState !== "idle") return
+    setNotInterestedState("sending")
+    try {
+      await fetch("/api/discovery/not-interested", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          tmdbId: item.id,
+          mediaType,
+          title: item.title ?? item.name ?? "",
+        }),
+      })
+      setNotInterestedState("done")
+    } catch {
+      setNotInterestedState("idle")
+    }
+  }
 
   useEffect(() => {
     let raf = 0
@@ -338,6 +360,31 @@ export function MediaCardFlyout({
                   />
                 </Tooltip>
 
+                {/* Not Interested Button (§7.1 explicit negative feedback) */}
+                <Tooltip content={notInterestedState === "done" ? "Hidden from your recommendations" : "Not interested"} side="top">
+                  <button
+                    type="button"
+                    aria-label={`Mark ${title} as not interested`}
+                    onClick={(e) => {
+                      e.preventDefault()
+                      e.stopPropagation()
+                      void handleNotInterested()
+                    }}
+                    disabled={notInterestedState !== "idle"}
+                    className={`size-10 min-h-[40px] min-w-[40px] rounded-full border-2 border-white/80 bg-black/20 hover:bg-white/20 active:bg-white/30 text-white flex items-center justify-center backdrop-blur-sm shadow-lg transition-transform hover:scale-105 active:scale-95 cursor-pointer shrink-0 disabled:cursor-default disabled:opacity-60 ${
+                      notInterestedState === "done" ? "border-penpot-primary-100" : ""
+                    }`}
+                  >
+                    {notInterestedState === "sending" ? (
+                      <Loader2 className="size-4 animate-spin text-white" />
+                    ) : (
+                      <ThumbsDown
+                        className={`size-4 stroke-[2.5] ${notInterestedState === "done" ? "text-penpot-primary-100 fill-penpot-primary-100/30" : "text-white"}`}
+                      />
+                    )}
+                  </button>
+                </Tooltip>
+
                 {/* Optional Mark Watched Button */}
                 {onMarkWatched && (
                   <Tooltip content={isWatched ? "Mark Unwatched" : "Mark Watched"} side="top">
@@ -575,6 +622,31 @@ export function MediaCardFlyout({
                     releaseYear={year}
                     variant="circle-sm"
                   />
+                </Tooltip>
+
+                {/* Not Interested Button (§7.1 explicit negative feedback) */}
+                <Tooltip content={notInterestedState === "done" ? "Hidden from your recommendations" : "Not interested"} side="top">
+                  <button
+                    type="button"
+                    aria-label={`Mark ${title} as not interested`}
+                    onClick={(e) => {
+                      e.preventDefault()
+                      e.stopPropagation()
+                      void handleNotInterested()
+                    }}
+                    disabled={notInterestedState !== "idle"}
+                    className={`size-10 min-h-[40px] min-w-[40px] rounded-full border-2 border-white/80 bg-black/20 hover:bg-white/20 active:bg-white/30 text-white flex items-center justify-center backdrop-blur-sm shadow-lg transition-transform hover:scale-105 active:scale-95 cursor-pointer shrink-0 disabled:cursor-default disabled:opacity-60 ${
+                      notInterestedState === "done" ? "border-penpot-primary-100" : ""
+                    }`}
+                  >
+                    {notInterestedState === "sending" ? (
+                      <Loader2 className="size-4 animate-spin text-white" />
+                    ) : (
+                      <ThumbsDown
+                        className={`size-4 stroke-[2.5] ${notInterestedState === "done" ? "text-penpot-primary-100 fill-penpot-primary-100/30" : "text-white"}`}
+                      />
+                    )}
+                  </button>
                 </Tooltip>
 
                 {/* Optional Mark Watched Button */}

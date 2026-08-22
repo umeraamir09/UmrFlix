@@ -1,5 +1,6 @@
 import { cosineSimilarity } from "./vector"
-import type { RowFatigue } from "./store"
+import { bayesianQualityScore } from "../scoring"
+import type { RowFatigue, RowStats } from "./store"
 
 /**
  * Two-tiered ranking (Discovery Engine, Modules 3 & 4):
@@ -26,12 +27,19 @@ export type ItemScoreInput = {
   releaseYear: number | null
   /** ln-normalization anchor: max popularity across the candidate pool. */
   maxPopularity: number
-  isWatched: boolean
-  allowWatched?: boolean
+  mediaType?: "movie" | "tv"
+  /**
+   * Content-suitability multiplier from the content policy (audit §1.1):
+   * explicit/adult items are demoted to near-zero instead of hidden.
+   */
+  suitability?: number
 }
 
 /**
  * S_item(u,i,r) = w1·Sim + w2·Quality + w3·PopularityNorm + w4·Recency
+ *
+ * Quality uses the Bayesian weighted rating (R0-3): thin-voted items regress
+ * toward the TMDB corpus mean — no more free 0.5 for <50-vote obscurities.
  */
 export function scoreItem(input: ItemScoreInput): number {
   const sim = cosineSimilarity(input.userVector, input.itemVector)
@@ -41,10 +49,7 @@ export function scoreItem(input: ItemScoreInput): number {
       ? Math.log(1 + input.popularity) / Math.log(1 + input.maxPopularity)
       : 0
 
-  const quality =
-    input.voteCount != null && input.voteCount < 50
-      ? 0.5
-      : Math.min(1, Math.max(0, input.voteAverage / 10))
+  const quality = bayesianQualityScore(input.voteCount, input.voteAverage, input.mediaType ?? "movie")
 
   let recency = 0.5
   if (input.releaseYear) {
@@ -52,12 +57,13 @@ export function scoreItem(input: ItemScoreInput): number {
     recency = Math.exp(-Math.max(0, currentYear - input.releaseYear) / 5)
   }
 
-  return (
+  const raw =
     ITEM_SCORE_WEIGHTS.similarity * sim +
     ITEM_SCORE_WEIGHTS.quality * quality +
     ITEM_SCORE_WEIGHTS.popularity * popularityNorm +
     ITEM_SCORE_WEIGHTS.recency * recency
-  )
+
+  return raw * (input.suitability ?? 1)
 }
 
 /** Cross-surface serve demotion: x0.85 per serve within 72 h (Module 5). */
@@ -88,6 +94,9 @@ export function isRowSuppressed(fatigue: RowFatigue | undefined, now = Date.now(
 
 export const MMR_MU = 0.7
 
+/** UCB1 exploration scale (audit §5.3): S_row' = S_row + c·√(ln N / (1+n)). */
+export const UCB1_EXPLORATION_C = 0.08
+
 export type RankableRow = {
   key: string
   /** Item ids ("movie:123") in ranked order — used for MMR overlap. */
@@ -106,6 +115,20 @@ export function rowUtility(
   return row.topItemScore * row.relevance * penalty
 }
 
+/**
+ * UCB1 exploration bonus: rows with few impressions relative to the global
+ * total get a bounded boost so new/unexplored rows can surface instead of
+ * losing structurally to established rows. With zero data it is 0.
+ */
+export function explorationBonus(
+  rowStats: RowStats | undefined,
+  totalImpressions: number
+): number {
+  if (!rowStats || totalImpressions <= 0) return 0
+  const n = rowStats.totalImpressions
+  return UCB1_EXPLORATION_C * Math.sqrt(Math.log(totalImpressions + 1) / (1 + n))
+}
+
 export function rowOverlap(a: RankableRow, b: RankableRow): number {
   if (a.itemKeys.length === 0 || b.itemKeys.length === 0) return 0
   const bSet = new Set(b.itemKeys)
@@ -117,18 +140,26 @@ export function rowOverlap(a: RankableRow, b: RankableRow): number {
 /**
  * Greedy Maximum Marginal Relevance row selection:
  *   next = argmax [ μ·S_row − (1−μ)·max Overlap(r, alreadySelected) ]
+ *
+ * S_row includes the UCB1 exploration bonus from global row bandit stats
+ * (audit §5.3 — previously the table was write-only).
  */
 export function rankRowsMMR(
   candidates: RankableRow[],
   ctx: {
     fatigueByKey: Map<string, RowFatigue>
+    statsByKey?: Map<string, RowStats>
     limit?: number
   }
 ): string[] {
   const limit = ctx.limit ?? candidates.length
+  const statsByKey = ctx.statsByKey ?? new Map<string, RowStats>()
+  const totalImpressions = [...statsByKey.values()].reduce((s, r) => s + r.totalImpressions, 0)
+
   const utilities = new Map<string, number>()
   for (const row of candidates) {
-    utilities.set(row.key, rowUtility(row, ctx.fatigueByKey.get(row.key)))
+    const base = rowUtility(row, ctx.fatigueByKey.get(row.key))
+    utilities.set(row.key, base + explorationBonus(statsByKey.get(row.key), totalImpressions))
   }
 
   const remaining = new Map(candidates.map((r) => [r.key, r]))

@@ -7,6 +7,7 @@ import {
   type TmdbTvShow,
 } from "./tmdb"
 import { filterReleasedContent, filterDisplayableContent } from "./catalog"
+import { CATALOG_QUALITY_FLOORS } from "./catalog-quality"
 import { toRowItem, dedupeByTmdbId, type RowItem } from "./recommendations"
 import { enrichMediaItemsWithPosters } from "./horizontal-posters"
 import {
@@ -34,8 +35,9 @@ import * as sonarr from "./sonarr"
  * Auto-curates a Netflix-style set of rows for a genre: personalized top
  * picks, trending, availability-aware "Available Now / In Your Library",
  * critically acclaimed, new & recent, hidden gems, "Because You Watched", and
- * a couple of decade rows. Rows are cached in-memory per slug:userId:rowId
- * with a 30-minute TTL and SingleFlight collapse for concurrent hits.
+ * decade rows reaching back to the 70s (R1-4). Rows are cached in-memory per
+ * slug:userId:rowId with a 30-minute TTL and SingleFlight collapse for
+ * concurrent hits.
  */
 
 export type GenreRow = {
@@ -61,6 +63,8 @@ type DiscoverTemplate = {
   sortBy: "popularity" | "vote_average" | "release_date"
   voteCountGte?: { movie: number; tv: number }
   popularityGte?: number
+  /** Optional rating backstop (fresh lane) — replaces popularity floors. */
+  voteAverageGte?: number
   withRuntimeGte?: number
   dateRange?: { gte?: string; lte?: string }
   maxParentalRating?: string
@@ -89,6 +93,9 @@ function buildDiscoverParams(
   }
   if (template.popularityGte !== undefined) {
     params["popularity.gte"] = String(template.popularityGte)
+  }
+  if (template.voteAverageGte !== undefined) {
+    params["vote_average.gte"] = String(template.voteAverageGte)
   }
   if (template.withRuntimeGte !== undefined && mediaType === "movie") {
     params["with_runtime.gte"] = String(template.withRuntimeGte)
@@ -359,11 +366,15 @@ export function invalidateGenreCache() {
 
 // ── Page assembly ──
 
+/**
+ * R1-4: decades reach back to the 1970s (previously only current-minus-10
+ * and minus-20), giving the genre page a deep classic tail.
+ */
 function getRecentDecades(): { label: string; gte: string; lte: string }[] {
   const currentYear = new Date().getFullYear()
   const currentDecadeStart = Math.floor(currentYear / 10) * 10
   const decades: { label: string; gte: string; lte: string }[] = []
-  for (let start = currentDecadeStart - 10; start >= currentDecadeStart - 20; start -= 10) {
+  for (let start = currentDecadeStart - 10; start >= 1970; start -= 10) {
     decades.push({
       label: `${String(start).slice(-2)}s`,
       gte: `${start}-01-01`,
@@ -379,6 +390,16 @@ export async function getGenrePageData(
 ): Promise<GenrePageData | null> {
   const genre = getGenreBySlug(slug)
   if (!genre) return null
+
+  // R0-2: floor values come from the central config — no inline literals.
+  const BROWSE_M = CATALOG_QUALITY_FLOORS.browse.movie
+  const BROWSE_TV = CATALOG_QUALITY_FLOORS.browse.tv
+  const CURATED_M = CATALOG_QUALITY_FLOORS.curated.movie
+  const CURATED_TV = CATALOG_QUALITY_FLOORS.curated.tv
+  const FRESH_M = CATALOG_QUALITY_FLOORS.fresh.movie
+  const FRESH_TV = CATALOG_QUALITY_FLOORS.fresh.tv
+  const NICHE_M = CATALOG_QUALITY_FLOORS.niche.movie
+  const NICHE_TV = CATALOG_QUALITY_FLOORS.niche.tv
 
   const uid = userId || "default"
   const key = (rowId: string) => rowCacheKey(slug, uid, rowId)
@@ -396,8 +417,8 @@ export async function getGenrePageData(
       getCachedRow<RowItem[]>(key("trending"), () =>
         fetchMixedDiscover(genre, {
           sortBy: "popularity",
-          voteCountGte: { movie: 50, tv: 30 },
-          popularityGte: 5.0,
+          voteCountGte: { movie: BROWSE_M.voteCountGte, tv: BROWSE_TV.voteCountGte },
+          popularityGte: BROWSE_M.popularityGte ?? undefined,
           withRuntimeGte: 20,
         })
       ),
@@ -405,7 +426,11 @@ export async function getGenrePageData(
         ? getCachedRow<RowItem[]>(key("world-leading"), () =>
             fetchMixedDiscover(
               genre,
-              { sortBy: "popularity", voteCountGte: { movie: 100, tv: 50 }, popularityGte: 5.0 },
+              {
+                sortBy: "popularity",
+                voteCountGte: { movie: BROWSE_M.voteCountGte, tv: BROWSE_TV.voteCountGte },
+                popularityGte: BROWSE_TV.popularityGte ?? undefined,
+              },
               40
             )
           )
@@ -414,8 +439,8 @@ export async function getGenrePageData(
       getCachedRow<RowItem[]>(key("acclaimed"), () =>
         fetchMixedDiscover(genre, {
           sortBy: "vote_average",
-          voteCountGte: { movie: 300, tv: 150 },
-          popularityGte: 3.0,
+          voteCountGte: { movie: CURATED_M.voteCountGte, tv: CURATED_TV.voteCountGte },
+          popularityGte: CURATED_M.popularityGte ?? undefined,
           withRuntimeGte: 30,
         })
       ),
@@ -424,8 +449,8 @@ export async function getGenrePageData(
           genre,
           {
             sortBy: "release_date",
-            voteCountGte: { movie: 5, tv: 3 },
-            popularityGte: 2.0,
+            voteCountGte: { movie: FRESH_M.voteCountGte, tv: FRESH_TV.voteCountGte },
+            voteAverageGte: FRESH_M.voteAverageGte,
             withRuntimeGte: 20,
             dateRange: { lte: today },
           },
@@ -440,8 +465,7 @@ export async function getGenrePageData(
           genre,
           {
             sortBy: "vote_average",
-            voteCountGte: { movie: 30, tv: 15 },
-            popularityGte: 1.5,
+            voteCountGte: { movie: NICHE_M.voteCountGte, tv: NICHE_TV.voteCountGte },
             withRuntimeGte: 20,
           },
           ROW_LIMIT,
@@ -460,8 +484,8 @@ export async function getGenrePageData(
               genre,
               {
                 sortBy: "release_date",
-                voteCountGte: { movie: 20, tv: 10 },
-                popularityGte: 1.5,
+                voteCountGte: { movie: BROWSE_M.voteCountGte, tv: BROWSE_TV.voteCountGte },
+                popularityGte: BROWSE_M.popularityGte ?? undefined,
                 withRuntimeGte: 20,
                 dateRange: { gte: decade.gte, lte: decade.lte },
               },
@@ -476,16 +500,29 @@ export async function getGenrePageData(
   const rows: GenreRow[] = []
   const seen = new Set<string>()
 
+  /**
+   * R1-4 bucketed allocation: each row may always keep its top 5 items even
+   * when an earlier row already used them (reserved share), and rows that
+   * cannot reach 5 unique-or-reserved items are dropped entirely instead of
+   * rendering 1–4 sparse cards. Later rows (hidden gems, because, decades)
+   * no longer starve behind the heavily-overlapping head rows.
+   */
+  const RESERVED_PER_ROW = 5
+  const MIN_ROW_ITEMS_GENRE = 5
   const pushRow = (row: Omit<GenreRow, "items">, items: RowItem[]) => {
     const accepted: RowItem[] = []
+    let reserved = 0
     for (const item of items) {
       const mediaType = item.media_type === "tv" ? "tv" : "movie"
       const itemKey = `${mediaType}:${item.id}`
-      if (seen.has(itemKey)) continue
+      if (seen.has(itemKey)) {
+        if (reserved >= RESERVED_PER_ROW) continue
+        reserved++
+      }
       seen.add(itemKey)
       accepted.push(item)
     }
-    if (accepted.length > 0) rows.push({ ...row, items: accepted })
+    if (accepted.length >= MIN_ROW_ITEMS_GENRE) rows.push({ ...row, items: accepted })
   }
 
   pushRow(

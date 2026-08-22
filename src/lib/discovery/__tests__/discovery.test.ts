@@ -9,25 +9,29 @@ import {
   blendUserVectors,
   l2Normalize,
   dominantFeatures,
+  padToFeatureDim,
+  GENRE_DIM_TO_TMDB,
+  joinGenreIds,
   SHORT_TERM_HALF_LIFE_DAYS,
   MS_PER_DAY,
   zeroVector,
 } from "../vector"
-import { classifyPlaybackStop, computeRewatchWeight } from "../ingest"
+import { classifyPlaybackStop, computeRewatchWeight, pickBestSearchMatch } from "../ingest"
 import {
   scoreItem,
   serveDemotion,
   fatiguePenalty,
   isRowSuppressed,
   rankRowsMMR,
+  explorationBonus,
   FATIGUE_SUPPRESS_THRESHOLD,
   type RankableRow,
 } from "../ranking"
 
-// ── Vector construction (Module 1.3) ──
+// ── Vector construction (Module 1.3, 128-D per R2-3) ──
 
 describe("buildItemVector", () => {
-  test("produces a 64-D unit vector", () => {
+  test("produces a 128-D unit vector", () => {
     const v = buildItemVector({
       tmdbId: 550,
       mediaType: "movie",
@@ -73,6 +77,14 @@ describe("buildItemVector", () => {
     assert.equal(v[29] + v[30] + v[31], 0)
   })
 
+  test("unknown runtime spreads bucket mass neutrally (R2-1/§4.1)", () => {
+    const v = buildItemVector({ tmdbId: 4, mediaType: "movie", genreIds: [28], releaseYear: 2020 })
+    // All four runtime buckets carry equal mass pre-normalization.
+    assert.ok(Math.abs(v[28] - v[29]) < 1e-9)
+    assert.ok(Math.abs(v[29] - v[30]) < 1e-9)
+    assert.ok(Math.abs(v[30] - v[31]) < 1e-9)
+  })
+
   test("identical inputs hash to identical vectors (stable hashing)", () => {
     const input = {
       tmdbId: 7,
@@ -84,6 +96,48 @@ describe("buildItemVector", () => {
       directorNames: ["John Carpenter"],
     }
     assert.deepEqual(buildItemVector(input), buildItemVector(input))
+  })
+
+  test("distinct people collide less than in the legacy 16-bucket space", () => {
+    const a = buildItemVector({ tmdbId: 8, mediaType: "movie", genreIds: [], releaseYear: 2000, castNames: ["Alpha Actor"] })
+    const b = buildItemVector({ tmdbId: 9, mediaType: "movie", genreIds: [], releaseYear: 2000, castNames: ["Beta Actor"] })
+    const overlaps = [32, 33, 34, 35, 36, 37, 38, 39].filter((d) => a[d] > 0 && b[d] > 0)
+    assert.equal(overlaps.length, 0)
+  })
+})
+
+describe("padToFeatureDim", () => {
+  test("pads legacy 64-D vectors with zeros and repairs holes", () => {
+    const legacy = new Array(64).fill(0.1)
+    legacy[3] = Number.NaN
+    const padded = padToFeatureDim(legacy)
+    assert.equal(padded.length, FEATURE_DIM)
+    assert.equal(padded[3], 0, "NaN repaired to zero")
+    assert.equal(padded[70], 0, "tail padded with zeros")
+    assert.equal(padToFeatureDim(zeroVector()).length, FEATURE_DIM)
+  })
+})
+
+describe("GENRE_DIM_TO_TMDB (R0-5/§1.5)", () => {
+  test("TV Thriller maps to Crime|Mystery pipe-OR, not the old Crime-only mis-map", () => {
+    assert.deepEqual(GENRE_DIM_TO_TMDB[16].tv, [80, 9648])
+    assert.equal(joinGenreIds(GENRE_DIM_TO_TMDB[16].tv), "80|9648")
+  })
+
+  test("dims without a TV genre id stay empty so row builders skip them", () => {
+    for (const dim of [10, 11, 12, 14]) {
+      assert.deepEqual(GENRE_DIM_TO_TMDB[dim].tv, [], `dim ${dim} has no TV mapping`)
+    }
+  })
+
+  test("Reality & Talk is TV-only and covers all unscripted formats", () => {
+    assert.deepEqual(GENRE_DIM_TO_TMDB[19].movie, [])
+    assert.deepEqual(GENRE_DIM_TO_TMDB[19].tv, [10764, 10766, 10767, 10763])
+  })
+
+  test("joinGenreIds uses pipe (OR) semantics", () => {
+    assert.equal(joinGenreIds([28, 12]), "28|12")
+    assert.equal(joinGenreIds([35]), "35")
   })
 })
 
@@ -124,6 +178,14 @@ describe("blendUserVectors", () => {
     const blended = blendUserVectors(short, long)
     assert.equal(blended.length, FEATURE_DIM)
     assert.ok(blended.every((x) => x === 0 && !Number.isNaN(x)))
+  })
+
+  test("legacy short vectors blend without NaN (padded)", () => {
+    const short = new Array(64).fill(0.05)
+    const long = new Array(64).fill(0.02)
+    const blended = blendUserVectors(short, long)
+    assert.equal(blended.length, FEATURE_DIM)
+    assert.ok(blended.every((x) => Number.isFinite(x)))
   })
 })
 
@@ -173,15 +235,38 @@ describe("computeRewatchWeight", () => {
     assert.equal(computeRewatchWeight(15), 0.8)
     assert.equal(computeRewatchWeight(30), 0.8)
   })
+
+  test("§6.4: the >30d weaker-rewatch branch is reachable and returns 0.4", () => {
+    assert.equal(computeRewatchWeight(45), 0.4)
+    assert.equal(computeRewatchWeight(undefined), 0.8)
+  })
 })
 
-// ── Tier 1 item scoring (Module 3.1) ──
+describe("pickBestSearchMatch (§6.7)", () => {
+  test("prefers the exact normalized title match over first-hit", () => {
+    const best = pickBestSearchMatch(
+      [
+        { id: 1, title: "The Wrong Movie", popularity: 50 },
+        { id: 2, title: "Fight Club", popularity: 120 },
+      ],
+      "fight club"
+    )
+    assert.equal(best?.id, 2)
+  })
+
+  test("falls back to the first candidate when nothing scores", () => {
+    const best = pickBestSearchMatch([{ id: 9, title: "Unrelated", popularity: 0 }], "Nope")
+    assert.equal(best?.id, 9)
+    assert.equal(pickBestSearchMatch([], "Nope"), null)
+  })
+})
+
+// ── Tier 1 item scoring (Module 3.1, Bayesian per R0-3) ──
 
 describe("scoreItem", () => {
   const base = {
     userVector: l2Normalize([1, 0, 0]),
     maxPopularity: 100,
-    isWatched: false,
     releaseYear: new Date().getFullYear(),
   }
 
@@ -191,11 +276,25 @@ describe("scoreItem", () => {
     assert.ok(hi > lo)
   })
 
-  test("neutral quality is applied when voteCount < 50", () => {
+  test("thin-voted items regress toward the corpus mean (no free 0.5)", () => {
     const v = l2Normalize([1, 0, 0])
     const lowVoteHighAvg = scoreItem({ ...base, itemVector: v, popularity: 10, voteAverage: 10, voteCount: 10 })
     const normalVoteHighAvg = scoreItem({ ...base, itemVector: v, popularity: 10, voteAverage: 10, voteCount: 100 })
     assert.ok(normalVoteHighAvg > lowVoteHighAvg)
+  })
+
+  test("a genuinely bad well-voted title scores below a mediocre-good one", () => {
+    const v = l2Normalize([1, 0, 0])
+    const bad = scoreItem({ ...base, itemVector: v, popularity: 10, voteAverage: 2.0, voteCount: 5000 })
+    const meh = scoreItem({ ...base, itemVector: v, popularity: 10, voteAverage: 5.5, voteCount: 5000 })
+    assert.ok(meh > bad, "Bayesian quality must bury rated junk")
+  })
+
+  test("§1.1: suitability multiplier demotes explicit content near-zero", () => {
+    const v = l2Normalize([1, 0, 0])
+    const clean = scoreItem({ ...base, itemVector: v, popularity: 10, voteAverage: 7, voteCount: 500 })
+    const explicit = scoreItem({ ...base, itemVector: v, popularity: 10, voteAverage: 7, voteCount: 500, suitability: 0.05 })
+    assert.ok(clean > explicit * 5, "adult multiplier should sink the score")
   })
 })
 
@@ -239,7 +338,17 @@ describe("fatigue", () => {
   })
 })
 
-// ── Tier 2 MMR diversity (Module 3.2) ──
+// ── Tier 2 MMR diversity (Module 3.2, UCB1 exploration per §5.3) ──
+
+describe("explorationBonus", () => {
+  test("zero without stats; positive for unexplored rows", () => {
+    assert.equal(explorationBonus(undefined, 1000), 0)
+    const low = explorationBonus({ rowCategoryKey: "new", totalImpressions: 2, totalClicks: 0, totalPlays: 0 }, 1000)
+    const high = explorationBonus({ rowCategoryKey: "old", totalImpressions: 900, totalClicks: 100, totalPlays: 10 }, 1000)
+    assert.ok(low > 0)
+    assert.ok(low > high, "unexplored rows get the larger bonus")
+  })
+})
 
 describe("rankRowsMMR", () => {
   function row(key: string, itemKeys: string[], topItemScore: number): RankableRow {
@@ -265,5 +374,16 @@ describe("rankRowsMMR", () => {
       ctx
     )
     assert.deepEqual(ordered, ["strong", "weak"])
+  })
+
+  test("§5.3: a weak-but-unexplored row can outrank a saturated equal", () => {
+    const stats = new Map()
+    stats.set("unexplored", { rowCategoryKey: "unexplored", totalImpressions: 1, totalClicks: 0, totalPlays: 0 })
+    stats.set("saturated", { rowCategoryKey: "saturated", totalImpressions: 5000, totalClicks: 500, totalPlays: 50 })
+    const ordered = rankRowsMMR(
+      [row("saturated", ["m:1"], 0.51), row("unexplored", ["m:2"], 0.5)],
+      { fatigueByKey: new Map(), statsByKey: stats }
+    )
+    assert.equal(ordered[0], "unexplored")
   })
 })

@@ -1,4 +1,4 @@
-import { getResumeItems, getUserFavorites } from "./jellyfin"
+import { getResumeItems, getPlayedItems, getUserFavorites } from "./jellyfin"
 import { getUserMyList } from "./my-list-store"
 import {
   tmdbFetch,
@@ -8,6 +8,7 @@ import {
   type TmdbTvShow,
 } from "./tmdb"
 import { filterReleasedContent } from "./catalog"
+import { bayesianQualityScore } from "./scoring"
 import { getJellyfinIndex } from "./cache"
 import { SingleFlight } from "./circuit-breaker"
 import {
@@ -37,7 +38,7 @@ export type GenreSignal = {
   tmdbId: number
   mediaType: "movie" | "tv"
   title?: string
-  source: "resume" | "my_list" | "favorite"
+  source: "resume" | "played" | "my_list" | "favorite"
   weight: number
   genreIds: number[]
   resolved: boolean
@@ -58,7 +59,7 @@ export type BecauseYouWatchedResult = {
   seedTitle: string | null
   seedId: number | null
   seedMediaType: "movie" | "tv" | null
-  seedSource?: "resume" | "my_list" | "favorite" | null
+  seedSource?: "resume" | "played" | "my_list" | "favorite" | null
   items: RowItem[]
 }
 
@@ -127,6 +128,23 @@ async function collectSignals(userId: string): Promise<GenreSignal[]> {
       title: item.Name,
       source: "resume",
       weight: 1.2 * Math.max(0.15, 1 - index * 0.04),
+      genreIds: [],
+      resolved: false,
+    })
+  })
+
+  // §6.3: genuinely completed watches — the strongest taste signal, invisible
+  // to this engine before because resume only lists in-progress items.
+  const played = await getPlayedItems(20)
+  played.forEach((item, index) => {
+    const tmdbId = item.ProviderIds?.Tmdb ? parseInt(item.ProviderIds.Tmdb, 10) : null
+    if (!tmdbId) return
+    signals.push({
+      tmdbId,
+      mediaType: item.Type === "Movie" ? "movie" : "tv",
+      title: item.Name,
+      source: "played",
+      weight: 1.1 * Math.max(0.15, 1 - index * 0.03),
       genreIds: [],
       resolved: false,
     })
@@ -375,7 +393,7 @@ function scoreCandidate(
   const topWeight = profile.topGenres[0]?.weight ?? 0
   let affinity = topWeight > 0 ? Math.min(1, affinitySum / topWeight) : 0
 
-  // Blend the 64-D cosine similarity into the affinity term when available.
+  // Blend the 128-D cosine similarity into the affinity term when available.
   if (discoveryVector) {
     const dateStr =
       "release_date" in candidate.data
@@ -397,7 +415,13 @@ function scoreCandidate(
     affinity = 0.5 * affinity + 0.5 * vectorAffinity
   }
 
-  const rating = Math.min(1, (candidate.data.vote_average ?? 0) / 10)
+  // §4.4: shared Bayesian quality term (same dialect as the discovery and
+  // legacy engines) instead of a private vote_average/10 formula.
+  const rating = bayesianQualityScore(
+    candidate.data.vote_count ?? null,
+    candidate.data.vote_average ?? 0,
+    candidate.mediaType
+  )
   const popularity = Math.min(1, (candidate.data.popularity ?? 0) / 400)
 
   const dateStr =
@@ -416,10 +440,13 @@ function scoreCandidate(
     else recency = 0.25
   }
 
+  // Library boost now applies to both media types (§4.4: was movies-only).
+  // The Jellyfin index keys "tmdb-<id>" for movies AND series that expose a
+  // TMDB provider id, so the unified lookup covers both.
   let libraryBoost = 0
-  if (candidate.mediaType === "movie") {
-    const index = getJellyfinIndex()
-    if (index?.has(`tmdb-${candidate.id}`)) libraryBoost = 0.15
+  const index = getJellyfinIndex()
+  if (index?.has(`tmdb-${candidate.id}`)) {
+    libraryBoost = 0.15
   }
 
   return 0.4 * affinity + 0.25 * rating + 0.2 * popularity + 0.15 * recency + libraryBoost

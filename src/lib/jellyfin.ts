@@ -306,13 +306,16 @@ export type JellyfinResumeResponse = {
 
 /**
  * Fetches the currently in-progress / "continue watching" items for the
- * authenticated Jellyfin user.
+ * authenticated Jellyfin user. An explicit `userId` overrides the session's
+ * server account so multi-user deployments scope the list correctly (§5.4).
  */
 export async function getResumeItems(
   limit = 12,
+  opts: { userId?: string } = {},
 ): Promise<JellyfinResumeItem[]> {
   try {
-    const { token, userId, breaker } = await authenticate()
+    const { token, userId: authUserId, breaker } = await authenticate()
+    const userId = opts.userId ?? authUserId
 
     const params = new URLSearchParams({
       limit: String(limit),
@@ -339,6 +342,53 @@ export async function getResumeItems(
   } catch (err) {
     if (err instanceof JellyfinAuthError) throw err
     console.error("Failed to fetch Jellyfin resume items:", err)
+    return []
+  }
+}
+
+/**
+ * Genuinely completed watches (§6.3): Jellyfin items with the Played flag,
+ * most recently played first. The resume list only contains in-progress
+ * items, so fully-watched content — the strongest taste signal — was
+ * invisible to the personalization engines.
+ */
+export async function getPlayedItems(
+  limit = 20,
+  opts: { userId?: string } = {},
+): Promise<JellyfinResumeItem[]> {
+  try {
+    const { token, userId: authUserId, breaker } = await authenticate()
+    const userId = opts.userId ?? authUserId
+
+    const params = new URLSearchParams({
+      userId,
+      limit: String(limit),
+      recursive: "true",
+      fields: "ProviderIds,Overview",
+      filters: "IsPlayed",
+      sortBy: "DatePlayed",
+      sortOrder: "Descending",
+      includeItemTypes: "Movie,Series",
+      enableImageTypes: "Primary,Backdrop,Thumb,Logo",
+      imageTypeLimit: "1",
+    })
+
+    const res = await jellyfinFetch(
+      `${BASE}/Users/${userId}/Items?${params}`,
+      { headers: getAuthHeaders(token) },
+      breaker,
+    )
+
+    if (!res.ok) {
+      console.error(`Jellyfin played-items fetch error: ${res.status}`)
+      return []
+    }
+
+    const data: JellyfinResumeResponse = await res.json()
+    return data.Items ?? []
+  } catch (err) {
+    if (err instanceof JellyfinAuthError) throw err
+    console.error("Failed to fetch Jellyfin played items:", err)
     return []
   }
 }

@@ -44,12 +44,55 @@ export function classifyPlaybackStop(
   return null
 }
 
-/** Re-watch signal: flat +0.80 for a second completion within 30 days (spec: Module 1). */
+/** Re-watch signal: flat +0.80 for a second completion within 30 days; a
+ *  later repeat (31–60d) earns the weaker +0.40 (spec: Module 1). */
 export function computeRewatchWeight(daysSinceLastCompletion?: number): number {
   if (daysSinceLastCompletion != null && daysSinceLastCompletion > 30) {
     return 0.4
   }
   return 0.8
+}
+
+/**
+ * §6.7: score TMDB search candidates for title resolution — year proximity,
+ * popularity, and title similarity (case/diacritic-insensitive token match)
+ * instead of blindly taking results[0], which injected wrong-ID garbage
+ * vectors whenever names collided.
+ */
+export function pickBestSearchMatch(
+  candidates: { id: number; title?: string; name?: string; release_date?: string; first_air_date?: string; popularity?: number }[],
+  queryTitle: string
+): { id: number } | null {
+  if (candidates.length === 0) return null
+
+  const normalize = (s: string) =>
+    s
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/[^a-z0-9]+/g, " ")
+      .trim()
+
+  const q = normalize(queryTitle)
+  let best: { id: number; score: number } | null = null
+
+  for (const candidate of candidates) {
+    const candidateTitle = candidate.title ?? candidate.name ?? ""
+    const t = normalize(candidateTitle)
+    if (!t) continue
+
+    let score = 0
+    if (t === q) score += 6
+    else if (t.includes(q) || q.includes(t)) score += 3
+
+    if (candidate.popularity && candidate.popularity > 0) {
+      score += Math.min(3, Math.log10(1 + candidate.popularity))
+    }
+
+    if (!best || score > best.score) best = { id: candidate.id, score }
+  }
+
+  return best && best.score >= 3 ? { id: best.id } : candidates[0] ? { id: candidates[0].id } : null
 }
 
 const MAX_SERIES_CACHE_SIZE = 500
@@ -108,12 +151,17 @@ export async function ingestPlaybackStopped(params: {
       mediaType = "tv"
     }
 
-    // Fallback: If ProviderIds lacked a TMDB ID, resolve by title so seed candidates & recommendations link cleanly
+    // Fallback: If ProviderIds lacked a TMDB ID, resolve by title so seed
+    // candidates & recommendations link cleanly (§6.7: disambiguate by
+    // popularity + title similarity instead of first-hit-wins).
     if (!tmdbId && title && mediaType) {
       try {
         const searchRes = mediaType === "tv" ? await searchTv(title) : await searchMovies(title)
-        if (searchRes?.results?.[0]?.id) {
-          tmdbId = searchRes.results[0].id
+        const best = searchRes?.results?.length
+          ? pickBestSearchMatch(searchRes.results.slice(0, 5), title)
+          : null
+        if (best?.id) {
+          tmdbId = best.id
         }
       } catch {
         /* fallback safe */
@@ -128,13 +176,15 @@ export async function ingestPlaybackStopped(params: {
     }
 
     // Re-watch detection: a completion preceded by another completion of the
-    // same item within 30 days upgrades to the high-signal rewatch weight.
+    // same item within 60 days upgrades to a rewatch weight (the lookup
+    // window is 60d so the >30d weaker-rewatch branch is actually reachable —
+    // previously the 30d window made it dead code, §6.4).
     if (classification.eventType === "play_complete") {
       const now = Date.now()
       const priorEvents = await getRecentDiscoveryEvents(
         userId,
         profileId,
-        now - 30 * MS_PER_DAY,
+        now - 60 * MS_PER_DAY,
         200
       )
       const lastCompletion = priorEvents.find(

@@ -20,4 +20,14 @@ crons.interval(
   { olderThanMs: 90 * 24 * 60 * 60 * 1000 }
 )
 
+// Discovery engine (R2-1): nightly item-feature cache hygiene. The cache is
+// re-warmed by POST /api/discovery/precompute (external scheduler); rows not
+// refreshed in 14 days are stale catalog and get dropped.
+crons.daily(
+  "prune stale item features",
+  { hourUTC: 4, minuteUTC: 30 },
+  api.discovery.pruneItemFeatures,
+  { olderThanMs: 14 * 24 * 60 * 60 * 1000 }
+)
+
 export default crons

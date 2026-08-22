@@ -1,6 +1,9 @@
-import { getResumeItems } from "./jellyfin"
+import { getResumeItems, getPlayedItems } from "./jellyfin"
 import { tmdbFetch, type TmdbMovie, type TmdbTvShow, type TmdbPaginated, discoverMovies, discoverTv } from "./tmdb"
 import { filterDisplayableContent } from "./catalog"
+import { withQualityFloors } from "./catalog-quality"
+import { bayesianQualityScore } from "./scoring"
+import { suitabilityMultiplier } from "./content-policy"
 
 
 /**
@@ -23,6 +26,7 @@ export type RecommendationItem = {
   vote_count: number
   popularity: number
   genre_ids: number[]
+  adult?: boolean
   source: "watch_history" | "genre_match" | "trending" | "similar"
   score: number
 }
@@ -45,6 +49,8 @@ export type RowItem = {
   vote_count?: number
   popularity?: number
   media_type?: string
+  /** Netflix-style affinity badge (§7.3), set by the discovery engine. */
+  matchPct?: number
   availabilityStatus?: {
     status: string
     progress?: number
@@ -85,8 +91,10 @@ export function dedupeByTmdbId<T extends { id: number }>(items: T[]): T[] {
   return result
 }
 
-// Cache for recommendations per mediaType
+// Cache for recommendations per user + mediaType (§5.4: the key previously
+// omitted userId, serving one user's personalized recs to everyone).
 const CACHE_TTL = 30 * 60 * 1000 // 30 minutes
+const MAX_CACHE_ENTRIES = 200
 const cacheMap = new Map<string, { items: RecommendationItem[]; timestamp: number }>()
 
 export function invalidateRecommendationCache() {
@@ -97,6 +105,15 @@ function isCacheValid(key: string): boolean {
   const entry = cacheMap.get(key)
   if (!entry) return false
   return Date.now() - entry.timestamp < CACHE_TTL
+}
+
+function pruneCacheMap() {
+  if (cacheMap.size <= MAX_CACHE_ENTRIES) return
+  const overflow = cacheMap.size - MAX_CACHE_ENTRIES
+  const oldest = [...cacheMap.entries()]
+    .sort((a, b) => a[1].timestamp - b[1].timestamp)
+    .slice(0, overflow)
+  for (const [key] of oldest) cacheMap.delete(key)
 }
 
 /**
@@ -183,23 +200,21 @@ async function getGenreBasedRecommendations(
 ): Promise<RecommendationItem[]> {
   try {
     if (genreIds.length === 0) genreIds = [28, 12] // Default to Action & Adventure
-    
-    const data = mediaType === "movie" 
-      ? await discoverMovies({
+
+    // R0-2: central browse floors replace the 15/10-vote, 1.0-popularity
+    // literals that let soap/daily content through.
+    const data = mediaType === "movie"
+      ? await discoverMovies(withQualityFloors({
           with_genres: genreIds.join(","),
           page: String(page),
           sort_by: "vote_average.desc",
-          "vote_count.gte": "15",
-          "popularity.gte": "1.0",
           "with_runtime.gte": "20",
-        })
-      : await discoverTv({
+        }, "browse", "movie"))
+      : await discoverTv(withQualityFloors({
           with_genres: genreIds.join(","),
           page: String(page),
           sort_by: "vote_average.desc",
-          "vote_count.gte": "10",
-          "popularity.gte": "1.0",
-        })
+        }, "browse", "tv"))
     
     if (!data.results) return []
     
@@ -240,7 +255,9 @@ export async function generateRecommendations(
   } = {}
 ): Promise<RecommendationItem[]> {
   const { limit = 20, mediaType, includeWatched = false } = options
-  const cacheKey = mediaType || "all"
+  // §5.4: cache is keyed per user — personalization must never leak across
+  // accounts (previously `mediaType || "all"` served one user's recs to all).
+  const cacheKey = `${userId}:${mediaType || "all"}`
 
   // Check cache
   if (isCacheValid(cacheKey) && !includeWatched) {
@@ -251,27 +268,33 @@ export async function generateRecommendations(
   }
 
   try {
-    // Get user's watch history from Jellyfin
-    const watchHistory = await getResumeItems(20)
+    // Watch history: in-progress (resume) + genuinely completed plays (§6.3 —
+    // fully-watched content is the strongest taste signal and was invisible).
+    const [watchHistory, playedHistory] = await Promise.all([
+      getResumeItems(20).catch(() => []),
+      getPlayedItems(20).catch(() => []),
+    ])
     const watchedItemIds = new Set<number>()
-    
-    watchHistory.forEach(item => {
+
+    for (const item of [...watchHistory, ...playedHistory]) {
       const tmdbId = item.ProviderIds?.Tmdb ? parseInt(item.ProviderIds.Tmdb) : null
       if (tmdbId) watchedItemIds.add(tmdbId)
-    })
+    }
 
     const recommendations: RecommendationItem[] = []
 
     // Source 1: Get recommendations based on recently watched items matching mediaType (parallelized)
-    const filteredHistory = watchHistory.filter(item => {
+    const filteredHistory = [...watchHistory, ...playedHistory].filter(item => {
       if (!mediaType) return true
       if (mediaType === "movie") return item.Type === "Movie"
       return item.Type === "Series" || item.Type === "Episode"
     })
 
+    const seenSeeds = new Set<number>()
     const similarPromises = filteredHistory.slice(0, 5).map((item) => {
       const tmdbId = item.ProviderIds?.Tmdb ? parseInt(item.ProviderIds.Tmdb) : null
-      if (!tmdbId) return Promise.resolve([])
+      if (!tmdbId || seenSeeds.has(tmdbId)) return Promise.resolve([])
+      seenSeeds.add(tmdbId)
       const itemType = item.Type === "Movie" ? "movie" : "tv"
       return getSimilarRecommendations(tmdbId, itemType)
     })
@@ -308,37 +331,41 @@ export async function generateRecommendations(
       return true
     })
 
-    // Score and sort
+    // Score and sort (§4.4: unified Bayesian quality dialect shared with the
+    // discovery engine instead of the private vote_average×4 formula)
     const scoredRecommendations = uniqueRecommendations.map(rec => {
       let score = 0
-      score += rec.vote_average * 4 // Rating contribution (40%)
-      score += Math.min(rec.popularity / 10, 30) // Popularity contribution (30%)
-      
-      // Source boost (20%)
+      score += bayesianQualityScore(rec.vote_count, rec.vote_average, rec.media_type ?? "movie") * 40
+      score += Math.min(rec.popularity / 10, 30) // Popularity contribution
+      // §1.1 demotion policy: explicit-suspect titles sink instead of being hidden.
+      score *= suitabilityMultiplier({ adult: rec.adult, title: rec.title })
+
+      // Source boost
       if (rec.source === "similar") score += 20
       else if (rec.source === "genre_match") score += 15
       else if (rec.source === "trending") score += 10
-      
-      // Recency bonus (10%)
+
+      // Recency bonus
       if (rec.release_date) {
         const releaseYear = new Date(rec.release_date).getFullYear()
         const currentYear = new Date().getFullYear()
         if (releaseYear >= currentYear - 2) score += 10
         else if (releaseYear >= currentYear - 5) score += 5
       }
-      
+
       if (rec.vote_count > 1000) score += 5
-      
+
       return { ...rec, score }
     })
 
     const sorted = scoredRecommendations.sort((a, b) => b.score - a.score)
-    
+
     // Filter released & displayable quality content only
     const releasedItems = filterDisplayableContent(sorted)
 
     // Update cache
     if (!includeWatched) {
+      pruneCacheMap()
       cacheMap.set(cacheKey, {
         items: releasedItems,
         timestamp: Date.now(),
@@ -348,10 +375,11 @@ export async function generateRecommendations(
     return releasedItems.slice(0, limit)
   } catch (err) {
     console.error("Failed to generate recommendations:", err)
-    // Fallback to trending
+    // Fallback to trending — §1.10: run it through the same displayability
+    // pipeline so errors never surface unreleased/poster-less/junk items.
     const fallbackType = mediaType || "movie"
     const fallback = await getTrendingItems(fallbackType)
-    return fallback.slice(0, limit)
+    return filterDisplayableContent(fallback).slice(0, limit)
   }
 }
 

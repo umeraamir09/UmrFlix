@@ -1,24 +1,30 @@
 /**
- * 64-dimensional TF-IDF-style feature vectors for media items and user
- * profiles (Discovery Engine, Module 1.3).
+ * 128-dimensional TF-IDF-style feature vectors for media items and user
+ * profiles (Discovery Engine, Module 1.3; expanded per audit R2-3).
  *
  * Layout:
- *   dims  0–19  Genres            one-hot / weighted TMDB genre ids
- *   dims 20–27  Release decades   soft gaussian-encoded era
- *   dims 28–31  Runtime buckets   <30m / 30–60m / 60–120m / >120m
- *   dims 32–47  Cast & directors  FNV-1a hashed top-billed people
- *   dims 48–63  Keywords          FNV-1a hashed TMDB plot keywords
+ *   dims   0–19  Genres            one-hot / weighted TMDB genre ids
+ *   dims  20–27  Release decades   soft gaussian-encoded era
+ *   dims  28–31  Runtime buckets   <30m / 30–60m / 60–120m / >120m
+ *   dims  32–63  Cast & directors  FNV-1a hashed top-billed people (32 dims)
+ *   dims  64–127 Keywords          FNV-1a hashed TMDB plot keywords (64 dims)
+ *
+ * The 64→128 expansion halves the birthday-paradox collision rate for
+ * people dims (11 names into 16 buckets → 32) and removes it almost
+ * entirely for keywords (20 into 16 → 64).
  *
  * Pure functions only — no IO — so the module is unit-testable with tsx.
  */
 
-export const FEATURE_DIM = 64
+export const FEATURE_DIM = 128
 
 export const GENRE_START = 0
 export const DECADE_START = 20
 export const RUNTIME_START = 28
 export const PEOPLE_START = 32
-export const KEYWORD_START = 48
+export const KEYWORD_START = 64
+export const PEOPLE_DIMS = 32
+export const KEYWORD_DIMS = 64
 
 export const SHORT_TERM_HALF_LIFE_DAYS = 7
 export const LONG_TERM_HALF_LIFE_DAYS = 90
@@ -111,6 +117,21 @@ export function zeroVector(): number[] {
   return new Array(FEATURE_DIM).fill(0)
 }
 
+/**
+ * Pad (or truncate) a legacy persisted vector to the current FEATURE_DIM.
+ * Vectors written before the 64→128 expansion load as short arrays; without
+ * padding, blend math would produce NaN in the missing tail.
+ */
+export function padToFeatureDim(vec: number[]): number[] {
+  if (vec.length === FEATURE_DIM) return vec
+  const out = zeroVector()
+  for (let i = 0; i < Math.min(vec.length, FEATURE_DIM); i++) {
+    const v = vec[i]
+    out[i] = typeof v === "number" && Number.isFinite(v) ? v : 0
+  }
+  return out
+}
+
 export function l2Normalize(vec: number[]): number[] {
   let sum = 0
   for (const v of vec) sum += v * v
@@ -149,8 +170,8 @@ export function blendUserVectors(
   shortTerm: number[],
   longTerm: number[],
 ): number[] {
-  const s = l2Normalize(shortTerm)
-  const l = l2Normalize(longTerm)
+  const s = l2Normalize(padToFeatureDim(shortTerm))
+  const l = l2Normalize(padToFeatureDim(longTerm))
   const blended = zeroVector()
   for (let i = 0; i < FEATURE_DIM; i++) {
     blended[i] = ALPHA_SHORT * s[i] + (1 - ALPHA_SHORT) * l[i]
@@ -205,24 +226,31 @@ export function buildItemVector(input: ItemFeatureInput): number[] {
     })
   }
 
-  // Runtime buckets (28–31). Unknown runtimes fall back to sensible defaults.
-  const runtime = input.runtimeMinutes ?? (input.mediaType === "movie" ? 100 : 45)
-  const bucket = runtime < 30 ? 0 : runtime < 60 ? 1 : runtime <= 120 ? 2 : 3
-  vec[RUNTIME_START + bucket] = 1
+  // Runtime buckets (28–31). Unknown runtimes spread their mass neutrally
+  // across all four buckets (audit §4.1): a defaulted 100-minute "movie
+  // runtime" made every candidate share the same bucket, collapsing the
+  // runtime feature into a constant.
+  if (input.runtimeMinutes != null && Number.isFinite(input.runtimeMinutes)) {
+    const bucket =
+      input.runtimeMinutes < 30 ? 0 : input.runtimeMinutes < 60 ? 1 : input.runtimeMinutes <= 120 ? 2 : 3
+    vec[RUNTIME_START + bucket] = 1
+  } else {
+    for (let b = 0; b < 4; b++) vec[RUNTIME_START + b] = 0.25
+  }
 
-  // Cast & directors (32–47): hashed with billing-order decay.
+  // Cast & directors (32–63): hashed with billing-order decay.
   input.castNames?.slice(0, 8).forEach((name, order) => {
-    const dim = PEOPLE_START + (fnv1a(name.trim().toLowerCase()) % 16)
+    const dim = PEOPLE_START + (fnv1a(name.trim().toLowerCase()) % PEOPLE_DIMS)
     vec[dim] = Math.max(vec[dim], 1 / (1 + order))
   })
   input.directorNames?.slice(0, 3).forEach((name) => {
-    const dim = PEOPLE_START + (fnv1a(`dir:${name.trim().toLowerCase()}`) % 16)
+    const dim = PEOPLE_START + (fnv1a(`dir:${name.trim().toLowerCase()}`) % PEOPLE_DIMS)
     vec[dim] = Math.max(vec[dim], 1)
   })
 
-  // Keywords & micro-tags (48–63).
+  // Keywords & micro-tags (64–127).
   input.keywordNames?.slice(0, 20).forEach((name) => {
-    const dim = KEYWORD_START + (fnv1a(name.trim().toLowerCase()) % 16)
+    const dim = KEYWORD_START + (fnv1a(name.trim().toLowerCase()) % KEYWORD_DIMS)
     vec[dim] = Math.max(vec[dim], 0.9)
   })
 
@@ -259,7 +287,15 @@ export function dominantFeatures(vec: number[]): {
   return { genreDim, decadeBucket }
 }
 
-/** Map a genre dimension back to TMDB discover ids (movie / tv). */
+/**
+ * Map a genre dimension back to TMDB discover ids (movie / tv).
+ *
+ * TV has no History/Horror/Music/Romance genre ids (Appendix A.8) — those
+ * stay `tv: []` and row builders must SKIP the TV variant instead of issuing
+ * an empty `with_genres` filter (audit §1.5). Thriller has no direct TV id,
+ * so it maps to Crime|Mystery with pipe-OR semantics. Dim 19 (Reality & Talk)
+ * is TV-only and covers Reality|Soap|Talk|News via OR.
+ */
 export const GENRE_DIM_TO_TMDB: Record<number, { movie: number[]; tv: number[] }> = {
   0: { movie: [28], tv: [10759] },
   1: { movie: [12], tv: [10759] },
@@ -271,16 +307,25 @@ export const GENRE_DIM_TO_TMDB: Record<number, { movie: number[]; tv: number[] }
   7: { movie: [10751], tv: [10751] },
   8: { movie: [16], tv: [10762] },
   9: { movie: [14], tv: [10765] },
-  10: { movie: [36], tv: [] },
-  11: { movie: [27], tv: [] },
-  12: { movie: [10402], tv: [] },
+  10: { movie: [36], tv: [] }, // TV has no History genre id
+  11: { movie: [27], tv: [] }, // TV has no Horror genre id
+  12: { movie: [10402], tv: [] }, // TV has no Music genre id
   13: { movie: [9648], tv: [9648] },
-  14: { movie: [10749], tv: [] },
+  14: { movie: [10749], tv: [] }, // TV has no Romance genre id
   15: { movie: [878], tv: [10765] },
-  16: { movie: [53], tv: [80] },
+  16: { movie: [53], tv: [80, 9648] }, // Thriller ≈ Crime|Mystery on TV (pipe-OR)
   17: { movie: [10752], tv: [10768] },
   18: { movie: [37], tv: [37] },
-  19: { movie: [], tv: [10764] },
+  19: { movie: [], tv: [10764, 10766, 10767, 10763] }, // Reality|Soap|Talk|News (TV-only)
+}
+
+/**
+ * Join genre ids for TMDB `with_genres` with pipe-OR semantics: within one
+ * dimension the ids are conceptually "A or B" (Sci-Fi OR Fantasy), while
+ * comma (AND) is reserved for genuinely conjunctive filters.
+ */
+export function joinGenreIds(ids: readonly number[]): string {
+  return ids.join("|")
 }
 
 /** Decade bucket → release year range (for TMDB discover filters). */

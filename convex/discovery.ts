@@ -262,6 +262,30 @@ export const setItemFeature = mutation({
   },
 })
 
+/** R2-1 hygiene: drop item-feature cache rows not refreshed in `olderThanMs`. */
+export const pruneItemFeatures = mutation({
+  args: { olderThanMs: v.number() },
+  handler: async (ctx, args) => {
+    const cutoff = Date.now() - args.olderThanMs
+    let deleted = 0
+    let cursor: string | null = null
+    do {
+      const page = await ctx.db
+        .query("itemFeatures")
+        .withIndex("by_itemKey")
+        .filter((q) => q.lt(q.field("updatedAt"), cutoff))
+        .paginate({ numItems: 100, cursor })
+      for (const row of page.page) {
+        await ctx.db.delete(row._id)
+        deleted++
+      }
+      cursor = page.continueCursor ?? null
+      if (page.isDone) cursor = null
+    } while (cursor)
+    return deleted
+  },
+})
+
 // ── Serve log ──
 
 export const getServeLog = query({

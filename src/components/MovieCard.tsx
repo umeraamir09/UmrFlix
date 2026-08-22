@@ -23,6 +23,8 @@ export type MovieCardItem = {
   runtime?: number
   numberOfSeasons?: number
   jellyfinItemId?: string
+  /** Netflix-style affinity badge (§7.3), computed by the discovery engine. */
+  matchPct?: number
   // Server-computed availability
   availabilityStatus?: {
     status: string
@@ -206,6 +208,23 @@ export function MovieCard({
           {cardRank ? (
             <div className="absolute top-2.5 right-2.5 z-10 size-[35px] rounded-full bg-penpot-primary-300/80 backdrop-blur-sm border border-white/30 text-white font-bold text-sm flex items-center justify-center shadow-lg">
               #{cardRank}
+            </div>
+          ) : null}
+
+          {/* % Match affinity badge (§7.3) — discovery-engine rows only. */}
+          {item.matchPct ? (
+            <div
+              className={`absolute z-10 text-[10px] font-bold px-1.5 py-0.5 rounded-[4px] shadow-sm ${
+                cardRank ? "top-12 right-2.5" : "top-2.5 right-2.5"
+              } ${
+                item.matchPct >= 75
+                  ? "bg-[#abfab3] text-[#00710b]"
+                  : item.matchPct >= 60
+                    ? "bg-penpot-primary-300 text-white"
+                    : "bg-penpot-surface/90 text-penpot-text-medium"
+              }`}
+            >
+              {item.matchPct}% Match
             </div>
           ) : null}
 

@@ -3,6 +3,7 @@ import { getSession } from "@/lib/auth"
 import { tmdbProxyFetch } from "@/lib/tmdb-proxy"
 import { checkRateLimit } from "@/lib/rate-limit"
 import { enrichMediaItemsWithPosters, fetchEnglishHorizontalPoster } from "@/lib/horizontal-posters"
+import { clampToBrowseMinimums } from "@/lib/catalog-quality"
 
 export const dynamic = "force-dynamic"
 
@@ -37,6 +38,17 @@ export async function GET(
 
     for (const [key, value] of request.nextUrl.searchParams) {
       search.set(key, value)
+    }
+
+    // R0-2 defense-in-depth: discover requests through the proxy are clamped
+    // to the browse-quality baseline (raise-or-set) so no client path can
+    // serve sub-baseline content even if a call site forgets the floors.
+    // Internal server callers use tmdbFetch directly and are unaffected.
+    if (slug[0] === "discover" && (slug[1] === "movie" || slug[1] === "tv")) {
+      const raw = Object.fromEntries(search.entries())
+      for (const [k, v] of Object.entries(clampToBrowseMinimums(raw, slug[1]))) {
+        search.set(k, v)
+      }
     }
 
     if (search.has("include_image_language")) {

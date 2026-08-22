@@ -1,4 +1,6 @@
 import type { TmdbMovie, TmdbTvShow } from "./tmdb"
+import { bayesianRating, meetsEngagementFloor } from "./scoring"
+import { isSpamGradeExplicit, suitabilityMultiplier } from "./content-policy"
 
 /**
  * Catalog Filter Utilities
@@ -223,13 +225,18 @@ export function filterReleasedContent<T extends CatalogItem>(
 }
 
 /**
- * Quality & relevance filter for catalog surfacing:
- * - Excludes low-rated titles (vote_average < 3.5 when vote_count >= 5)
- * - Excludes non-feature short clips (runtime < 15 mins when runtime is present)
- * - Excludes obscure/unvoted items (voteCount < 10 AND popularity < 1.0) ONLY
- *   when both fields are present and non-zero — items where these fields are
- *   absent (e.g. RowItem from genre catalog) always pass through because quality
- *   was already enforced upstream via TMDB discover params.
+ * Quality & relevance filter for catalog surfacing (R0-3/§1.4 rewrite).
+ *
+ * One unified Bayesian quality gate shared with the ranking layer:
+ * - Excludes spam-grade explicit items (hide-only-spam policy, §1.1)
+ * - Excludes genuinely bad titles via the Bayesian weighted rating
+ *   (a 2.0★/4-vote flop now regresses to the corpus mean and fails the bar;
+ *   the old `vote_count >= 5` guard let it through)
+ * - Excludes non-feature short clips (runtime < 15 mins when present)
+ * - Excludes items below the engagement floor when vote metadata shipped
+ *
+ * Items without vote/popularity metadata (e.g. RowItem from genre catalog)
+ * pass through — quality was enforced upstream via TMDB discover floors.
  */
 export function isQualityContent(item: CatalogItem): boolean {
   // If item is already available in user's library, keep it regardless
@@ -240,80 +247,124 @@ export function isQualityContent(item: CatalogItem): boolean {
     }
   }
 
-  // Filter low ratings (vote_average < 3.5 when vote_count >= 5)
-  if ('vote_average' in item && typeof item.vote_average === 'number' && item.vote_average > 0) {
-    const voteCount = ('vote_count' in item && typeof item.vote_count === 'number') ? item.vote_count : 0
-    if (voteCount >= 5 && item.vote_average < 3.5) {
-      return false
-    }
-  }
-
-  // Runtime check for short clips/promos (runtime < 15 mins)
-  if ('runtime' in item && typeof item.runtime === 'number' && item.runtime > 0 && item.runtime < 15) {
+  // Content policy (§1.1): hide only spam-grade explicit items; demotion of
+  // milder cases happens in the ranking layer via suitabilityMultiplier.
+  if (isSpamGradeExplicit({ adult: readFlag(item, 'adult'), title: readString(item, 'title') ?? readString(item, 'name') })) {
     return false
   }
 
-  // Only apply the popularity/vote floor when we actually have meaningful data.
-  // vote_count and popularity are optional on RowItem — if they are absent or
-  // zero we cannot distinguish "genuinely obscure" from "metadata not shipped",
-  // so we pass the item through and rely on upstream TMDB discover filters.
-  const hasVoteCount = 'vote_count' in item && typeof item.vote_count === 'number' && (item.vote_count as number) > 0
-  const hasPopularity = 'popularity' in item && typeof item.popularity === 'number' && (item.popularity as number) > 0
+  const voteAverage = readNumber(item, 'vote_average')
+  const voteCount = readNumber(item, 'vote_count')
+  const popularity = readNumber(item, 'popularity')
+  const mediaType: 'movie' | 'tv' = readString(item, 'name') !== undefined ? 'tv' : 'movie'
 
-  if (!hasVoteCount && !hasPopularity) {
+  // Runtime check for short clips/promos (runtime < 15 mins)
+  const runtime = readNumber(item, 'runtime')
+  if (runtime !== null && runtime > 0 && runtime < 15) {
+    return false
+  }
+
+  // Only apply the quality bar when we actually have meaningful data.
+  if (voteAverage === null && voteCount === null && popularity === null) {
     // No quality metadata present — pass through (upstream TMDB params already filtered)
     return true
   }
 
-  const voteCount = hasVoteCount ? (item as { vote_count: number }).vote_count : 0
-  const popularity = hasPopularity ? (item as { popularity: number }).popularity : 0
+  // Bayesian weighted rating (R0-3): with enough votes, a truly bad title
+  // scores well below the corpus mean and is excluded. Thin-voted items
+  // regress toward the mean, so only *rated* junk is dropped here — obscure
+  // junk is kept out by discover floors instead.
+  if (voteCount !== null && voteCount >= 20 && voteAverage !== null) {
+    const wr = bayesianRating(voteCount, voteAverage, mediaType)
+    if (wr < 5.2) return false
+  }
 
-  // Check release date age for obscure / unvoted items
+  // Legacy guard retained for thin-voted dailies: a hard sub-3.5 rating with
+  // at least 5 votes is junk regardless of the shrinkage target.
+  if (voteCount !== null && voteCount >= 5 && voteAverage !== null && voteAverage < 3.5) {
+    return false
+  }
+
+  if (!meetsEngagementFloor(voteCount, popularity, mediaType)) {
+    return false
+  }
+
+  // New-release grace window (≤30 days): allow with minimal traction…
   const dateStr =
     'release_date' in item && item.release_date
       ? item.release_date
       : 'first_air_date' in item && item.first_air_date
         ? item.first_air_date
         : undefined
-
   if (dateStr) {
     const releaseDate = new Date(dateStr)
-    const today = new Date()
-    const diffMs = today.getTime() - releaseDate.getTime()
-    const diffDays = diffMs / (1000 * 60 * 60 * 24)
-
-    // New release grace window: under 30 days old — allow with minimal popularity
+    const diffDays = (Date.now() - releaseDate.getTime()) / (1000 * 60 * 60 * 24)
     if (diffDays >= 0 && diffDays <= 30) {
-      if (popularity < 1.5 && voteCount < 1) {
+      if ((popularity ?? 0) < 1.0 && (voteCount ?? 0) < 1) {
         return false
       }
       return true
     }
   }
 
-  // Older releases: require popularity >= 1.0 OR vote_count >= 10
-  if (voteCount < 10 && popularity < 1.0) {
-    return false
-  }
-
   return true
+}
+
+function readNumber(item: CatalogItem, field: string): number | null {
+  if (field in item) {
+    const v = (item as unknown as Record<string, unknown>)[field]
+    if (typeof v === 'number' && Number.isFinite(v)) return v
+  }
+  return null
+}
+
+function readString(item: CatalogItem, field: string): string | undefined {
+  const v = (item as unknown as Record<string, unknown>)[field]
+  return typeof v === 'string' ? v : undefined
+}
+
+function readFlag(item: CatalogItem, field: string): boolean | null {
+  const v = (item as unknown as Record<string, unknown>)[field]
+  return typeof v === 'boolean' ? v : null
+}
+
+/**
+ * Content-suitability multiplier for ranking layers that score items after
+ * filtering (audit §1.1 demotion policy).
+ */
+export function contentSuitability(item: CatalogItem): number {
+  return suitabilityMultiplier({
+    adult: readFlag(item, 'adult'),
+    title: readString(item, 'title') ?? readString(item, 'name'),
+  })
 }
 
 /**
  * Filter to only include items that are ready for display (excludes announced, cinema-only, and obscure/low-rated)
+ *
+ * §1.9: `allowMissingOverview` admits international titles whose list payload
+ * lacks an English blurb (K-Drama/anime/Bollywood rails). Such items are
+ * demoted — never deleted — by the ranking layer instead.
  */
 export function filterDisplayableContent<T extends CatalogItem>(
   items: T[],
-  options?: { includeCinemas?: boolean }
+  options?: { includeCinemas?: boolean; allowMissingOverview?: boolean; includeFutureReleases?: boolean }
 ): T[] {
   const includeCinemas = options?.includeCinemas ?? false
+  const allowMissingOverview = options?.allowMissingOverview ?? false
+  const includeFutureReleases = options?.includeFutureReleases ?? false
   return items.filter((item) => {
     // Must have poster
     if (!item.poster_path) return false
-    // Must have overview description
-    if (!item.overview) return false
+    // Must have overview description (unless the surface explicitly accepts
+    // international titles without an English blurb yet)
+    if (!item.overview && !allowMissingOverview) return false
 
-    if (includeCinemas) {
+    if (includeFutureReleases) {
+      // §7.8 Coming Soon rails: only a valid date is required — the release
+      // window itself is the point of the row.
+      if (!hasValidReleaseDate(item)) return false
+    } else if (includeCinemas) {
       if (!isReleased(item)) return false
     } else {
       if (!isReleasedAndAvailable(item)) return false

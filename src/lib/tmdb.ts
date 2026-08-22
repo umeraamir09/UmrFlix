@@ -33,6 +33,8 @@ export type TmdbMovie = {
   popularity: number
   genre_ids: number[]
   media_type?: string
+  /** TMDB adult flag — surfaced so the content-policy layer can demote it. */
+  adult?: boolean
 }
 
 export type TmdbTvShow = {
@@ -47,6 +49,7 @@ export type TmdbTvShow = {
   popularity: number
   genre_ids: number[]
   media_type?: string
+  adult?: boolean
 }
 
 export type TmdbPaginated<T> = {
@@ -90,6 +93,11 @@ export type TmdbMovieDetail = TmdbMovie & {
   imdb_id?: string | null
   spoken_languages?: { english_name: string; name: string }[]
   production_companies?: { id: number; name: string; logo_path: string | null }[]
+  release_dates?: {
+    results: { iso_3166_1: string; release_dates: { certification: string; type: number }[] }[]
+  }
+  belongs_to_collection?: { id: number; name: string; poster_path: string | null } | null
+  keywords?: { keywords: { id: number; name: string }[] }
 }
 
 export type TmdbTvSeasonSummary = {
@@ -161,7 +169,7 @@ export function searchTv(query: string, page = 1) {
 
 export function movieDetail(id: number) {
   return tmdbFetch<TmdbMovieDetail>(`/movie/${id}`, {
-    append_to_response: "credits,videos,images,recommendations,similar,external_ids",
+    append_to_response: "credits,videos,images,recommendations,similar,external_ids,release_dates,keywords",
     include_image_language: "en",
   })
 }
@@ -183,6 +191,62 @@ export function discoverMovies(params?: Record<string, string>) {
 
 export function discoverTv(params?: Record<string, string>) {
   return tmdbFetch<TmdbPaginated<TmdbTvShow>>("/discover/tv", params)
+}
+
+// ── Curated TMDB list endpoints (audit §1.6 / Appendix A.4) ──
+// These are free of the daily-soap pollution that plagues popularity-sorted
+// /discover/tv by construction, and accept a page parameter (unlike /trending).
+
+export function movieNowPlaying(page = 1) {
+  return tmdbFetch<TmdbPaginated<TmdbMovie>>("/movie/now_playing", { page: String(page) })
+}
+
+export function moviePopular(page = 1) {
+  return tmdbFetch<TmdbPaginated<TmdbMovie>>("/movie/popular", { page: String(page) })
+}
+
+export function movieTopRated(page = 1) {
+  return tmdbFetch<TmdbPaginated<TmdbMovie>>("/movie/top_rated", { page: String(page) })
+}
+
+export function movieUpcoming(page = 1) {
+  return tmdbFetch<TmdbPaginated<TmdbMovie>>("/movie/upcoming", { page: String(page) })
+}
+
+export function tvAiringToday(page = 1) {
+  return tmdbFetch<TmdbPaginated<TmdbTvShow>>("/tv/airing_today", { page: String(page) })
+}
+
+/** Genuine on-the-air list — the airing facet's correct source (R1-6). */
+export function tvOnTheAir(page = 1) {
+  return tmdbFetch<TmdbPaginated<TmdbTvShow>>("/tv/on_the_air", { page: String(page) })
+}
+
+export function tvPopular(page = 1) {
+  return tmdbFetch<TmdbPaginated<TmdbTvShow>>("/tv/popular", { page: String(page) })
+}
+
+export function tvTopRated(page = 1) {
+  return tmdbFetch<TmdbPaginated<TmdbTvShow>>("/tv/top_rated", { page: String(page) })
+}
+
+/** Watch providers for a movie/TV item (R2-4 provider rows). */
+export function watchProviders(type: "movie" | "tv", id: number) {
+  return tmdbFetch<{ id: number; results: Record<string, { flatrate?: { provider_id: number; provider_name: string }[] }> }>(
+    `/${type}/${id}/watch/providers`
+  )
+}
+
+/** Collection details — franchise rows (R2-4 / §7.5). */
+export function collectionDetail(id: number, page = 1) {
+  return tmdbFetch<{
+    id: number
+    name: string
+    overview: string
+    poster_path: string | null
+    backdrop_path: string | null
+    parts: TmdbPaginated<TmdbMovie>["results"]
+  }>(`/collection/${id}`, { page: String(page) })
 }
 
 export async function getItemLogo(type: "movie" | "tv", id: number): Promise<string | null> {

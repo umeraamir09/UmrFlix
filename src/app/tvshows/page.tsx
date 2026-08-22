@@ -1,14 +1,17 @@
 import type { Metadata } from "next"
 import { HeroBillboard, BillboardItem } from "@/components/HeroBillboard"
-import { MovieRow } from "@/components/MovieRow"
 import { SpotlightBanner, SpotlightItem } from "@/components/SpotlightBanner"
 import { TopGenreSelector } from "@/components/TopGenreSelector"
-import { getTrending, getItemLogo, discoverTv, type TmdbTvShow, type TmdbPaginated } from "@/lib/tmdb"
+import { FacetRails } from "@/components/FacetRails"
+import { getTrending, getItemLogo, discoverTv, type TmdbTvShow } from "@/lib/tmdb"
 import { filterReleasedContent } from "@/lib/catalog"
+import { withQualityFloors } from "@/lib/catalog-quality"
+import { curateTrending, scriptedTvParams } from "@/lib/content-policy"
 import { PersonalizedFeed } from "@/components/PersonalizedFeed"
 import { getNextEpisode, getAiringLabel, lookupShowByTvdbId } from "@/lib/tvmaze"
 import { authenticate, getAllItems } from "@/lib/jellyfin"
-import { getGenreByParam, getTvGenres, getGenreDiscoverParams, buildGenreDiscoverQuery } from "@/lib/genres"
+import { getGenreByParam, getTvGenres, getGenreDiscoverParams } from "@/lib/genres"
+import { getFacetKeysForGenre } from "@/lib/discovery/facets"
 
 export const revalidate = 1800 // Revalidate page every 30 minutes
 
@@ -64,12 +67,24 @@ export default async function TvShowCatalogPage({
 
   try {
     if (selectedGenre) {
-      // Fetch genre-specific TV shows
-      const genreTvData = await discoverTv({
-        with_genres: String(selectedGenreIds),
-        sort_by: "popularity.desc",
-        ...getGenreDiscoverParams(selectedGenre, "tv"),
-      })
+      // Fetch genre-specific TV shows (R0-2 browse floors; genre facets like
+      // reality/soap keep their unscripted content via the facet registry's
+      // allowUnscriptedTv flag, the hero pool stays scripted-biased).
+      const unscriptedGenre = [10762, 10763, 10764, 10766, 10767].some((id) =>
+        selectedGenre.tvGenreIds.includes(id)
+      )
+      const genreTvData = await discoverTv(
+        withQualityFloors(
+          {
+            with_genres: String(selectedGenreIds),
+            sort_by: "popularity.desc",
+            ...getGenreDiscoverParams(selectedGenre, "tv"),
+            ...(unscriptedGenre ? {} : scriptedTvParams()),
+          },
+          "browse",
+          "tv"
+        )
+      )
       const tvResults = filterReleasedContent(genreTvData?.results || [])
 
       const rawHero = tvResults.slice(0, 5)
@@ -102,9 +117,23 @@ export default async function TvShowCatalogPage({
         }
       }
     } else {
-      // 1. Fetch trending TV shows
-      const trendingTvData = (await getTrending("tv", "week")) as TmdbPaginated<TmdbTvShow>
-      const tvResults = filterReleasedContent(trendingTvData?.results || [])
+      // 1. Fetch trending TV shows (§1.7 curated: quality + suitability)
+      const trendingTvData = await getTrending("tv", "week")
+      const tvResults: TmdbTvShow[] = filterReleasedContent(
+        curateTrending(
+          (trendingTvData?.results || []).map((item) => ({
+            id: item.id,
+            popularity: item.popularity,
+            voteAverage: item.vote_average,
+            voteCount: item.vote_count,
+            adult: (item as { adult?: boolean }).adult ?? undefined,
+            name: (item as TmdbTvShow).name,
+            posterPath: item.poster_path,
+            backdropPath: item.backdrop_path,
+            raw: item as TmdbTvShow,
+          }))
+        ).map((e) => e.raw)
+      )
 
       // 2. Fetch Jellyfin series for TVMaze airing schedule badges
       try {
@@ -208,114 +237,46 @@ export default async function TvShowCatalogPage({
       <div className="mx-auto max-w-[1600px] 2xl:max-w-[1920px] 3xl:max-w-[2300px] 4xl:max-w-[2700px] px-4 sm:px-6 md:px-8 lg:px-12 2xl:px-16 space-y-12 relative z-20 -mt-28 sm:-mt-36 md:-mt-44 2xl:-mt-52">
         {selectedGenre ? (
           <>
-            {/* Popular Genre TV Shows */}
-            <MovieRow
-              title={`Popular ${selectedGenre.name} Series`}
-              subtitle={`Top trending ${selectedGenre.name.toLowerCase()} shows right now`}
-              type="tv"
-              endpoint={`/api/tmdb/discover/tv?${buildGenreDiscoverQuery(selectedGenre, "tv", {
-                with_genres: selectedGenreIds ?? "",
-                sort_by: "popularity.desc",
-                "vote_count.gte": "10",
-                "popularity.gte": "1.5",
-              })}`}
-            />
-
-            {/* Top Rated Genre TV Shows */}
-            <MovieRow
-              title={`Top Rated ${selectedGenre.name} Series`}
-              subtitle={`Highest rated ${selectedGenre.name.toLowerCase()} series of all time`}
-              type="tv"
-              endpoint={`/api/tmdb/discover/tv?${buildGenreDiscoverQuery(selectedGenre, "tv", {
-                with_genres: selectedGenreIds ?? "",
-                sort_by: "vote_average.desc",
-                "vote_count.gte": "150",
-                "popularity.gte": "3.0",
-              })}`}
-            />
-
-            {/* Mid-page Spotlight Banner */}
-            {spotlightItem1 && <SpotlightBanner item={spotlightItem1} />}
-
-            {/* New & Recently Airing Genre TV Shows */}
-            <MovieRow
-              title={`New & Recently Airing ${selectedGenre.name}`}
-              subtitle={`Freshly aired ${selectedGenre.name.toLowerCase()} television series`}
-              type="tv"
-              endpoint={`/api/tmdb/discover/tv?${buildGenreDiscoverQuery(selectedGenre, "tv", {
-                with_genres: selectedGenreIds ?? "",
-                sort_by: "first_air_date.desc",
-                "vote_count.gte": "3",
-                "popularity.gte": "2.0",
-              })}`}
-            />
+            {/* R1-3 (§2.3): full facet family filtered to this genre */}
+            <FacetRails keys={getFacetKeysForGenre(selectedGenre.slug, "tv")} />
           </>
         ) : (
           <>
             {/* Personalized Discovery Rows (Top Picks, micro-genres, BYW) */}
             <PersonalizedFeed mediaType="tv" />
 
-            {/* On The Air & Currently Airing */}
-            <MovieRow
-              title="Currently Airing & On The Air"
-              subtitle="Series actively broadcasting new episodes right now"
-              type="tv"
-              endpoint="/api/discovery/row?facet=on-the-air-shows"
-            />
-
-            {/* Popular TV Shows */}
-            <MovieRow
-              title="Popular TV Shows"
-              subtitle="Top trending series this week"
-              type="tv"
-              endpoint="/api/discovery/row?facet=popular-shows"
+            {/* Cross-genre facets from the shared registry */}
+            <FacetRails
+              keys={[
+                "on-the-air-shows",
+                "top-10-shows",
+                "popular-shows",
+                "top-rated-shows",
+              ]}
             />
 
             {/* Mid-page Spotlight Banner 1 */}
             {spotlightItem1 && <SpotlightBanner item={spotlightItem1} />}
 
-            {/* Top Rated Series */}
-            <MovieRow
-              title="Top Rated & Legendary Series"
-              subtitle="Highest rated television series of all time"
-              type="tv"
-              endpoint="/api/discovery/row?facet=top-rated-shows"
-            />
-
-            {/* Sci-Fi & Fantasy Series */}
-            <MovieRow
-              title="Sci-Fi & Fantasy Series"
-              subtitle="Mind-bending adventures, dystopian futures, and magic"
-              type="tv"
-              endpoint="/api/discovery/row?facet=sci-fi-fantasy-shows"
-            />
-
-            {/* Crime & Mystery Thrillers */}
-            <MovieRow
-              title="Crime & Mystery Thrillers"
-              subtitle="Detective procedurals, dark secrets, and criminal underworlds"
-              type="tv"
-              endpoint="/api/discovery/row?facet=crime-mystery-shows"
+            {/* Genre rails from the data-driven registry */}
+            <FacetRails
+              keys={[
+                "genre-sci-fi-tv-popular",
+                "genre-crime-tv-popular",
+                "genre-comedy-tv-popular",
+                "genre-animation-tv-popular",
+                "genre-drama-tv-top-rated",
+                "genre-documentary-tv-top-rated",
+                "genre-mystery-tv-popular",
+                "genre-family-tv-popular",
+              ]}
             />
 
             {/* Mid-page Spotlight Banner 2 */}
             {spotlightItem2 && <SpotlightBanner item={spotlightItem2} />}
 
-            {/* Binge-Worthy Comedies */}
-            <MovieRow
-              title="Bingeable Comedies"
-              subtitle="Sitcoms and comedy series to brighten your day"
-              type="tv"
-              endpoint="/api/discovery/row?facet=comedy-shows"
-            />
-
-            {/* Animation & Anime */}
-            <MovieRow
-              title="Animation & Anime Series"
-              subtitle="Top-rated animated series and anime shows"
-              type="tv"
-              endpoint="/api/discovery/row?facet=animation-shows"
-            />
+            {/* Specialty rails */}
+            <FacetRails keys={["hbo-series", "netflix-originals", "apple-tv-series", "k-dramas", "anime-series"]} />
           </>
         )}
       </div>

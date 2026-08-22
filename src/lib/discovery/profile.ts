@@ -1,11 +1,14 @@
-import { tmdbFetch, trending } from "../tmdb"
+import { tmdbFetch, discoverMovies, discoverTv, moviePopular, tvPopular } from "../tmdb"
 import { SingleFlight } from "../circuit-breaker"
+import { suitabilityMultiplier, usMovieCertification, usTvRating } from "../content-policy"
 import {
   buildItemVector,
   blendUserVectors,
   dominantFeatures,
   temporalDecay,
   zeroVector,
+  cosineSimilarity,
+  padToFeatureDim,
   FEATURE_DIM,
   SHORT_TERM_HALF_LIFE_DAYS,
   LONG_TERM_HALF_LIFE_DAYS,
@@ -25,7 +28,7 @@ import {
 /**
  * User profile model (Discovery Engine, Module 1).
  *
- * Builds dual-decay 64-D user vectors (7-day short-term, 90-day long-term)
+ * Builds dual-decay 128-D user vectors (7-day short-term, 90-day long-term)
  * from the Convex event log, blends them with the activity-aware α, persists
  * the result back to Convex, and exposes the metadata the row-synthesis and
  * ranking layers need (watched ids, seeds, peak hour, top keywords).
@@ -55,6 +58,8 @@ export type UserDiscoveryProfile = {
   completedKeys: Set<string>
   /** Any positively-signalled item — excluded from recommendation rows. */
   interactedKeys: Set<string>
+  /** Items hidden by explicit negative feedback ("Not Interested", 90d). */
+  hiddenKeys: Set<string>
   seedCandidates: SeedCandidate[]
   topGenreDims: number[]
   topDecadeBucket: number | null
@@ -64,9 +69,13 @@ export type UserDiscoveryProfile = {
 
 const PROFILE_MEMORY_TTL = 15 * 60 * 1000 // 15 minutes
 const EVENT_WINDOW_DAYS = 90
-const MAX_DETAIL_RESOLUTIONS = 25
+/** R2-1: raised from 25 — item features are Convex-cache-local, so profile
+ * builds rarely hit TMDB for these resolutions once the cache is warm. */
+const MAX_DETAIL_RESOLUTIONS = 100
 const FAST_ADAPT_EVENT_COUNT = 3
 const FAST_ADAPT_MULTIPLIER = 3
+/** §7.1: "Not Interested" hides an item for 90 days. */
+const HIDDEN_WINDOW_MS = 90 * MS_PER_DAY
 
 const profileMemoryCache = new Map<string, { profile: UserDiscoveryProfile; timestamp: number }>()
 
@@ -76,6 +85,7 @@ type TmdbDetailForFeatures = {
   id: number
   title?: string
   name?: string
+  adult?: boolean
   genres?: { id: number; name: string }[]
   release_date?: string
   first_air_date?: string
@@ -90,6 +100,10 @@ type TmdbDetailForFeatures = {
   }
   created_by?: { name: string }[]
   keywords?: { keywords?: { id: number; name: string }[]; results?: { id: number; name: string }[] }
+  release_dates?: {
+    results: { iso_3166_1: string; release_dates: { certification: string; type: number }[] }[]
+  }
+  content_ratings?: { results: { iso_3166_1: string; rating: string }[] }
 }
 
 function detailToItemProfile(detail: TmdbDetailForFeatures, mediaType: "movie" | "tv"): ItemProfile {
@@ -108,6 +122,10 @@ function detailToItemProfile(detail: TmdbDetailForFeatures, mediaType: "movie" |
   const keywordNames = keywords.slice(0, 20).map((k) => k.name)
   const runtimeMinutes =
     mediaType === "movie" ? detail.runtime ?? null : detail.episode_run_time?.[0] ?? null
+  const certification =
+    mediaType === "movie"
+      ? usMovieCertification(detail.release_dates ?? null)
+      : usTvRating(detail.content_ratings ?? null)
 
   const vector = buildItemVector({
     tmdbId: detail.id,
@@ -136,6 +154,15 @@ function detailToItemProfile(detail: TmdbDetailForFeatures, mediaType: "movie" |
     voteAverage: detail.vote_average ?? 0,
     voteCount: detail.vote_count ?? 0,
     vector,
+    adult: detail.adult ?? false,
+    certification,
+    /** Content-policy demotion multiplier, resolved once and cached. */
+    suitability: suitabilityMultiplier({
+      adult: detail.adult ?? false,
+      title: detail.title ?? detail.name,
+      keywordNames,
+      certification,
+    }),
   }
 }
 
@@ -149,7 +176,7 @@ export async function resolveItemProfile(
 
   try {
     const detail = await tmdbFetch<TmdbDetailForFeatures>(`/${mediaType}/${tmdbId}`, {
-      append_to_response: "credits,keywords",
+      append_to_response: "credits,keywords,release_dates,content_ratings",
     })
     const profile = detailToItemProfile(detail, mediaType)
     await setCachedItemProfile(profile)
@@ -218,6 +245,7 @@ async function buildUserProfile(userId: string, profileId: string): Promise<User
   const hourHistogram = new Array(24).fill(0)
   const completedKeys = new Set<string>()
   const interactedKeys = new Set<string>()
+  const hiddenKeys = new Set<string>()
   const keywordWeights = new Map<string, { id: number; name: string; weight: number }>()
   const seedCandidates: SeedCandidate[] = []
   let watchMinutesSum = 0
@@ -251,6 +279,12 @@ async function buildUserProfile(userId: string, profileId: string): Promise<User
     if (key) {
       if (event.eventType === "play_complete") completedKeys.add(key)
       if ((event.weight ?? 0) > 0) interactedKeys.add(key)
+      // §7.1: explicit negative feedback hides the item for 90 days.
+      if (event.eventType === "rating" && (event.weight ?? 0) <= -0.5 && delta < HIDDEN_WINDOW_MS) {
+        hiddenKeys.add(key)
+      } else if (event.eventType === "rating" && (event.weight ?? 0) > 0) {
+        hiddenKeys.delete(key)
+      }
     }
 
     if (!itemProfile) continue
@@ -296,16 +330,14 @@ async function buildUserProfile(userId: string, profileId: string): Promise<User
   const topGenreDims: number[] = []
   if (genreDim !== null) {
     topGenreDims.push(genreDim)
-    // Second-strongest genre dimension enables two distinct micro-genre rows.
-    let secondDim: number | null = null
-    let secondMax = 0.15
+    // Second/third-strongest genre dimensions enable distinct micro-genre
+    // rows (R1-2 raised the family from 2 to 3 dims).
+    const others: { dim: number; value: number }[] = []
     for (let d = 0; d < 20; d++) {
-      if (d !== genreDim && unified[d] > secondMax) {
-        secondMax = unified[d]
-        secondDim = d
-      }
+      if (d !== genreDim && unified[d] > 0.15) others.push({ dim: d, value: unified[d] })
     }
-    if (secondDim !== null) topGenreDims.push(secondDim)
+    others.sort((a, b) => b.value - a.value)
+    for (const { dim } of others.slice(0, 2)) topGenreDims.push(dim)
   }
 
   let peakViewingHour: number | null = null
@@ -333,7 +365,8 @@ async function buildUserProfile(userId: string, profileId: string): Promise<User
     peakViewingHour,
     completedKeys,
     interactedKeys,
-    seedCandidates: seedCandidates.sort((a, b) => b.timestamp - a.timestamp).slice(0, 5),
+    hiddenKeys,
+    seedCandidates: pickSeedCandidates(seedCandidates, itemProfiles),
     topGenreDims,
     topDecadeBucket: decadeBucket,
     topKeywords,
@@ -348,6 +381,40 @@ async function buildUserProfile(userId: string, profileId: string): Promise<User
   })
 
   return profile
+}
+
+/**
+ * §3.2: sample 6 seeds weighted by decayed weight — not newest-first — and
+ * drop seeds that are near-duplicates in vector space (cosine > 0.95), so
+ * the BYW rail rotates through genuinely different taste anchors.
+ */
+function pickSeedCandidates(
+  candidates: SeedCandidate[],
+  itemProfiles: Map<string, ItemProfile>
+): SeedCandidate[] {
+  const now = Date.now()
+  const scored = candidates
+    .map((seed) => ({
+      seed,
+      decayedWeight:
+        Math.abs(seed.weight) * temporalDecay(SHORT_TERM_HALF_LIFE_DAYS, now - seed.timestamp),
+    }))
+    .sort((a, b) => b.decayedWeight - a.decayedWeight)
+
+  const picked: SeedCandidate[] = []
+  const pickedVectors: number[][] = []
+  for (const { seed } of scored) {
+    if (picked.length >= 6) break
+    if (picked.some((p) => p.tmdbId === seed.tmdbId && p.mediaType === seed.mediaType)) continue
+    const vector = itemProfiles.get(`${seed.mediaType}:${seed.tmdbId}`)?.vector
+    if (vector) {
+      const nearDuplicate = pickedVectors.some((v) => cosineSimilarity(v, vector) > 0.95)
+      if (nearDuplicate) continue
+      pickedVectors.push(vector)
+    }
+    picked.push(seed)
+  }
+  return picked
 }
 
 /**
@@ -377,9 +444,10 @@ export async function getUserDiscoveryProfile(
     if (!profile || (!profile.hasProfile && profile.eventCount === 0)) {
       const persisted = await loadFeatureProfile(userId, profileId)
       if (persisted && !profile) {
+        // Pad legacy short vectors to the current FEATURE_DIM (R2-3).
         const unified = blendUserVectors(
-          persisted.shortTermVector,
-          persisted.longTermVector
+          padToFeatureDim(persisted.shortTermVector),
+          padToFeatureDim(persisted.longTermVector)
         )
         profile = emptyProfile(userId, profileId, unified)
         profile.hasProfile = true
@@ -423,6 +491,7 @@ function emptyProfile(userId: string, profileId: string, vector: number[]): User
     peakViewingHour: null,
     completedKeys: new Set(),
     interactedKeys: new Set(),
+    hiddenKeys: new Set(),
     seedCandidates: [],
     topGenreDims: [],
     topDecadeBucket: null,
@@ -431,11 +500,16 @@ function emptyProfile(userId: string, profileId: string, vector: number[]): User
   }
 }
 
-// ── Cold start: population-average of trending catalog (Module 5.1) ──
+// ── Cold start: population-average of quality-gated catalog (Module 5.1, §6.1) ──
 
 let coldStartCache: { vector: number[]; timestamp: number } | null = null
 const COLD_START_TTL = 6 * 60 * 60 * 1000
 
+/**
+ * §6.1: the cold-start vector averages votecount-gated popular lists — never
+ * raw trending (whose TV side is dominated by daily soaps and whose average
+ * skewed every anonymous user's "Top Picks" toward unscripted dailies).
+ */
 export async function getColdStartVector(): Promise<number[]> {
   if (coldStartCache && Date.now() - coldStartCache.timestamp < COLD_START_TTL) {
     return coldStartCache.vector
@@ -444,21 +518,38 @@ export async function getColdStartVector(): Promise<number[]> {
   const acc = zeroVector()
   let count = 0
   try {
-    const [movies, tv] = await Promise.all([trending("movie", "week"), trending("tv", "week")])
-    for (const item of [...(movies?.results ?? []), ...(tv?.results ?? [])]) {
-      const isTv = !("title" in item)
-      const v = buildItemVector({
-        tmdbId: item.id,
-        mediaType: isTv ? "tv" : "movie",
-        genreIds: item.genre_ids ?? [],
-        releaseYear: (() => {
-          const dateStr = "release_date" in item ? item.release_date : item.first_air_date
-          return dateStr ? new Date(dateStr).getFullYear() : null
-        })(),
-        runtimeMinutes: null,
-      })
-      for (let d = 0; d < FEATURE_DIM; d++) acc[d] += v[d]
-      count++
+    const [moviePopularData, tvPopularData, movieGated, tvGated] = await Promise.all([
+      moviePopular().catch(() => null),
+      tvPopular().catch(() => null),
+      discoverMovies({ sort_by: "vote_average.desc", "vote_count.gte": "500" }).catch(() => null),
+      discoverTv({ sort_by: "vote_average.desc", "vote_count.gte": "300", with_type: "2|4" }).catch(() => null),
+    ])
+    const pools = [
+      moviePopularData?.results ?? [],
+      tvPopularData?.results ?? [],
+      movieGated?.results ?? [],
+      tvGated?.results ?? [],
+    ]
+    for (const pool of pools) {
+      for (const item of pool) {
+        // Quality/type gate even on curated endpoints (§6.1: "not raw trending
+        // without type/vote gating").
+        if ((item.vote_count ?? 0) < 50) continue
+        if (item.adult === true) continue
+        const isTv = !("title" in item)
+        const v = buildItemVector({
+          tmdbId: item.id,
+          mediaType: isTv ? "tv" : "movie",
+          genreIds: item.genre_ids ?? [],
+          releaseYear: (() => {
+            const dateStr = "release_date" in item ? item.release_date : item.first_air_date
+            return dateStr ? new Date(dateStr).getFullYear() : null
+          })(),
+          runtimeMinutes: null,
+        })
+        for (let d = 0; d < FEATURE_DIM; d++) acc[d] += v[d]
+        count++
+      }
     }
   } catch (err) {
     console.error("[Discovery] Cold-start vector build failed:", err)

@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useState } from "react"
 import useSWR from "swr"
 import { MovieRow } from "@/components/MovieRow"
 import type { MovieCardItem } from "@/components/MovieCard"
@@ -23,17 +23,13 @@ export function PersonalizedFeed({
   mediaType?: "movie" | "tv"
   includeContinueWatching?: boolean
 } = {}) {
-  const [hour, setHour] = useState<number | null>(null)
-
-  useEffect(() => {
-    void (async () => {
-      setHour(new Date().getHours())
-    })()
-  }, [])
+  // §5.2 (R0-7): initialize synchronously — the old null→effect→refetch flow
+  // double-fetched the feed with different cache keys on every mount.
+  const [hour] = useState(() => new Date().getHours())
 
   const queryParams = new URLSearchParams()
   if (mediaType) queryParams.set("mediaType", mediaType)
-  if (hour !== null) queryParams.set("hour", String(hour))
+  queryParams.set("hour", String(hour))
 
   const url = `/api/discovery/home?${queryParams.toString()}`
   const { data, error, isLoading } = useSWR<{ rows: FeedRow[] }>(url, fetcher, {
