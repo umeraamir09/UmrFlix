@@ -1,5 +1,5 @@
 import { getUserDiscoveryProfile } from "./profile"
-import { getRowFatigueMap, getServeLog, getRowStats, recordServeLog } from "./store"
+import { getRowFatigueMap, getServeLog, getRowStatsCached, recordServeLog } from "./store"
 import {
   buildTopPicksRow,
   buildMicroGenreRows,
@@ -96,7 +96,7 @@ export async function getPersonalizedFeed(
     getUserDiscoveryProfile(userId, profileId),
     getRowFatigueMap(userId, profileId),
     getServeLog(userId, profileId),
-    getRowStats(),
+    getRowStatsCached(),
   ])
 
   // ── Candidate row pool (Module 2, R1-2 scale-out) ──
@@ -136,12 +136,14 @@ export async function getPersonalizedFeed(
   // ── Dense candidate vectors (R2-1): enrich the personalization-bearing
   // rows from the Convex item-feature cache; misses fill in the background
   // for the next build.
+  // Performance budget: enrich only the top-picks pool (12 items). The old
+  // 5-row × 24-item budget fired up to 120 Convex lookups plus background
+  // detail fetches per feed build; the precompute route owns bulk warming.
   await Promise.all(
     candidates
-      .filter((row) => row.key === "top-picks" || row.key.startsWith("micro-genre:") || row.key.startsWith("keyword:"))
-      .slice(0, 5)
+      .filter((row) => row.key === "top-picks")
       .map(async (row) => {
-        row.items = await enrichCandidateVectors(row.items, { topN: 24 })
+        row.items = await enrichCandidateVectors(row.items, { topN: 12 })
       })
   )
 

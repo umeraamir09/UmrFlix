@@ -23,6 +23,7 @@ export function useBatchHorizontalPosters(items: ItemRef[]) {
     {
       revalidateOnFocus: false,
       dedupingInterval: 300_000, // 5 minutes
+      keepPreviousData: true,
     }
   )
 

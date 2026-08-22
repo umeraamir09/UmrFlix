@@ -3,6 +3,7 @@
 import { useState } from "react"
 import useSWR from "swr"
 import { MovieRow } from "@/components/MovieRow"
+import { LazyRow } from "@/components/LazyRow"
 import type { MovieCardItem } from "@/components/MovieCard"
 import { ContinueWatchingSection } from "@/components/ContinueWatchingSection"
 
@@ -67,28 +68,30 @@ export function PersonalizedFeed({
   const firstRow = rows[0]
   const remainingRows = rows.slice(1)
 
+  const renderRow = (row: FeedRow) => (
+    <MovieRow
+      key={row.key}
+      title={row.title}
+      subtitle={row.subtitle}
+      type={row.type}
+      customItems={row.items}
+      rowKey={row.key}
+    />
+  )
+
   return (
     <>
       {firstRow && (
-        <MovieRow
-          key={firstRow.key}
-          title={firstRow.title}
-          subtitle={firstRow.subtitle}
-          type={firstRow.type}
-          customItems={firstRow.items}
-          rowKey={firstRow.key}
-        />
+        <LazyRow eager minHeight={280}>
+          {renderRow(firstRow)}
+        </LazyRow>
       )}
       {includeContinueWatching && <ContinueWatchingSection />}
+      {/* Feed can now carry up to 24 rows — mount each only near the viewport. */}
       {remainingRows.map((row) => (
-        <MovieRow
-          key={row.key}
-          title={row.title}
-          subtitle={row.subtitle}
-          type={row.type}
-          customItems={row.items}
-          rowKey={row.key}
-        />
+        <LazyRow key={row.key} minHeight={220}>
+          {renderRow(row)}
+        </LazyRow>
       ))}
     </>
   )

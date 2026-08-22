@@ -69,9 +69,15 @@ export type UserDiscoveryProfile = {
 
 const PROFILE_MEMORY_TTL = 15 * 60 * 1000 // 15 minutes
 const EVENT_WINDOW_DAYS = 90
-/** R2-1: raised from 25 — item features are Convex-cache-local, so profile
- * builds rarely hit TMDB for these resolutions once the cache is warm. */
-const MAX_DETAIL_RESOLUTIONS = 100
+/**
+ * R2-1 target is 100, but until the precompute route has warmed the Convex
+ * item-feature cache every miss here is a blocking TMDB detail fetch — and
+ * profile builds sit in front of EVERY row/feed request. 40 items in batches
+ * of 10 (4 sequential rounds) keeps a cold rebuild under ~1s.
+ */
+const MAX_DETAIL_RESOLUTIONS = 40
+/** Items resolved per parallel round during profile builds. */
+const DETAIL_RESOLUTION_BATCH = 10
 const FAST_ADAPT_EVENT_COUNT = 3
 const FAST_ADAPT_MULTIPLIER = 3
 /** §7.1: "Not Interested" hides an item for 90 days. */
@@ -220,9 +226,8 @@ async function resolveSignalItems(
     .slice(0, MAX_DETAIL_RESOLUTIONS)
 
   const resolved = new Map<string, ItemProfile>()
-  const BATCH = 5
-  for (let i = 0; i < prioritized.length; i += BATCH) {
-    const batch = prioritized.slice(i, i + BATCH)
+  for (let i = 0; i < prioritized.length; i += DETAIL_RESOLUTION_BATCH) {
+    const batch = prioritized.slice(i, i + DETAIL_RESOLUTION_BATCH)
     const results = await Promise.all(
       batch.map((e) => resolveItemProfile(e.tmdbId!, e.mediaType!))
     )

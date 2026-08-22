@@ -44,10 +44,9 @@ export function MovieRow({
   const defaultEndpoint = `/api/tmdb/trending/${type}/week`
   const targetEndpoint = endpoint || defaultEndpoint
 
-  const { data, error, isLoading, mutate } = useSWR(
-    customItems ? null : targetEndpoint,
-    fetcher
-  )
+  const { data, error, isLoading, mutate } = useSWR(customItems ? null : targetEndpoint, fetcher, {
+    revalidateOnFocus: false,
+  })
 
   // ── R1-1: progressive row pagination for discovery facet endpoints ──
   const supportsPagination = !customItems && targetEndpoint.startsWith("/api/discovery/row")
@@ -69,7 +68,10 @@ export function MovieRow({
   }
 
   useEffect(() => {
-    if (!supportsPagination || !hasMore || isLoading || loadingMore) return
+    // Only paginate a genuinely full page once the user has actually started
+    // scrolling the track (canScrollLeft ⇒ scrollLeft > 10) — short rows
+    // (<20 items) and untouched rows must never auto-fetch page 2.
+    if (!supportsPagination || !hasMore || isLoading || loadingMore || !canScrollLeft) return
     const el = sentinelRef.current
     if (!el) return
 
@@ -95,7 +97,7 @@ export function MovieRow({
 
     observer.observe(el)
     return () => observer.disconnect()
-  }, [supportsPagination, hasMore, isLoading, loadingMore, nextPage, targetEndpoint])
+  }, [supportsPagination, hasMore, isLoading, loadingMore, nextPage, targetEndpoint, canScrollLeft])
 
   const items: MovieCardItem[] = useMemo(() => {
     if (customItems) return customItems
@@ -114,8 +116,14 @@ export function MovieRow({
     [type]
   )
 
-  const itemRefs = useMemo(
-    () => items.map((item) => ({ id: item.id, type: getItemType(item) })),
+  // Performance: the server pre-enriches backdrop_path with English
+  // title-treated backdrops for discovery rows and feed payloads — only
+  // fetch a client poster batch for items that actually lack one.
+  const needsBackdropRefs = useMemo(
+    () =>
+      items
+        .filter((item) => !item.backdrop_path)
+        .map((item) => ({ id: item.id, type: getItemType(item) })),
     [items, getItemType]
   )
 
@@ -131,7 +139,7 @@ export function MovieRow({
   )
 
   const { availabilityMap } = useBatchAvailability(availabilityRefs)
-  const { posterMap } = useBatchHorizontalPosters(itemRefs)
+  const { posterMap } = useBatchHorizontalPosters(needsBackdropRefs)
 
   const availabilityFor = (item: MovieCardItem, itemType: "movie" | "tv"): AvailabilityResult | undefined =>
     (item.availabilityStatus as AvailabilityResult | undefined) ?? availabilityMap[`${itemType}-${item.id}`]
@@ -464,8 +472,9 @@ export function MovieRow({
                 )
               })}
           {/* R1-1: end-of-row sentinel — fetches the next page as the user
-              nears the end of the horizontal track. */}
-          {supportsPagination && hasMore && (
+              nears the end of the horizontal track (only once they've begun
+              scrolling). */}
+          {supportsPagination && hasMore && canScrollLeft && (
             <div ref={sentinelRef} className="w-4 shrink-0" aria-hidden data-testid="row-pagination-sentinel">
               {loadingMore && (
                 <div className="aspect-[240/361] md:aspect-[240/136] w-[130px] sm:w-[165px] md:w-[340px] rounded-[8px] bg-penpot-surface/60 border border-penpot-border/40 animate-pulse" />

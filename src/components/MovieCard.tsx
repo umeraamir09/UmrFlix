@@ -88,13 +88,15 @@ export function MovieCard({
 
   const isLarge = cardVariant === "large"
 
-  // Vertical poster URL (for mobile cards & desktop large cards)
+  // Vertical poster URL (for mobile cards & desktop large cards).
+  // Source widths sized to actual render width — the old blanket w780 made
+  // 500-card pages pull ~2× the necessary bytes from TMDB origin.
   const posterPath = item.poster_path || horizontalPosterPath || item.backdrop_path
-  const posterUrl = getImageUrl(posterPath, "w780")
+  const posterUrl = getImageUrl(posterPath, isLarge ? "w500" : "w342")
 
   // Horizontal backdrop URL (for desktop default 16:9 cards)
   const backdropPath = horizontalPosterPath || item.backdrop_path || item.poster_path
-  const backdropUrl = getImageUrl(backdropPath, "w780")
+  const backdropUrl = getImageUrl(backdropPath, "w500")
 
   const cardRef = useRef<HTMLDivElement>(null)
   const cardRank = ranking ?? item.ranking

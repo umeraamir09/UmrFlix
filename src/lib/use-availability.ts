@@ -41,6 +41,8 @@ export function useBatchAvailability(items: ItemRef[]) {
     {
       refreshInterval: 0,
       revalidateOnFocus: false,
+      // Pagination appends grow the key — don't re-POST for trivial churn.
+      dedupingInterval: 60_000,
     }
   )
 

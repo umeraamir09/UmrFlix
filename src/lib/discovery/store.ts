@@ -345,6 +345,19 @@ export async function getRowStats(): Promise<Map<string, RowStats>> {
   return new Map(localRowStatsMap())
 }
 
+let rowStatsCache: { map: Map<string, RowStats>; timestamp: number } | null = null
+const ROW_STATS_CACHE_TTL = 60_000
+
+/** 60s in-memory wrapper around getRowStats for hot request paths. */
+export async function getRowStatsCached(): Promise<Map<string, RowStats>> {
+  if (rowStatsCache && Date.now() - rowStatsCache.timestamp < ROW_STATS_CACHE_TTL) {
+    return rowStatsCache.map
+  }
+  const map = await getRowStats()
+  rowStatsCache = { map, timestamp: Date.now() }
+  return map
+}
+
 // ── Row fatigue ──
 
 export async function recordRowFatigueImpression(

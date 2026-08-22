@@ -271,7 +271,7 @@ export default async function HomePage() {
 
         {/* 11. Specialty rails (R2-4: network + language; §7.8 coming soon) */}
         <FacetRails keys={["coming-soon"]} />
-        <FacetRails keys={["hbo-series", "netflix-originals", "k-dramas", "anime-series", "studio-ghibli", "bollywood"]} />
+        <FacetRails keys={["hbo-series", "k-dramas", "anime-series", "studio-ghibli"]} />
 
         {/* 12. Recently Added to Your Library */}
         {recentlyAddedItems.length > 0 && (

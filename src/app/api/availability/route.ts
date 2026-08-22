@@ -67,6 +67,21 @@ async function buildSonarrQueueMap(): Promise<QueueMap> {
   }
 }
 
+// A page of rails fires one availability POST per row — the requests list
+// (a DB/store read) is re-read per POST otherwise. 30s staleness is fine
+// for request badges.
+let allRequestsCache: { items: RequestItem[]; timestamp: number } | null = null
+const ALL_REQUESTS_TTL = 30_000
+
+async function getAllRequestsCached(): Promise<RequestItem[]> {
+  if (allRequestsCache && Date.now() - allRequestsCache.timestamp < ALL_REQUESTS_TTL) {
+    return allRequestsCache.items
+  }
+  const items = await getAllRequests().catch(() => [] as RequestItem[])
+  allRequestsCache = { items, timestamp: Date.now() }
+  return items
+}
+
 async function resolveTvdbId(tmdbId: number): Promise<number | null> {
   if (!Number.isInteger(tmdbId) || tmdbId <= 0) return null
   const cached = getTmdbToTvdbMapping(tmdbId)
@@ -201,7 +216,7 @@ export async function POST(request: NextRequest) {
 
   try {
     const [allRequests, radarrQueue, sonarrQueue] = await Promise.all([
-      getAllRequests().catch(() => []),
+      getAllRequestsCached().catch(() => []),
       buildRadarrQueueMap(),
       buildSonarrQueueMap(),
     ])

@@ -225,14 +225,23 @@ export async function buildTopPicksRow(
  * exists) so the home feed is never a movie monoculture; MMR picks between
  * them downstream.
  */
+/**
+ * Micro-genre rows from the profile's dominant genre/decade features.
+ * R1-2/§3.1: each dim now yields BOTH movie and TV variants (when a mapping
+ * exists) so the home feed is never a movie monoculture; MMR picks between
+ * them downstream.
+ */
 export async function buildMicroGenreRows(
   profile: UserDiscoveryProfile,
   mediaTypeFilter?: "movie" | "tv"
 ): Promise<CandidateRow[]> {
   if (!profile.hasProfile) return []
-  const rows: CandidateRow[] = []
   const range = profile.topDecadeBucket !== null ? decadeBucketToYearRange(profile.topDecadeBucket) : null
 
+  // Collect jobs first, then fetch concurrently in bounded chunks — the old
+  // nested sequential loop stacked up to 6 discover roundtrips per feed build.
+  type Job = { genreDim: number; targetType: "movie" | "tv"; ids: number[] }
+  const jobs: Job[] = []
   for (const genreDim of profile.topGenreDims.slice(0, 3)) {
     for (const targetType of ["movie", "tv"] as const) {
       if (mediaTypeFilter && targetType !== mediaTypeFilter) continue
@@ -241,51 +250,64 @@ export async function buildMicroGenreRows(
       // issue an empty with_genres filter (which returns unfiltered popular
       // content wearing a personalization label).
       if (!ids) continue
+      jobs.push({ genreDim, targetType, ids })
+    }
+  }
 
-      const baseParams: Record<string, string> = withQualityFloors(
-        {
-          sort_by: "popularity.desc",
-          ...(targetType === "movie" ? { "with_runtime.gte": "20" } : {}),
-        },
-        "browse",
-        targetType
-      )
-      if (range) {
-        baseParams["primary_release_date.gte"] = `${range.gte}-01-01`
-        baseParams["primary_release_date.lte"] = `${range.lte}-12-31`
-      }
-
-      const results = await safeDiscover(targetType, {
-        ...baseParams,
-        with_genres: joinGenreIds(ids),
-      })
-
-      let items = dedupeItems(results.map((r) => toScoredItem(r, targetType)!))
-
-      // Small-library merge (Module 5.2): merge upward into the parent genre
-      // cluster when the decade-narrowed pool is too small. The fallback
-      // carries the same browse floors (audit R0-2 hole).
-      if (items.length < MIN_ROW_ITEMS && range) {
-        const fallback = await safeDiscover(
-          targetType,
-          withQualityFloors(
-            { sort_by: "popularity.desc", with_genres: joinGenreIds(ids) },
-            "browse",
-            targetType
-          )
+  const rows: CandidateRow[] = []
+  const CHUNK = 2
+  for (let i = 0; i < jobs.length; i += CHUNK) {
+    const chunk = jobs.slice(i, i + CHUNK)
+    const built = await Promise.all(
+      chunk.map(async ({ genreDim, targetType, ids }) => {
+        const baseParams: Record<string, string> = withQualityFloors(
+          {
+            sort_by: "popularity.desc",
+            ...(targetType === "movie" ? { "with_runtime.gte": "20" } : {}),
+          },
+          "browse",
+          targetType
         )
-        items = dedupeItems([...items, ...fallback.map((r) => toScoredItem(r, targetType)!)])
-      }
+        if (range) {
+          baseParams["primary_release_date.gte"] = `${range.gte}-01-01`
+          baseParams["primary_release_date.lte"] = `${range.lte}-12-31`
+        }
 
-      if (items.length < MIN_ROW_ITEMS) continue
+        const results = await safeDiscover(targetType, {
+          ...baseParams,
+          with_genres: joinGenreIds(ids),
+        })
 
-      rows.push({
-        key: `micro-genre:${genreDim}:${targetType}${range ? `:${profile.topDecadeBucket}` : ""}`,
-        title: microGenreTitle(genreDim, items.length >= MIN_ROW_ITEMS && range ? profile.topDecadeBucket : null),
-        subtitle: "A micro-genre synthesized from your recent taste signals",
-        type: targetType,
-        items,
+        let items = dedupeItems(results.map((r) => toScoredItem(r, targetType)!))
+
+        // Small-library merge (Module 5.2): merge upward into the parent genre
+        // cluster when the decade-narrowed pool is too small. The fallback
+        // carries the same browse floors (audit R0-2 hole).
+        if (items.length < MIN_ROW_ITEMS && range) {
+          const fallback = await safeDiscover(
+            targetType,
+            withQualityFloors(
+              { sort_by: "popularity.desc", with_genres: joinGenreIds(ids) },
+              "browse",
+              targetType
+            )
+          )
+          items = dedupeItems([...items, ...fallback.map((r) => toScoredItem(r, targetType)!)])
+        }
+
+        if (items.length < MIN_ROW_ITEMS) return null
+
+        return {
+          key: `micro-genre:${genreDim}:${targetType}${range ? `:${profile.topDecadeBucket}` : ""}`,
+          title: microGenreTitle(genreDim, range ? profile.topDecadeBucket : null),
+          subtitle: "A micro-genre synthesized from your recent taste signals",
+          type: targetType,
+          items,
+        } satisfies CandidateRow
       })
+    )
+    for (const row of built) {
+      if (row) rows.push(row)
     }
   }
 
@@ -304,33 +326,41 @@ export async function buildKeywordRows(
   if (!profile.hasProfile || profile.topKeywords.length === 0 || profile.topGenreDims.length === 0) {
     return []
   }
-  const rows: CandidateRow[] = []
   const usedGenreDims = new Set<number>()
 
-  for (const keyword of profile.topKeywords.slice(0, 5)) {
-    if (rows.length >= 3) break
+  // Plan the candidates up front, then fetch all concurrently and keep the
+  // first three that qualify (the sequential loop stacked up to 5 roundtrips).
+  const planned = profile.topKeywords.slice(0, 5).map((keyword, index) => {
     // Alternate media types so the home feed gets keyword variety on both
     // sides (§3.1); respect an explicit filter.
-    const targetType: MediaKind =
-      mediaTypeFilter ?? (rows.length % 2 === 0 ? "movie" : "tv")
+    const targetType: MediaKind = mediaTypeFilter ?? (index % 2 === 0 ? "movie" : "tv")
     const genreDim =
       profile.topGenreDims.find((d) => !usedGenreDims.has(d)) ?? profile.topGenreDims[0]
     const ids = genreDim !== undefined ? dimGenreIds(genreDim, targetType) : null
     const genreLabel = genreDim !== undefined ? (GENRE_DIM_LABELS[genreDim] ?? "Picks") : "Picks"
     if (genreDim !== undefined) usedGenreDims.add(genreDim)
+    return { keyword, targetType, ids, genreLabel }
+  })
 
-    const results = await safeDiscover(targetType, {
-      sort_by: "vote_average.desc",
-      ...qualityFloorParams("niche", targetType),
-      with_keywords: String(keyword.id),
-      ...(ids ? { with_genres: joinGenreIds(ids) } : {}),
+  const fetched = await Promise.all(
+    planned.map(async ({ keyword, targetType, ids }) => {
+      const results = await safeDiscover(targetType, {
+        sort_by: "vote_average.desc",
+        ...qualityFloorParams("niche", targetType),
+        with_keywords: String(keyword.id),
+        ...(ids ? { with_genres: joinGenreIds(ids) } : {}),
+      })
+      return { keyword, targetType, items: dedupeItems(results.map((r) => toScoredItem(r, targetType)!)) }
     })
-    const items = dedupeItems(results.map((r) => toScoredItem(r, targetType)!))
-    if (items.length < MIN_ROW_ITEMS) continue
+  )
 
+  const rows: CandidateRow[] = []
+  for (const [index, { keyword, targetType, items }] of fetched.entries()) {
+    if (rows.length >= 3) break
+    if (items.length < MIN_ROW_ITEMS) continue
     rows.push({
       key: `keyword:${keyword.id}:${targetType}`,
-      title: `${capitalize(keyword.name)} & ${genreLabel}`,
+      title: `${capitalize(keyword.name)} & ${planned[index].genreLabel}`,
       subtitle: "A theme you keep coming back to",
       type: targetType,
       items,
@@ -506,7 +536,6 @@ export async function buildContextualRows(
   mediaTypeFilter?: "movie" | "tv",
   clientHour?: number
 ): Promise<CandidateRow[]> {
-  const rows: CandidateRow[] = []
   const hour = profile.peakViewingHour ?? clientHour ?? new Date().getHours()
   const isWeekend = [0, 6].includes(new Date().getDay())
 
@@ -515,26 +544,28 @@ export async function buildContextualRows(
   const darkDims = new Set([11, 13, 16, 4])
   const userDark = profile.topGenreDims.find((d) => darkDims.has(d))
   const lateNightMovieGenres = userDark !== undefined ? dimGenreIds(userDark, "movie") ?? [53, 27] : [53, 27]
+
+  // Plan every triggered fetch up front and run them concurrently — the old
+  // sequential blocks stacked up to 6 discover roundtrips per feed build.
+  type Spec = { key: string; title: string; subtitle: string; targetType: "movie" | "tv"; params: Record<string, string> }
+  const specs: Spec[] = []
+
   if (hour >= 22 || hour < 3) {
     for (const targetType of ["movie", "tv"] as const) {
       if (mediaTypeFilter && targetType !== mediaTypeFilter) continue
       const genreIds =
         targetType === "movie" ? lateNightMovieGenres : [80, 9648] // Crime|Mystery (TV thriller proxy)
-      const results = await safeDiscover(targetType, {
-        with_genres: joinGenreIds(genreIds),
-        sort_by: "popularity.desc",
-        ...qualityFloorParams("browse", targetType),
+      specs.push({
+        key: `context:late-night:${targetType}`,
+        title: "Late Night Thrillers",
+        subtitle: "Edge-of-your-seat picks for after dark",
+        targetType,
+        params: {
+          with_genres: joinGenreIds(genreIds),
+          sort_by: "popularity.desc",
+          ...qualityFloorParams("browse", targetType),
+        },
       })
-      const items = dedupeItems(results.map((r) => toScoredItem(r, targetType)!))
-      if (items.length >= MIN_ROW_ITEMS) {
-        rows.push({
-          key: `context:late-night:${targetType}`,
-          title: "Late Night Thrillers",
-          subtitle: "Edge-of-your-seat picks for after dark",
-          type: targetType,
-          items,
-        })
-      }
     }
   }
 
@@ -543,21 +574,17 @@ export async function buildContextualRows(
   if (profile.meanWatchMinutes !== null && profile.meanWatchMinutes < 35) {
     for (const targetType of ["movie", "tv"] as const) {
       if (mediaTypeFilter && targetType !== mediaTypeFilter) continue
-      const results = await safeDiscover(targetType, {
-        sort_by: "popularity.desc",
-        "with_runtime.lte": targetType === "movie" ? "40" : "30",
-        ...qualityFloorParams("browse", targetType),
+      specs.push({
+        key: `context:bite-sized:${targetType}`,
+        title: "Bite-Sized Stories",
+        subtitle: "Short watches that fit your schedule",
+        targetType,
+        params: {
+          sort_by: "popularity.desc",
+          "with_runtime.lte": targetType === "movie" ? "40" : "30",
+          ...qualityFloorParams("browse", targetType),
+        },
       })
-      const items = dedupeItems(results.map((r) => toScoredItem(r, targetType)!))
-      if (items.length >= MIN_ROW_ITEMS) {
-        rows.push({
-          key: `context:bite-sized:${targetType}`,
-          title: "Bite-Sized Stories",
-          subtitle: "Short watches that fit your schedule",
-          type: targetType,
-          items,
-        })
-      }
     }
   }
 
@@ -567,23 +594,34 @@ export async function buildContextualRows(
       if (mediaTypeFilter && targetType !== mediaTypeFilter) continue
       const ids =
         targetType === "movie" ? [10751, 16] : dimGenreIds(7, "tv") ?? [10751]
-      const results = await safeDiscover(targetType, {
-        with_genres: joinGenreIds(ids),
-        sort_by: "popularity.desc",
-        ...qualityFloorParams("browse", targetType),
+      specs.push({
+        key: `context:weekend-family:${targetType}`,
+        title: "Weekend Family Picks",
+        subtitle: "Something for everyone to watch together",
+        targetType,
+        params: {
+          with_genres: joinGenreIds(ids),
+          sort_by: "popularity.desc",
+          ...qualityFloorParams("browse", targetType),
+        },
       })
-      const items = dedupeItems(results.map((r) => toScoredItem(r, targetType)!))
-      if (items.length >= MIN_ROW_ITEMS) {
-        rows.push({
-          key: `context:weekend-family:${targetType}`,
-          title: "Weekend Family Picks",
-          subtitle: "Something for everyone to watch together",
-          type: targetType,
-          items,
-        })
-      }
     }
   }
+
+  const rows: CandidateRow[] = []
+  await Promise.all(
+    specs.map(async (spec) => {
+      try {
+        const results = await safeDiscover(spec.targetType, spec.params)
+        const items = dedupeItems(results.map((r) => toScoredItem(r, spec.targetType)!))
+        if (items.length >= MIN_ROW_ITEMS) {
+          rows.push({ key: spec.key, title: spec.title, subtitle: spec.subtitle, type: spec.targetType, items })
+        }
+      } catch {
+        /* row self-skips on failure */
+      }
+    })
+  )
 
   return rows
 }
@@ -741,21 +779,33 @@ export async function buildColdStartRows(
     )
   }
 
-  const rows: CandidateRow[] = []
   // Alternate movie/TV specs when both lists are present so a cold home feed
   // shows mixed content from the start (§2.4).
-  const ordered: typeof specs = []
   const movieSpecs = specs.filter((s) => s.type === "movie")
   const tvSpecs = specs.filter((s) => s.type === "tv")
-  const interleaved = interleave(movieSpecs, tvSpecs)
-  ordered.push(...interleaved)
+  const ordered: typeof specs = interleave(movieSpecs, tvSpecs)
 
-  for (const spec of ordered) {
-    const results = await spec.fetch()
-    const items = dedupeItems(results.map((r) => toScoredItem(r, spec.type)!))
-    if (items.length >= MIN_ROW_ITEMS) {
-      rows.push({ key: spec.key, title: spec.title, subtitle: spec.subtitle, type: spec.type, items })
-    }
+  // Performance: fetch specs concurrently in bounded chunks (a sequential
+  // loop over 12 specs made cold feed builds take seconds).
+  const rows: CandidateRow[] = []
+  const CHUNK = 4
+  for (let i = 0; i < ordered.length; i += CHUNK) {
+    const chunk = ordered.slice(i, i + CHUNK)
+    const results = await Promise.all(
+      chunk.map(async (spec) => {
+        try {
+          return await spec.fetch()
+        } catch {
+          return [] as CatalogLike[]
+        }
+      })
+    )
+    chunk.forEach((spec, j) => {
+      const items = dedupeItems(results[j].map((r) => toScoredItem(r, spec.type)!))
+      if (items.length >= MIN_ROW_ITEMS) {
+        rows.push({ key: spec.key, title: spec.title, subtitle: spec.subtitle, type: spec.type, items })
+      }
+    })
   }
   return rows
 }

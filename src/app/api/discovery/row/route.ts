@@ -3,11 +3,42 @@ import { getSession } from "@/lib/auth"
 import { getUserDiscoveryProfile } from "@/lib/discovery/profile"
 import { getFacetScoredItems } from "@/lib/discovery/facets"
 import { scoreItem, serveDemotion } from "@/lib/discovery/ranking"
-import { getServeLog, recordServeLog } from "@/lib/discovery/store"
+import { getServeLog, recordServeLog, type ServeEntry } from "@/lib/discovery/store"
 import { enrichMediaItemsWithPosters } from "@/lib/horizontal-posters"
 import { contentSuitability } from "@/lib/catalog"
 
 export const dynamic = "force-dynamic"
+
+/**
+ * Performance guards for the per-row hot path (a 25-rail page fires this
+ * endpoint once per rail):
+ *  - serve-log reads hit a 10s in-memory micro-cache instead of Convex per row
+ *  - serve-log writes are content-hashed so identical serves aren't re-recorded
+ *    (§5.6) and anonymous sessions skip them entirely
+ */
+const SERVE_LOG_CACHE_TTL = 10_000
+const serveLogCache = new Map<string, { map: Map<string, ServeEntry>; timestamp: number }>()
+
+async function getServeLogCached(userId: string, profileId: string): Promise<Map<string, ServeEntry>> {
+  const key = `${userId}:${profileId}`
+  const cached = serveLogCache.get(key)
+  if (cached && Date.now() - cached.timestamp < SERVE_LOG_CACHE_TTL) return cached.map
+  const map = await getServeLog(userId, profileId)
+  if (serveLogCache.size > 500) serveLogCache.clear()
+  serveLogCache.set(key, { map, timestamp: Date.now() })
+  return map
+}
+
+const lastRowServeHashes = new Map<string, string>()
+
+function recordServeLogDeduped(userId: string, profileId: string, scopeKey: string, itemKeys: string[]): void {
+  const hash = itemKeys.join(",")
+  const dedupeKey = `${userId}:${profileId}:${scopeKey}`
+  if (lastRowServeHashes.get(dedupeKey) === hash) return
+  lastRowServeHashes.set(dedupeKey, hash)
+  if (lastRowServeHashes.size > 2000) lastRowServeHashes.clear()
+  void recordServeLog(userId, profileId, itemKeys).catch(() => {})
+}
 
 /**
  * GET /api/discovery/row?facet=<key>&page=<n>
@@ -40,7 +71,7 @@ export async function GET(req: Request) {
 
     const [profile, serveLog] = await Promise.all([
       getUserDiscoveryProfile(userId, profileId),
-      getServeLog(userId, profileId),
+      getServeLogCached(userId, profileId),
     ])
 
     const now = Date.now()
@@ -90,12 +121,18 @@ export async function GET(req: Request) {
     }
 
     if (session?.userId) {
-      const servedKeys = rankedItems.map((i) => i.key)
-      void recordServeLog(userId, profileId, servedKeys)
+      recordServeLogDeduped(userId, profileId, `${facetKey}:p${page}`, rankedItems.map((i) => i.key))
     }
 
     const rowItems = rankedItems.map((i) => i.rowItem)
-    await enrichMediaItemsWithPosters(rowItems)
+    // Performance: resolve warm-cache backdrops synchronously, fetch the rest
+    // in the background — the row paints immediately and the client poster
+    // batch covers first-load gaps.
+    await enrichMediaItemsWithPosters(rowItems, undefined, { cachedOnly: true })
+    void Promise.resolve()
+      .then(() => new Promise((resolve) => setTimeout(resolve, 25)))
+      .then(() => enrichMediaItemsWithPosters(rowItems))
+      .catch(() => {})
 
     return NextResponse.json({ results: rowItems, hasMore })
   } catch (err) {

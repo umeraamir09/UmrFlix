@@ -78,10 +78,14 @@ export async function fetchEnglishHorizontalPoster(
 /**
  * Enriches a list of media items with English logo-treated backdrops on the server.
  * Replaces `backdrop_path` with the English logo backdrop if available; otherwise retains the existing backdrop.
+ *
+ * `cachedOnly` resolves instantly using only warm cache entries (no TMDB
+ * fetches) — used on request paths so rows paint fast; pair it with a
+ * background full enrichment to warm the misses for the next request.
  */
 export async function enrichMediaItemsWithPosters<
   T extends { id: number; media_type?: string; backdrop_path?: string | null; title?: string; name?: string }
->(items: T[], defaultType?: "movie" | "tv"): Promise<T[]> {
+>(items: T[], defaultType?: "movie" | "tv", opts?: { cachedOnly?: boolean }): Promise<T[]> {
   if (!Array.isArray(items) || items.length === 0) return items
 
   await Promise.all(
@@ -94,7 +98,9 @@ export async function enrichMediaItemsWithPosters<
           ? "tv"
           : defaultType || "movie"
 
-      const enPoster = await fetchEnglishHorizontalPoster(mediaType, item.id)
+      const enPoster = opts?.cachedOnly
+        ? getCached(`${mediaType}-${item.id}`)
+        : await fetchEnglishHorizontalPoster(mediaType, item.id)
       if (enPoster) {
         item.backdrop_path = enPoster
       }
