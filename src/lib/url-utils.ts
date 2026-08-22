@@ -105,5 +105,81 @@ export function applyStreamParams(params: URLSearchParams, opts: StreamOptions) 
     params.set("Height", h)
     params.set("reqHeight", h)
   }
-  if (opts.startTimeTicks) params.set("startTimeTicks", String(opts.startTimeTicks))
+  if (opts.startTimeTicks) {
+    const t = String(opts.startTimeTicks)
+    params.set("startTimeTicks", t)
+    params.set("StartTimeTicks", t)
+  }
+}
+
+const TICKS_PER_SECOND = 10_000_000
+
+/**
+ * Query params that are legal on HLS *playlist* requests but REJECTED by
+ * Jellyfin's segment endpoint ("StartTimeTicks is not allowed"). Jellyfin
+ * propagates playlist query params into every generated segment URI, so the
+ * offset must be stripped before forwarding any segment request.
+ */
+const SEGMENT_ONLY_PARAM_KEYS = ["starttimeticks"]
+
+export function stripSegmentOnlySearchParams(params: URLSearchParams): void {
+  for (const key of Array.from(params.keys())) {
+    if (SEGMENT_ONLY_PARAM_KEYS.includes(key.toLowerCase())) params.delete(key)
+  }
+}
+
+/** True when a proxied Jellyfin path is an HLS media/init segment request. */
+export function isHlsSegmentPath(path: string): boolean {
+  // Segment URIs live under /Videos/{id}/hls1/{quality|main}/{N}.{ext}
+  return path.includes("/hls1/")
+}
+
+/**
+ * Append a server-side start offset to an HLS playlist URL.
+ *
+ * Jellyfin's master.m3u8 accepts `startTimeTicks` (in 100ns ticks) and starts
+ * ffmpeg with a matching `-ss` offset. Without it every transcode session
+ * encodes from 0:00, so resuming mid-file or rebuilding the stream (quality /
+ * track switch) stalls until ffmpeg encodes up to the playhead. Official
+ * clients send the offset on the playlist request ONLY — Jellyfin rejects
+ * `startTimeTicks` on individual segment requests, and its generated segment
+ * URIs deliberately omit it.
+ *
+ * Both casing variants are set (matching the rest of this module) so a URL can
+ * never carry two different offsets under different parameter casings.
+ *
+ * Returns the URL unchanged when the position is invalid (≤ 0 / NaN) and clamps
+ * to just before the runtime end when the position overshoots it.
+ */
+export function withStartTimeTicks(
+  url: string,
+  positionSec: number,
+  runtimeSec?: number,
+): string {
+  if (!url || !Number.isFinite(positionSec) || positionSec <= 0) return url
+
+  let pos = positionSec
+  if (
+    typeof runtimeSec === "number" &&
+    Number.isFinite(runtimeSec) &&
+    runtimeSec > 0 &&
+    pos > runtimeSec - 0.5
+  ) {
+    pos = Math.max(0, runtimeSec - 0.5)
+    if (pos <= 0) return url
+  }
+
+  const ticks = Math.round(pos * TICKS_PER_SECOND)
+  // Only transform well-formed absolute or root-relative URLs (same guard as
+  // maskUrl) — anything else is returned untouched rather than mangled.
+  if (!/^https?:\/\//i.test(url) && !url.startsWith("/")) return url
+  try {
+    const parsed = new URL(url, "http://localhost")
+    parsed.searchParams.set("startTimeTicks", String(ticks))
+    parsed.searchParams.set("StartTimeTicks", String(ticks))
+    if (/^https?:\/\//i.test(url)) return parsed.toString()
+    return `${parsed.pathname}${parsed.search}${parsed.hash}`
+  } catch {
+    return url
+  }
 }

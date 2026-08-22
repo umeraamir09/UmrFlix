@@ -31,6 +31,7 @@ export function PlayerDebugHud({
   qualityId,
   autoResolvedId,
   estimatedBandwidth,
+  netEstimateSources,
   probeReason,
   audioIndex,
   subtitleIndex,
@@ -43,6 +44,8 @@ export function PlayerDebugHud({
   qualityId: string
   autoResolvedId?: string | null
   estimatedBandwidth?: number
+  /** Phase 4 — where the startup bandwidth estimate came from ("probe+persisted"). */
+  netEstimateSources?: string | null
   probeReason: string
   audioIndex: number | null
   subtitleIndex: number | null
@@ -141,7 +144,7 @@ export function PlayerDebugHud({
       `=== UmrFlix CinemaPlayer Diagnostics ===`,
       `timestamp: ${new Date().toISOString()}`,
       `engine=${engine} quality=${qualityId}${autoResolvedId ? ` (ABR → ${autoResolvedId})` : ""}`,
-      `bandwidth: ${estimatedBandwidth && estimatedBandwidth > 0 ? `${(estimatedBandwidth / 1_000_000).toFixed(2)} Mbps` : "unknown"}`,
+      `bandwidth: ${estimatedBandwidth && estimatedBandwidth > 0 ? `${(estimatedBandwidth / 1_000_000).toFixed(2)} Mbps` : "unknown"}${netEstimateSources ? ` (scan: ${netEstimateSources})` : ""}`,
       `probe: ${probeReason}`,
       `streamUrl: ${maskUrl(streamUrl)}`,
       payload
@@ -204,7 +207,7 @@ export function PlayerDebugHud({
           <p>
             <span className="text-white/50">bandwidth    </span>{" "}
             {estimatedBandwidth && estimatedBandwidth > 0
-              ? `${(estimatedBandwidth / 1_000_000).toFixed(1)} Mbps (est)`
+              ? `${(estimatedBandwidth / 1_000_000).toFixed(1)} Mbps (est)${netEstimateSources ? ` · scan: ${netEstimateSources}` : ""}`
               : "measuring…"}
           </p>
           <p>

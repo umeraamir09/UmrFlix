@@ -2,6 +2,7 @@ import { NextResponse } from "next/server"
 import { env } from "@/lib/env"
 import { authenticate } from "@/lib/jellyfin"
 import { isValidPathSlug } from "@/lib/validation"
+import { isHlsSegmentPath, stripSegmentOnlySearchParams } from "@/lib/url-utils"
 
 export const dynamic = "force-dynamic"
 
@@ -44,6 +45,14 @@ export async function GET(
       upstreamUrl.searchParams.set(k, v)
     }
     upstreamUrl.searchParams.delete("api_key")
+
+    // Jellyfin propagates playlist query params into every segment URI, but
+    // its segment endpoint REJECTS startTimeTicks ("StartTimeTicks is not
+    // allowed" → HTTP 400). The offset belongs to the playlist negotiation
+    // only — strip it before forwarding segment requests.
+    if (isHlsSegmentPath(path)) {
+      stripSegmentOnlySearchParams(upstreamUrl.searchParams)
+    }
 
     const { token } = await authenticate()
 

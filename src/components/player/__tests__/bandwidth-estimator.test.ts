@@ -1,10 +1,10 @@
 import { describe, it } from "node:test"
 import assert from "node:assert/strict"
-import { BandwidthEstimator, type QualitySuggestion } from "../bandwidth-estimator"
+import { BandwidthEstimator, type QualitySuggestionInput } from "../bandwidth-estimator"
 
 /**
- * Deterministic-clock estimator: cooldown/hysteresis windows (20s/30s) are
- * driven by `now()` so tests don't have to sleep.
+ * Deterministic-clock estimator: cooldown/hysteresis windows are driven by
+ * `now()` so tests don't have to sleep.
  */
 class FakeClockEstimator extends BandwidthEstimator {
   private fakeNow = Date.now()
@@ -18,71 +18,163 @@ class FakeClockEstimator extends BandwidthEstimator {
   }
 }
 
-// QUALITY_PRESETS (bitrate-ascending after filtering): sd=1.5M, hd=4M, fhd=10M, uhd=20M
-const UPGRADE_FROM = "hd" // 4 Mbps
-const UPGRADE_TO = "fhd" // 10 Mbps — needs bw >= 10M * 1.5 = 15M
-const UPGRADE_BW = 16_000_000 // safe = 13.6M → fits fhd only
-
 function seedSamples(est: BandwidthEstimator, bps: number, count = 8) {
   for (let i = 0; i < count; i++) est.addSample(bps)
 }
 
-describe("BandwidthEstimator ABR (issue 3.7 — oscillation)", () => {
-  it("requires 3 consecutive checks before upgrading (was 2)", () => {
-    const est = new FakeClockEstimator()
-    seedSamples(est, UPGRADE_BW)
+function baseInput(overrides: Partial<QualitySuggestionInput> = {}): QualitySuggestionInput {
+  return {
+    currentTargetBps: 5_000_000,
+    isInitial: false,
+    bufferAheadSeconds: 20,
+    ...overrides,
+  }
+}
 
-    const first = est.suggest(UPGRADE_FROM, 30)
+describe("BandwidthEstimator Phase 3 — continuous targeting", () => {
+  it("holds while still gathering samples (<6)", () => {
+    const est = new FakeClockEstimator()
+    seedSamples(est, 10_000_000, 3)
+    const s = est.suggest(baseInput())
+    assert.strictEqual(s.action, "hold")
+    assert.match(s.reason, /gathering data/)
+  })
+
+  it("gives the initial scan cap a grace period on a healthy buffer", () => {
+    const est = new FakeClockEstimator()
+    seedSamples(est, 2_000_000) // bw says downgrade…
+    const s = est.suggest(baseInput({ isInitial: true, bufferAheadSeconds: 12 }))
+    assert.strictEqual(s.action, "hold")
+    assert.match(s.reason, /initial scan cap/)
+  })
+
+  it("resolves down when the initial cap clearly isn't working out", () => {
+    const est = new FakeClockEstimator()
+    seedSamples(est, 2_000_000)
+    const s = est.suggest(
+      baseInput({ isInitial: true, bufferAheadSeconds: 3, sourceBitrate: 15_000_000 }),
+    )
+    assert.strictEqual(s.action, "resolve")
+    // fitHold = floor(2M × 0.8 / 50k) = 1.6M
+    assert.strictEqual(s.targetBitrateBps, 1_600_000)
+  })
+
+  it("emergency (stall + critical buffer) jumps straight to a conservative fit", () => {
+    const est = new FakeClockEstimator()
+    seedSamples(est, 3_000_000)
+    const s = est.suggest(
+      baseInput({ currentTargetBps: 10_000_000, bufferAheadSeconds: 2, urgent: true }),
+    )
+    assert.strictEqual(s.action, "downgrade")
+    // floor(3M × 0.55 / 50k) × 50k = 1.65M
+    assert.strictEqual(s.targetBitrateBps, 1_650_000)
+    assert.match(s.reason, /critically low/)
+  })
+
+  it("emergency has an anti-spam cooldown", () => {
+    const est = new FakeClockEstimator()
+    seedSamples(est, 3_000_000)
+    const input = baseInput({ currentTargetBps: 10_000_000, bufferAheadSeconds: 2, urgent: true })
+    assert.strictEqual(est.suggest(input).action, "downgrade")
+    est.advance(1_000)
+    assert.strictEqual(est.suggest(input).action, "hold")
+    est.advance(4_000)
+    assert.strictEqual(est.suggest(input).action, "downgrade")
+  })
+
+  it("upgrades after 2 consecutive stable checks with deep buffer", () => {
+    const est = new FakeClockEstimator()
+    seedSamples(est, 10_000_000)
+    const first = est.suggest(baseInput({ currentTargetBps: 5_000_000 }))
     assert.strictEqual(first.action, "hold")
-    assert.match(first.reason, /pending stability \(1\/3\)/)
-
-    const second = est.suggest(UPGRADE_FROM, 30)
-    assert.strictEqual(second.action, "hold")
-    assert.match(second.reason, /pending stability \(2\/3\)/)
-
-    const third = est.suggest(UPGRADE_FROM, 30)
-    assert.strictEqual(third.action, "upgrade")
-    assert.strictEqual(third.targetPresetId, UPGRADE_TO)
+    assert.match(first.reason, /pending stability \(1\/2\)/)
+    const second = est.suggest(baseInput({ currentTargetBps: 5_000_000 }))
+    assert.strictEqual(second.action, "upgrade")
+    // floor(10M × 0.65 / 50k) × 50k = 6.5M
+    assert.strictEqual(second.targetBitrateBps, 6_500_000)
   })
 
-  it("never upgrades below the 1.5x margin (burst spike at 1.4x)", () => {
-    const est = new FakeClockEstimator()
-    // 14 Mbps < fhd(10M) * 1.5 → upgrade condition must never fire
-    seedSamples(est, 14_000_000)
+  it("encode-ratio lets upgrades happen sooner when Jellyfin encodes below cap", () => {
+    // Same bandwidth, no actual-level knowledge → no upgrade (candidate 8.45M
+    // is under the +12% switch threshold above 10M… and actually below it).
+    const plain = new FakeClockEstimator()
+    seedSamples(plain, 13_000_000)
+    const plainS = plain.suggest(baseInput({ currentTargetBps: 10_000_000 }))
+    assert.strictEqual(plainS.action, "hold")
 
-    for (let i = 0; i < 3; i++) {
-      const s = est.suggest(UPGRADE_FROM, 30)
-      assert.notStrictEqual(s.action, "upgrade")
-    }
-    const final = est.suggest(UPGRADE_FROM, 30)
-    assert.strictEqual(final.action, "hold")
-    assert.strictEqual(final.reason, "stable")
-  })
-
-  it("imposes a 30s post-upgrade hysteresis before allowing a downgrade", () => {
-    const est = new FakeClockEstimator()
-    seedSamples(est, UPGRADE_BW)
-
-    let s: QualitySuggestion = est.suggest(UPGRADE_FROM, 30)
-    s = est.suggest(UPGRADE_FROM, 30)
-    s = est.suggest(UPGRADE_FROM, 30)
+    // Knowing the stream really encodes at 3M → ratio clamps to 0.5 →
+    // upFactor 0.95 → candidate floor(13×0.95)=12.35M > 10M×1.12 ✓
+    const informed = new FakeClockEstimator()
+    seedSamples(informed, 13_000_000)
+    informed.suggest(baseInput({ currentTargetBps: 10_000_000, actualStreamBitrate: 3_000_000 }))
+    const s = informed.suggest(
+      baseInput({ currentTargetBps: 10_000_000, actualStreamBitrate: 3_000_000 }),
+    )
     assert.strictEqual(s.action, "upgrade")
-    assert.strictEqual(s.targetPresetId, UPGRADE_TO)
+    assert.strictEqual(s.targetBitrateBps, 12_350_000)
+  })
 
-    // Bandwidth collapses right after the upgrade; buffer still healthy so the
-    // emergency path doesn't mask the hysteresis window.
+  it("switch thresholds hold steady inside the hysteresis band", () => {
+    const est = new FakeClockEstimator()
+    // 5.3M on a 5M target: holdFit 4.24M ≥ 5M×0.82=4.1M (no downgrade);
+    // upgrade candidate 3.45M < 5.6M (no upgrade).
+    seedSamples(est, 5_300_000)
+    for (let i = 0; i < 4; i++) {
+      const s = est.suggest(baseInput({ currentTargetBps: 5_000_000 }))
+      assert.strictEqual(s.action, "hold")
+      assert.strictEqual(s.reason, "stable")
+      est.advance(2_000)
+    }
+  })
+
+  it("normal downgrade respects post-upgrade hysteresis then fires", () => {
+    const est = new FakeClockEstimator()
+    seedSamples(est, 10_000_000)
+    est.suggest(baseInput({ currentTargetBps: 5_000_000 }))
+    est.advance(16_000) // clear upgrade cooldown
+    const up = est.suggest(baseInput({ currentTargetBps: 5_000_000 }))
+    assert.strictEqual(up.action, "upgrade")
+
+    // Capacity collapses; buffer stays healthy so the emergency path doesn't
+    // mask the hysteresis window.
     est.advance(1_000)
     seedSamples(est, 2_000_000, 40)
-
-    // Inside the 30s window → downgrade must be held
-    const held = est.suggest(UPGRADE_TO, 10)
+    const held = est.suggest(baseInput({ currentTargetBps: 6_500_000, bufferAheadSeconds: 15 }))
     assert.strictEqual(held.action, "hold")
     assert.match(held.reason, /hysteresis/)
 
-    // After the window → downgrade fires
-    est.advance(31_000)
-    const downgrade = est.suggest(UPGRADE_TO, 10)
-    assert.strictEqual(downgrade.action, "downgrade")
-    assert.strictEqual(downgrade.targetPresetId, "sd")
+    est.advance(21_000)
+    const down = est.suggest(baseInput({ currentTargetBps: 6_500_000, bufferAheadSeconds: 15 }))
+    assert.strictEqual(down.action, "downgrade")
+    // floor(2M × 0.8 / 50k) × 50k = 1.6M
+    assert.strictEqual(down.targetBitrateBps, 1_600_000)
+  })
+
+  it("never emits targets above the source ceiling", () => {
+    const est = new FakeClockEstimator()
+    // Source 1M → ceiling 1.2M; even with 3M measured, the downgrade target
+    // must clamp there.
+    seedSamples(est, 3_000_000)
+    const s = est.suggest(
+      baseInput({ currentTargetBps: 5_000_000, bufferAheadSeconds: 15, sourceBitrate: 1_000_000 }),
+    )
+    assert.strictEqual(s.action, "downgrade")
+    assert.strictEqual(s.targetBitrateBps, 1_200_000)
+  })
+
+  it("data-saver forces a modest target", () => {
+    class DataSaverEstimator extends FakeClockEstimator {
+      protected getConnectionInfo() {
+        return { saveData: true }
+      }
+    }
+    const est = new DataSaverEstimator()
+    seedSamples(est, 50_000_000)
+    const s = est.suggest(baseInput({ currentTargetBps: 10_000_000 }))
+    assert.strictEqual(s.action, "downgrade")
+    assert.strictEqual(s.targetBitrateBps, 1_500_000)
+    // Already at/below the saver target → hold.
+    const held = est.suggest(baseInput({ currentTargetBps: 1_400_000 }))
+    assert.strictEqual(held.action, "hold")
   })
 })

@@ -34,12 +34,42 @@ describe("buildHlsConfig (issue 4.5 — maxMaxBufferLength cap)", () => {
     )
   })
 
-  it("preserves the Jellyfin transcode-warmup timeout tuning", () => {
+  it("preserves the Jellyfin transcode-warmup budgets via LoadPolicies", () => {
     const config = buildHlsConfig({ startPosition: -1, isTouchDevice: false })
-    assert.strictEqual(config.fragLoadingTimeOut, 60_000)
-    assert.strictEqual(config.manifestLoadingTimeOut, 20_000)
-    assert.strictEqual(config.levelLoadingTimeOut, 20_000)
-    assert.strictEqual(config.fragLoadingMaxRetry, 6)
-    assert.strictEqual(config.fragLoadingRetryDelay, 2_000)
+    // master.m3u8 spawns ffmpeg before responding.
+    assert.strictEqual(config.manifestLoadPolicy.default.maxTimeToFirstByteMs, 20_000)
+    assert.strictEqual(config.manifestLoadPolicy.default.timeoutRetry.maxNumRetry, 2)
+    // Variant playlists can wait for the first segments.
+    assert.strictEqual(config.playlistLoadPolicy.default.maxTimeToFirstByteMs, 20_000)
+    assert.strictEqual(config.playlistLoadPolicy.default.errorRetry.maxNumRetry, 4)
+    // Segments are produced on demand — aborting early restarts ffmpeg.
+    assert.strictEqual(config.fragLoadPolicy.default.maxTimeToFirstByteMs, 60_000)
+    assert.strictEqual(config.fragLoadPolicy.default.errorRetry.maxNumRetry, 6)
+    assert.strictEqual(config.fragLoadPolicy.default.errorRetry.retryDelayMs, 2_000)
+  })
+})
+
+describe("buildHlsConfig (Phase 2 — network scan seed)", () => {
+  it("seeds abrEwmaDefaultEstimate from the measured bandwidth", () => {
+    const config = buildHlsConfig({
+      startPosition: -1,
+      isTouchDevice: false,
+      initialBandwidthBps: 8_450_000,
+    })
+    assert.strictEqual(config.abrEwmaDefaultEstimate, 8_450_000)
+  })
+
+  it("falls back to the legacy default when no seed is provided or the seed is invalid", () => {
+    assert.strictEqual(
+      buildHlsConfig({ startPosition: -1, isTouchDevice: false }).abrEwmaDefaultEstimate,
+      25_000_000,
+    )
+    for (const bad of [Number.NaN, 0, -1_000]) {
+      assert.strictEqual(
+        buildHlsConfig({ startPosition: -1, isTouchDevice: false, initialBandwidthBps: bad })
+          .abrEwmaDefaultEstimate,
+        25_000_000,
+      )
+    }
   })
 })

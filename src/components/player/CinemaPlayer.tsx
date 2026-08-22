@@ -35,7 +35,15 @@ import { canBrowserPlayNatively } from "./codec-probe"
 import { PlayerDebugHud } from "./PlayerDebugHud"
 import { BandwidthEstimator, attachHlsBandwidthMonitor } from "./bandwidth-estimator"
 import { buildHlsConfig } from "./hls-config"
-import { applyStreamParams, maskUrl } from "@/lib/url-utils"
+import { applyStreamParams, maskUrl, withStartTimeTicks } from "@/lib/url-utils"
+import {
+  DIRECT_PLAY_HEADROOM,
+  ensureNetworkScan,
+  initialAutoCapBps,
+  savePersistedBandwidth,
+  shouldPreferTranscodeForBandwidth,
+  type CombinedEstimate,
+} from "@/lib/network-probe"
 import { createThrottledClock } from "@/lib/tick-throttle"
 import { usePartySync } from "./use-party-sync"
 import { PartyBar } from "@/components/party/PartyBar"
@@ -56,6 +64,17 @@ import { useReporterCleanup } from "./hooks/useReporterCleanup"
 
 const TICKS_PER_SECOND = 10_000_000
 const NEXT_EPISODE_COUNTDOWN = 10
+
+// Phase 4 — direct-play stall fallback thresholds.
+const DIRECT_STALL_WINDOW_MS = 45_000
+const DIRECT_STALL_THRESHOLD = 3
+
+/** Compact capacity formatter for engine/log strings ("8.5Mbps", or "?" when unknown). */
+function fmtMbps(v: number | null | undefined): string {
+  return typeof v === "number" && Number.isFinite(v) && v > 0
+    ? `${(v / 1_000_000).toFixed(1)}Mbps`
+    : "?"
+}
 
 export type CinemaPlayerProps = {
   itemId: string
@@ -109,6 +128,15 @@ export function CinemaPlayer({
 
   const hlsRef = useRef<Hls | null>(null)
   const seekTargetRef = useRef<number>(0) // position to restore after stream rebuild
+  // Phase 4 — dead-session escalations used this item's lifetime (capped).
+  const netEscalationsRef = useRef(0)
+  // Phase 4 — timestamps of recent direct-play stalls (waiting events).
+  const directStallTimesRef = useRef<number[]>([])
+  // Phase 4 — once true, the direct engine is abandoned for a capped HLS
+  // transcode; sticky until the next item/payload.
+  const [adaptiveFallbackActive, setAdaptiveFallbackActive] = useState(false)
+  // Ref mirror so the stall-monitor effect can flip it without stale closures.
+  const adaptiveFallbackActiveRef = useRef(false)
   const watchedReportedRef = useRef(false)
   const debugAutoOpenedRef = useRef(false)
   // Scrub seek coalescing: the seek bar fires onSeek on every pointermove
@@ -188,6 +216,17 @@ export function CinemaPlayer({
   const [payload, setPayload] = useState<PlaybackPayload | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [retryKey, setRetryKey] = useState(0)
+  // Phase 2 — network capability scan result; settles before the first stream
+  // build so engine selection and the initial quality cap are correct.
+  const [netEstimate, setNetEstimate] = useState<CombinedEstimate | null>(null)
+  // Read by the stream-setup effect as an advisory ABR seed WITHOUT being a
+  // dependency — netEstimate always settles in the same batch as the payload,
+  // and a hypothetical late rescan must never tear down a playing stream.
+  // (Same ref-sync pattern as partySyncRef below.)
+  const netEstimateRef = useRef<CombinedEstimate | null>(null)
+  useEffect(() => {
+    netEstimateRef.current = netEstimate
+  }, [netEstimate])
 
   // ── Playback state ──
   const [playing, setPlaying] = useState(false)
@@ -199,7 +238,10 @@ export function CinemaPlayer({
 
   // ── Engine / track state ──
   const [qualityId, setQualityId] = useState(() => playerSettings.qualityPreference || "auto")
-  const [autoResolvedId, setAutoResolvedId] = useState<string | null>(null)
+  // Phase 3 — auto mode targets a CONTINUOUS bitrate (Jellyfin accepts any
+  // maxStreamingBitrate). null = still running on the startup scan cap; once
+  // the ABR applies its first suggestion this holds the quantized target.
+  const [autoBitrateBps, setAutoBitrateBps] = useState<number | null>(null)
   const [estimatedBw, setEstimatedBw] = useState<number>(0)
   const estimatorRef = useRef(new BandwidthEstimator())
   const [audioIndex, setAudioIndex] = useState<number | null>(null)
@@ -368,8 +410,17 @@ export function CinemaPlayer({
     hadStreamRef.current = false
     playIntentRef.current = autoPlay
     estimatorRef.current.reset()
-    setAutoResolvedId(null)
+    setAutoBitrateBps(null)
     setEstimatedBw(0)
+    // Phase 4 — fresh item/payload resets direct-play fallback state.
+    directStallTimesRef.current = []
+    adaptiveFallbackActiveRef.current = false
+    setAdaptiveFallbackActive(false)
+
+    // Phase 2 — kick off the network capability scan immediately so it runs
+    // IN PARALLEL with the payload fetch; it's awaited just before the first
+    // stream build (once per page load, deadline-bounded).
+    const networkScanPromise = ensureNetworkScan()
 
     fetch(`/api/jellyfin/playback/${itemId}`)
       .then(async (r) => {
@@ -411,11 +462,22 @@ export function CinemaPlayer({
         }
         return parsePlaybackPayload(raw)
       })
-      .then((data) => {
+      .then(async (data) => {
         if (cancelled) return
+        // Phase 2 — settle the network scan BEFORE the first stream build so
+        // engine selection (bandwidth-guarded direct play) and the initial
+        // auto quality cap are correct from the very first request.
+        let scan: CombinedEstimate | null = null
+        try {
+          scan = await networkScanPromise
+        } catch {
+          /* scan failures must never block playback */
+        }
+        if (cancelled) return
+        setNetEstimate(scan)
         playerLog.info(
           "payload",
-          `item=${data.itemId} container=${data.container} vcodec=${data.videoCodec} canDirectPlay=${data.canDirectPlay} supportsTranscoding=${data.supportsTranscoding} resume=${Math.round(data.resumeTicks / TICKS_PER_SECOND)}s | audio: ${data.audio.map((a) => `[${a.index}] ${a.codec} "${a.title}"`).join(", ") || "none"} | subs: ${data.subtitles.map((s) => `[${s.index}] ${s.codec}${s.isImageBased ? " (image)" : ""}`).join(", ") || "none"} | markers: ${data.markers.map((m) => `${m.type}@${Math.round(m.start)}s`).join(", ") || "none"}`,
+          `item=${data.itemId} container=${data.container} vcodec=${data.videoCodec} canDirectPlay=${data.canDirectPlay} supportsTranscoding=${data.supportsTranscoding} resume=${Math.round(data.resumeTicks / TICKS_PER_SECOND)}s | net=${scan ? `${fmtMbps(scan.bps)} [${scan.sources.join("+")}]` : "unknown"} | audio: ${data.audio.map((a) => `[${a.index}] ${a.codec} "${a.title}"`).join(", ") || "none"} | subs: ${data.subtitles.map((s) => `[${s.index}] ${s.codec}${s.isImageBased ? " (image)" : ""}`).join(", ") || "none"} | markers: ${data.markers.map((m) => `${m.type}@${Math.round(m.start)}s`).join(", ") || "none"}`,
         )
         setPayload(data)
         // Restore remembered track choices for this title (series-scoped for
@@ -431,6 +493,12 @@ export function CinemaPlayer({
         if (data.resumeTicks > 0) {
           seekTargetRef.current = data.resumeTicks / TICKS_PER_SECOND
         }
+        // Phase 2 — seed the ABR estimator with the measured capacity so its
+        // pre-sample decisions trust real throughput instead of a default.
+        estimatorRef.current.reset(scan?.bps ?? undefined)
+        // Phase 4 — fresh payload: assume the backend is healthy again and
+        // give direct play another chance on the next item.
+        netEscalationsRef.current = 0
         setEndpointReady(true) // triggers the stream setup effect
       })
       .catch((e: Error) => {
@@ -485,26 +553,51 @@ export function CinemaPlayer({
     (audioIndex != null && payload != null && audioIndex !== payload.defaultAudioIndex) ||
     burnSelectedSubtitle
 
+  // Phase 2 — bandwidth guard: direct play has no adaptive fallback; when the
+  // source bitrate exceeds what the network scan says this connection can
+  // sustain, prefer a capped HLS transcode over a guaranteed-stall direct play.
+  const estimateBps = netEstimate?.bps ?? null
+  const bandwidthBlocksDirectPlay = shouldPreferTranscodeForBandwidth(estimateBps, payload?.bitrate)
+
   // HTML5 <video src="..."> direct play requires native container (MP4/WebM) + supported codecs + no overrides.
   // All Direct Stream (remuxing MKV -> HLS) and Transcode sessions use the HLS engine via HLS.js.
   const engine: "direct" | "hls" =
-    payload?.canDirectPlay && codecProbe.supported && !wantsTranscode ? "direct" : "hls"
+    payload?.canDirectPlay &&
+    codecProbe.supported &&
+    !wantsTranscode &&
+    !bandwidthBlocksDirectPlay &&
+    // Phase 4 — abandoned after repeated stalls (see direct-play fallback).
+    !adaptiveFallbackActive
+      ? "direct"
+      : "hls"
 
   const engineReason = !payload
     ? "awaiting payload"
     : !payload.canDirectPlay
       ? `container .${payload?.container} not HTML5 native — using HLS engine (direct stream remux or transcode)`
-      : !codecProbe.supported
+      : adaptiveFallbackActive
+        ? "direct play abandoned after repeated stalls — using capped HLS transcode"
+        : !codecProbe.supported
         ? `direct play rejected by browser probe (${codecProbe.reason})`
-        : wantsTranscode
-          ? `transcode requested (quality=${qualityId}${audioIndex != null && audioIndex !== payload.defaultAudioIndex ? ", audio override" : ""}${burnSelectedSubtitle ? selectedSubtitle?.isImageBased ? ", image subs" : ", burned subs" : ""})`
-          : "direct play"
+        : bandwidthBlocksDirectPlay
+          ? `direct play rejected by bandwidth guard — source ${fmtMbps(payload.bitrate)} > ${DIRECT_PLAY_HEADROOM}× estimated capacity ${fmtMbps(estimateBps)}${netEstimate ? ` [${netEstimate.sources.join("+")}]` : ""} — using HLS engine`
+          : wantsTranscode
+            ? `transcode requested (quality=${qualityId}${audioIndex != null && audioIndex !== payload.defaultAudioIndex ? ", audio override" : ""}${burnSelectedSubtitle ? selectedSubtitle?.isImageBased ? ", image subs" : ", burned subs" : ""})`
+            : "direct play"
 
   // Log engine decisions once they settle
   useEffect(() => {
     if (!payload) return
     playerLog.info("engine", `decision: ${engine.toUpperCase()} — ${engineReason}`)
   }, [payload, engine, engineReason])
+
+  // ── Auto-quality cap (Phase 3) ──
+  // Startup cap from the network scan; ABR then adjusts it continuously.
+  const initialScanCapBps = useMemo(
+    () => initialAutoCapBps(netEstimate?.bps ?? null, payload?.bitrate ?? 0),
+    [netEstimate, payload],
+  )
+  const effectiveAutoCapBps = autoBitrateBps ?? initialScanCapBps
 
   // Single source of truth for the stream URL — ANY change to quality,
   // audio track, burned-in subtitle track or subtitle mode produces a new
@@ -513,24 +606,17 @@ export function CinemaPlayer({
   const streamUrl = useMemo((): string => {
     if (!payload) return ""
     const params = new URLSearchParams()
-    const effectiveQuality =
-      qualityId === "auto"
-        ? (autoResolvedId
-            ? QUALITY_PRESETS.find((q) => q.id === autoResolvedId)
-            : null)
-        : quality
+    const effectiveQuality = qualityId === "auto" ? null : quality
 
     if (effectiveQuality?.maxStreamingBitrate) {
       applyStreamParams(params, effectiveQuality)
     } else if (engine === "hls") {
-      const sourceBitrate = payload.bitrate ?? 0
       const sourceW = payload.width ?? 1920
       const sourceH = payload.height ?? 1080
+      // Phase 2/3 — auto mode targets a CONTINUOUS bitrate: the startup scan
+      // cap first, then quantized ABR-adjusted values as measurements arrive.
       applyStreamParams(params, {
-        maxStreamingBitrate:
-          sourceBitrate > 0
-            ? Math.min(Math.round(sourceBitrate * 1.2), 120_000_000)
-            : 120_000_000,
+        maxStreamingBitrate: effectiveAutoCapBps,
         maxWidth: Math.min(sourceW, 3840),
         maxHeight: Math.min(sourceH, 2160),
       })
@@ -552,7 +638,8 @@ export function CinemaPlayer({
     if (engine === "hls") {
       // OVERRIDE playSessionId to force Jellyfin to launch a NEW transcode session
       // with the requested resolution whenever quality, audio, or burn sub tracks change!
-      const activeQualityKey = effectiveQuality ? effectiveQuality.id : "auto"
+      const activeQualityKey =
+        effectiveQuality?.id ?? `auto_b${Math.round(effectiveAutoCapBps / 50_000)}`
       const uniquePlaySessionId = `${payload.playSessionId}_q_${activeQualityKey}_a_${audioIndex ?? "def"}_s_${burnSelectedSubtitle ? selectedSubtitle?.index : "off"}`
 
       const [baseUrl, existingQs] = base.split("?")
@@ -580,7 +667,7 @@ export function CinemaPlayer({
 
     const qs = params.toString()
     return qs ? `${base}&${qs}` : base
-  }, [payload, engine, quality, qualityId, autoResolvedId, audioIndex, burnSelectedSubtitle, selectedSubtitle, codecProbe])
+  }, [payload, engine, quality, qualityId, audioIndex, burnSelectedSubtitle, selectedSubtitle, codecProbe, effectiveAutoCapBps])
 
   // ── Reporter (heartbeat → Jellyfin) ──
   const getReporterState = useCallback((): ReporterState | null => {
@@ -643,8 +730,6 @@ export function CinemaPlayer({
       }
     }
     if (!url) return
-    queueMicrotask(() => setLastStreamUrl(url))
-    playerLog.info("stream", `building ${engine} stream: ${maskUrl(url)}`)
 
     // A rebuild while a stream was already attached (quality/track/mode
     // change) must resume where the viewer was, not restart the video.
@@ -667,6 +752,34 @@ export function CinemaPlayer({
         setQualitySwitchToast(qualityChangeLabel.current)
       }
     }
+
+    // ── Position-aware transcode URL (Phase 1) ──
+    // Tell Jellyfin WHERE to start encoding (ffmpeg -ss via startTimeTicks on
+    // the playlist request). By default every transcode session encodes from
+    // 0:00, so resuming a file at 40min — or any quality/track rebuild
+    // mid-playback — stalled until ffmpeg encoded everything up to the
+    // playhead. seekTargetRef now holds the desired start position for BOTH
+    // initial loads (resume / deep-link) and rebuilds: rebuildAtPosition
+    // captures the playhead before its state change, and the seeding above
+    // covers settings-driven rebuilds (e.g. subtitle-mode flips) that bypass
+    // rebuildAtPosition. Direct play is left untouched — static streams
+    // deliver the whole file via HTTP range requests and must not carry time
+    // offsets.
+    const runtimeSec =
+      payload.runtimeTicks > 0 ? payload.runtimeTicks / TICKS_PER_SECOND : undefined
+    const loadUrl =
+      engine === "hls"
+        ? withStartTimeTicks(url, seekTargetRef.current, runtimeSec)
+        : url
+    queueMicrotask(() => setLastStreamUrl(loadUrl))
+    playerLog.info(
+      "stream",
+      `building ${engine} stream: ${maskUrl(loadUrl)}${
+        loadUrl !== url && seekTargetRef.current > 0
+          ? ` (server-side start @ ${seekTargetRef.current.toFixed(1)}s)`
+          : ""
+      }`,
+    )
 
     // ── Restore & play helpers ──
     // Position restore MUST NOT happen at MANIFEST_PARSED: with hls.js the
@@ -737,7 +850,12 @@ export function CinemaPlayer({
       if (HlsCtor.isSupported()) {
         const startPos = seekTargetRef.current > 0 ? seekTargetRef.current : -1
         const hls = new HlsCtor(
-          buildHlsConfig({ startPosition: startPos, isTouchDevice }),
+          buildHlsConfig({
+            startPosition: startPos,
+            isTouchDevice,
+            // Phase 2 — ABR's initial bandwidth guess comes from the scan.
+            initialBandwidthBps: netEstimateRef.current?.bps,
+          }),
         )
         hlsRef.current = hls
         attachHlsBandwidthMonitor(hls, HlsCtor, estimatorRef.current)
@@ -755,25 +873,20 @@ export function CinemaPlayer({
           )
 
           if (levels.length > 0) {
-            const targetQuality =
-              qualityId === "auto" && autoResolvedId
-                ? QUALITY_PRESETS.find((q) => q.id === autoResolvedId) ?? quality
-                : quality
-
-            if (qualityId === "auto" && !autoResolvedId) {
-              // Jellyfin HLS manifests have exactly one variant level — there is
-              // nothing for hls.js's built-in ABR to switch between. Lock to
-              // level 0 (the only level) instead of -1 (ABR no-op loop).
+            if (qualityId === "auto" || levels.length === 1) {
+              // Jellyfin HLS manifests have exactly one variant level — there
+              // is nothing for hls.js's built-in ABR to switch between. Pin to
+              // the single level; OUR estimator drives quality via rebuilds.
               const topIdx = levels.length - 1
               hls.startLevel = topIdx
               hls.currentLevel = 0 // single-level Jellyfin HLS — ABR (-1) is a no-op
               playerLog.info(
                 "hls",
-                `auto quality: starting at top level [${topIdx}] (${levels[topIdx]?.width}x${levels[topIdx]?.height}) with ABR enabled`,
+                `single-level manifest — pinned [${topIdx}] (${levels[topIdx]?.width}x${levels[topIdx]?.height}); auto cap ${(effectiveAutoCapBps / 1_000_000).toFixed(2)}Mbps`,
               )
-            } else if (targetQuality.maxHeight) {
+            } else {
               // Lock hls.js to the closest level matching or within target height
-              const maxH = targetQuality.maxHeight
+              const maxH = quality.maxHeight ?? levels[levels.length - 1].height ?? 0
               let bestIdx = 0
               let bestDiff = Infinity
               for (let i = 0; i < levels.length; i++) {
@@ -839,7 +952,22 @@ export function CinemaPlayer({
           playerLog.error("hls", detail)
           if (data.type === HlsCtor.ErrorTypes.NETWORK_ERROR) {
             networkRecoveryAttempts++
+            // Phase 4 — escalate instead of giving up: after several silent
+            // startLoad() cycles the transcode session is usually dead
+            // server-side (server restart / ffmpeg crash), and more startLoad
+            // calls just hit the same wall. Rebuild the whole stream at the
+            // preserved playhead; cap escalations so a truly broken backend
+            // still surfaces an error instead of looping forever.
             if (networkRecoveryAttempts > 3) {
+              if (netEscalationsRef.current < 2) {
+                netEscalationsRef.current++
+                playerLog.warn(
+                  "hls",
+                  `network recovery failed repeatedly — rebuilding stream (escalation ${netEscalationsRef.current}/2)`,
+                )
+                setRetryKey((k) => k + 1)
+                return
+              }
               fail("Video segments could not be fetched — the transcoding session may have died on the server.")
               return
             }
@@ -858,11 +986,11 @@ export function CinemaPlayer({
             fail("The stream failed to load. Please try again.")
           }
         })
-        hls.loadSource(url)
+        hls.loadSource(loadUrl)
         hls.attachMedia(el)
       } else if (el.canPlayType("application/vnd.apple.mpegurl")) {
         // Safari: native HLS
-        el.src = url
+        el.src = loadUrl
         loadedMetadataHandler = () => tryPlay()
         el.addEventListener("loadedmetadata", loadedMetadataHandler, { once: true })
       } else if (!cancelled) {
@@ -899,7 +1027,7 @@ export function CinemaPlayer({
     endpointReady,
     engine,
     qualityId,
-    autoResolvedId,
+    effectiveAutoCapBps,
     quality,
     isTouchDevice,
   ])
@@ -1158,11 +1286,16 @@ export function CinemaPlayer({
   const { isOffline } = useNetworkStatus({
     onOnline: () => {
       playerLog.info("network", "connection restored — resuming stream load")
-      if (engine === "hls" && hlsRef.current) {
+      // Phase 4 — if the stream already failed while offline, do a full
+      // rebuild at the preserved playhead instead of poking a dead pipeline.
+      if (loadError) {
+        setRetryKey((k) => k + 1)
+      } else if (engine === "hls" && hlsRef.current) {
+        // If the transcode session died server-side while offline, repeated
+        // fragment failures after this startLoad() trip the Phase 4
+        // escalation and rebuild the stream automatically.
         hlsRef.current.startLoad()
-      } else if (engine === "direct" && loadError) {
-        // Re-enter the common payload/stream setup path so direct-play media
-        // that failed while offline is rebuilt instead of remaining errored.
+      } else if (engine === "direct") {
         setRetryKey((k) => k + 1)
       }
     },
@@ -1205,19 +1338,82 @@ export function CinemaPlayer({
     apply()
   }, [])
 
+  // Phase 3 — HUD bandwidth display throttle: the ABR evaluates every 2s and
+  // raw throughput wiggles constantly; only mirror it to state on >10% moves
+  // so CinemaPlayer doesn't re-render its whole tree for cosmetic changes.
+  const lastSetBwRef = useRef(0)
+  const setEstimatedBwThrottled = useCallback(
+    (bw: number) => {
+      const prev = lastSetBwRef.current
+      if (prev <= 0 || Math.abs(bw - prev) > prev * 0.1) {
+        lastSetBwRef.current = bw
+        setEstimatedBw(bw)
+      }
+    },
+    [setEstimatedBw],
+  )
+
+  // Phase 4 — direct-play stall fallback: direct play has no ABR, so when the
+  // network can't sustain the source bitrate the video just stalls. After 3
+  // stalls within a 45s window, abandon direct play for a bandwidth-capped
+  // HLS transcode at the current playhead (toast explains the switch).
+  const engineIsDirect = engine === "direct"
+  useEffect(() => {
+    if (!engineIsDirect || !payload || !endpointReady) return
+    if (!buffering || adaptiveFallbackActiveRef.current) return
+
+    const now = Date.now()
+    const times = directStallTimesRef.current
+    times.push(now)
+    while (times.length > 0 && now - times[0] > DIRECT_STALL_WINDOW_MS) times.shift()
+    playerLog.warn(
+      "abr",
+      `direct-play stall (${times.length}/${DIRECT_STALL_THRESHOLD} in ${DIRECT_STALL_WINDOW_MS / 1000}s window)`,
+    )
+    if (times.length < DIRECT_STALL_THRESHOLD) return
+
+    playerLog.warn("abr", "direct play cannot sustain this network — falling back to capped HLS transcode")
+    rebuildAtPosition(() => setAdaptiveFallbackActive(true), "adaptive stream")
+    adaptiveFallbackActiveRef.current = true
+    announce("Switched to adaptive streaming for smoother playback")
+  }, [buffering, engineIsDirect, payload, endpointReady, announce, rebuildAtPosition])
+
   // ── Adaptive Bitrate Hook ──
   useAdaptiveBitrate({
     playing,
     qualityId,
     engine,
     payload,
-    autoResolvedId,
+    appliedAutoBps: autoBitrateBps,
+    effectiveAutoBps: effectiveAutoCapBps,
     videoRef,
+    hlsRef,
     estimatorRef,
     rebuildAtPosition,
-    setAutoResolvedId,
-    setEstimatedBw,
+    setAutoCapBps: setAutoBitrateBps,
+    setEstimatedBw: setEstimatedBwThrottled,
   })
+
+  // Phase 2 — persist the live bandwidth measurement for next-session startup
+  // seeding (the startup probe also refreshes persistence at scan time).
+  // Only saved once the estimator has enough real samples to be trusted, so a
+  // transient stall can't poison the next session's initial quality.
+  useEffect(() => {
+    const persist = () => {
+      const est = estimatorRef.current
+      if (est.isReliable()) savePersistedBandwidth(est.estimatedBandwidth)
+    }
+    const onHide = () => {
+      if (document.visibilityState === "hidden") persist()
+    }
+    document.addEventListener("visibilitychange", onHide)
+    window.addEventListener("pagehide", persist)
+    return () => {
+      document.removeEventListener("visibilitychange", onHide)
+      window.removeEventListener("pagehide", persist)
+      persist()
+    }
+  }, [])
 
   const handleQualityChange = useCallback(
     (id: string) => {
@@ -1225,7 +1421,7 @@ export function CinemaPlayer({
       updatePlayerSettings({ qualityPreference: id })
       if (id === "auto") {
         estimatorRef.current.reset()
-        setAutoResolvedId(null)
+        setAutoBitrateBps(null)
       }
       const qLabel = QUALITY_PRESETS.find((q) => q.id === id)?.label ?? id
       rebuildAtPosition(() => setQualityId(id), qLabel)
@@ -1429,9 +1625,22 @@ export function CinemaPlayer({
   )
 
   const startedOrWaiting = endpointReady && !loadError
-  const autoResolvedLabel = autoResolvedId
-    ? QUALITY_PRESETS.find((q) => q.id === autoResolvedId)?.label
-    : undefined
+  // Display label for the current auto cap: nearest preset to the continuous
+  // bitrate (presets are only ever a UI convenience now).
+  const autoResolvedLabel = useMemo(() => {
+    if (qualityId !== "auto") return undefined
+    let bestLabel: string | undefined
+    let bestDiff = Number.POSITIVE_INFINITY
+    for (const p of QUALITY_PRESETS) {
+      if (p.maxStreamingBitrate == null) continue
+      const diff = Math.abs(p.maxStreamingBitrate - effectiveAutoCapBps)
+      if (diff < bestDiff) {
+        bestDiff = diff
+        bestLabel = p.label
+      }
+    }
+    return bestLabel
+  }, [qualityId, effectiveAutoCapBps])
   const qualityLabel =
     qualityId === "auto" && autoResolvedLabel
       ? `Auto (${autoResolvedLabel})`
@@ -1745,9 +1954,10 @@ export function CinemaPlayer({
           payload={payload}
           engine={engine}
           qualityId={qualityId}
-          autoResolvedId={autoResolvedId}
+          autoResolvedId={autoBitrateBps != null ? `${(autoBitrateBps / 1_000_000).toFixed(2)}Mbps` : null}
           estimatedBandwidth={estimatedBw}
           probeReason={codecProbe.reason}
+          netEstimateSources={netEstimate ? netEstimate.sources.join("+") : null}
           audioIndex={audioIndex}
           subtitleIndex={subtitleIndex}
           streamUrl={lastStreamUrl}

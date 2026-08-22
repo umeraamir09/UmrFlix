@@ -9,14 +9,35 @@ export type HlsConfigInput = {
   startPosition: number
   /** Coarse-pointer device (mobile): tighter memory cap. */
   isTouchDevice: boolean
+  /** Measured/known capacity seed (Phase 2 network scan) in bits/second —
+   *  replaces the optimistic hardcoded default for ABR's initial guess. */
+  initialBandwidthBps?: number
 }
 
-export function buildHlsConfig({ startPosition, isTouchDevice }: HlsConfigInput) {
+/**
+ * Load policies tuned for a Jellyfin origin whose endpoints block while the
+ * transcoder works:
+ * - master.m3u8 spawns ffmpeg before responding → generous TTFB.
+ * - variant playlists can wait for the first segments → generous TTFB.
+ * - segments are produced on demand (worst right after startTimeTicks seeks)
+ *   → very generous TTFB; aborting early makes Jellyfin restart ffmpeg for
+ *   every retry, turning one slow segment into an endless stall.
+ *
+ * Replaces the deprecated `*LoadingTimeOut` / `*MaxRetry` / `*RetryDelay`
+ * keys (hls.js ≥1.4).
+ */
+export function buildHlsConfig({ startPosition, isTouchDevice, initialBandwidthBps }: HlsConfigInput) {
   return {
     enableWorker: true,
     lowLatencyMode: false,
     capLevelToPlayerSize: false,
-    abrEwmaDefaultEstimate: 25_000_000,
+    // Phase 2 — seed hls.js' initial bandwidth estimate from the network scan
+    // when available; the previous hardcoded 25 Mbps was pure optimism and
+    // pushed slow connections into an immediate top-level stall.
+    abrEwmaDefaultEstimate:
+      initialBandwidthBps != null && Number.isFinite(initialBandwidthBps) && initialBandwidthBps > 0
+        ? Math.round(initialBandwidthBps)
+        : 25_000_000,
     backBufferLength: 60,
     maxBufferLength: 40,
     // 4.5 — cap the buffer ceiling: hls.js' 600s default allows ~1.5GB of
@@ -24,17 +45,29 @@ export function buildHlsConfig({ startPosition, isTouchDevice }: HlsConfigInput)
     // tighter cap; both stay above maxBufferLength (hls.js requirement).
     maxMaxBufferLength: isTouchDevice ? 60 : 120,
     startPosition,
-    // Jellyfin transcoders can take 30-60s to emit the first segment —
-    // hls.js' 20s default frag timeout aborts the request too early and
-    // the server has to restart ffmpeg for every retry (endless stall).
-    manifestLoadingTimeOut: 20_000,
-    manifestLoadingMaxRetry: 2,
-    levelLoadingTimeOut: 20_000,
-    levelLoadingMaxRetry: 4,
-    fragLoadingTimeOut: 60_000,
-    fragLoadingMaxRetry: 6,
-    fragLoadingRetryDelay: 2_000,
-    levelLoadingRetryDelay: 1_500,
-    manifestLoadingRetryDelay: 1_500,
+    manifestLoadPolicy: {
+      default: {
+        maxTimeToFirstByteMs: 20_000,
+        maxLoadTimeMs: 25_000,
+        timeoutRetry: { maxNumRetry: 2, retryDelayMs: 1_500, maxRetryDelayMs: 8_000 },
+        errorRetry: { maxNumRetry: 2, retryDelayMs: 1_500, maxRetryDelayMs: 8_000 },
+      },
+    },
+    playlistLoadPolicy: {
+      default: {
+        maxTimeToFirstByteMs: 20_000,
+        maxLoadTimeMs: 30_000,
+        timeoutRetry: { maxNumRetry: 4, retryDelayMs: 1_500, maxRetryDelayMs: 8_000 },
+        errorRetry: { maxNumRetry: 4, retryDelayMs: 1_500, maxRetryDelayMs: 8_000 },
+      },
+    },
+    fragLoadPolicy: {
+      default: {
+        maxTimeToFirstByteMs: 60_000,
+        maxLoadTimeMs: 120_000,
+        timeoutRetry: { maxNumRetry: 4, retryDelayMs: 0, maxRetryDelayMs: 0 },
+        errorRetry: { maxNumRetry: 6, retryDelayMs: 2_000, maxRetryDelayMs: 16_000 },
+      },
+    },
   }
 }
