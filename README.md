@@ -55,7 +55,7 @@ Browse millions of movies and TV shows, see what's already in your library, requ
 ### 1. Clone and install
 
 ```bash
-git clone <your-repo-url>
+git clone https://github.com/umeraamir09/UmrFlix.git
 cd umrflix
 npm install
 ```
