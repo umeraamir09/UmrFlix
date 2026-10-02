@@ -197,7 +197,3 @@ npm run start
 All API keys stay server-side in route handlers — they are never exposed to the client. The app can be deployed to any Node.js host (Vercel, Railway, your Oracle VM, etc.).
 
 Jellyfin, Radarr, and Sonarr must be network-reachable from wherever the Next.js app runs.
-
-## License
-
-Private — for personal/home-lab use.
