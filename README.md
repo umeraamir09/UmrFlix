@@ -56,7 +56,7 @@ Browse millions of movies and TV shows, see what's already in your library, requ
 
 ```bash
 git clone https://github.com/umeraamir09/UmrFlix.git
-cd umrflix
+cd UmrFlix
 npm install
 ```
 
@@ -179,6 +179,10 @@ npm run test:lib          # Pure-logic library tests (node:test)
 npm run test:party        # Watch party synchronization tests
 npm run test:components   # Player & UI component tests (Vitest + JSDOM)
 ```
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for local setup, project checks, and pull-request guidance. The proposed community expectations are in [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md); that document is a draft pending maintainer review.
 
 ## Deployment
 
