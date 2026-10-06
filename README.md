@@ -1,6 +1,10 @@
 # UmrFlix
 
-![UmrFlix logo](public/logo_header.png)
+<div align="center">
+
+<img src="public/umrflix-logo.svg" width='500' />
+
+</div>
 
 UmrFlix is a self-hosted web app for discovering movies and TV, browsing a Jellyfin library, requesting titles through Radarr or Sonarr, and watching through Jellyfin. It brings those services together in a single Next.js interface.
 
@@ -121,7 +125,7 @@ scripts/           Penpot verification and sync scripts
 - [VPS deployment guide](docs/DEPLOY_VPS.md) — PM2, Nginx Proxy Manager, and optional self-hosted Convex notes.
 - [Personalization design document](docs/PERSONALIZATION.md)
 - [Contributing guide](CONTRIBUTING.md) — local setup, checks, conventions, and pull-request guidance.
-- [Code of Conduct](CODE_OF_CONDUCT.md) — **draft for maintainer review; it is not an adopted project policy.**
+- [Code of Conduct](CODE_OF_CONDUCT.md) — project code of conduct
 
 ## License
 
