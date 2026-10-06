@@ -1,0 +1,32 @@
+name: Feature request
+description: Suggest an improvement or new capability for UmrFlix
+title: "[Feature]: "
+labels:
+  - enhancement
+body:
+  - type: markdown
+    attributes:
+      value: Describe the user problem or need first; implementation details are optional.
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem or use case should this address?
+      description: Who would benefit, and in what situation?
+      placeholder: I need to ... because ...
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What would you like UmrFlix to do?
+      description: Describe the outcome or behavior you have in mind.
+      placeholder: It would help if ...
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Optional alternatives, examples, screenshots, or relevant integrations.
+    validations:
+      required: false

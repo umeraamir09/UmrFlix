@@ -1,0 +1,51 @@
+name: Bug report
+description: Report a reproducible problem with UmrFlix
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: Please redact credentials, tokens, private server URLs, and personal data from any logs or screenshots you share.
+  - type: textarea
+    id: problem
+    attributes:
+      label: What happened?
+      description: Describe the problem and where it occurred (page, action, or integration).
+      placeholder: What did you see?
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to reproduce
+      description: Give the shortest reliable steps, including any relevant setup.
+      placeholder: |
+        1. Go to ...
+        2. Select ...
+        3. Observe ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect to happen?
+      placeholder: Describe the expected behavior.
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      description: Include the UmrFlix version or commit, deployment type, browser/device, and relevant integrations.
+      placeholder: "e.g. commit abc123, Docker, Firefox on Linux; Jellyfin configured"
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant errors or logs
+      description: Optional. Share only relevant excerpts and redact credentials, private hostnames, and personal data.
+      render: text
+    validations:
+      required: false
