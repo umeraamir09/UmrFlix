@@ -122,8 +122,7 @@ scripts/           Penpot verification and sync scripts
 
 ## Deployment and contributor docs
 
-- [VPS deployment guide](docs/DEPLOY_VPS.md) — PM2, Nginx Proxy Manager, and optional self-hosted Convex notes.
-- [Personalization design document](docs/PERSONALIZATION.md)
+- [Services deployment guide](docs/DEPLOY.md) — Deploy your own local instance of UmrFlix Media Server Stack.
 - [Contributing guide](CONTRIBUTING.md) — local setup, checks, conventions, and pull-request guidance.
 - [Code of Conduct](CODE_OF_CONDUCT.md) — project code of conduct
 
