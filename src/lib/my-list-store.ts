@@ -1,7 +1,7 @@
 import fs from "fs/promises"
 import path from "path"
-import { ConvexHttpClient } from "convex/browser"
-import type { FunctionReference } from "convex/server"
+import { getPostgresStore } from "@/lib/db/store"
+import type { StoreOperation } from "@/lib/db/store"
 import { setFavoriteItem } from "@/lib/jellyfin"
 
 export type MyListItem = {
@@ -20,7 +20,7 @@ export type MyListItem = {
 
 type StorageSchema = Record<string, MyListItem[]>
 
-type ConvexRecord = {
+type PostgresRecord = {
   _id: string
   itemId: string
   userId: string
@@ -35,7 +35,7 @@ type ConvexRecord = {
   addedAt?: string
 }
 
-type ConvexAddItemArgs = {
+type PostgresAddItemArgs = {
   userId: string
   itemId: string
   tmdbId?: number
@@ -48,50 +48,16 @@ type ConvexAddItemArgs = {
   releaseYear?: string
 }
 
-type QueryRef<Args extends Record<string, unknown>, Ret> = FunctionReference<"query", "public", Args, Ret>
-type MutationRef<Args extends Record<string, unknown>, Ret> = FunctionReference<"mutation", "public", Args, Ret>
+type QueryRef<Args extends Record<string, unknown>, Ret> = StoreOperation<Args, Ret>
+type MutationRef<Args extends Record<string, unknown>, Ret> = StoreOperation<Args, Ret>
 
-const getUserListRef = "myList:getUserList" as unknown as QueryRef<{ userId: string }, ConvexRecord[]>
+const getUserListRef = "myList:getUserList" as unknown as QueryRef<{ userId: string }, PostgresRecord[]>
 const isInListRef = "myList:isInList" as unknown as QueryRef<{ userId: string; itemId: string }, boolean>
-const addItemRef = "myList:addItem" as unknown as MutationRef<ConvexAddItemArgs, string>
+const addItemRef = "myList:addItem" as unknown as MutationRef<PostgresAddItemArgs, string>
 const removeItemRef = "myList:removeItem" as unknown as MutationRef<{ userId: string; itemId: string }, boolean>
 
 const DATA_DIR = path.join(process.cwd(), "data")
 const FILE_PATH = path.join(DATA_DIR, "my-list.json")
-
-function getConvexClient(userToken?: string): ConvexHttpClient | null {
-  const url =
-    process.env.CONVEX_SELF_HOSTED_URL ||
-    process.env.NEXT_PUBLIC_CONVEX_SELF_HOSTED_URL ||
-    process.env.CONVEX_URL ||
-    process.env.NEXT_PUBLIC_CONVEX_URL
-  const adminKey = process.env.CONVEX_SELF_HOSTED_ADMIN_KEY
-
-  if (!url) return null
-
-  try {
-    const client = new ConvexHttpClient(url, {
-      skipConvexDeploymentUrlCheck: true,
-    })
-
-    // Prefer scoped user token (Issue #4); use adminKey only as fallback if configured
-    if (userToken) {
-      client.setAuth(userToken)
-    } else if (adminKey) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const rawClient = client as any
-      if (typeof rawClient.setAdminAuth === "function") {
-        rawClient.setAdminAuth(adminKey)
-      } else {
-        client.setAuth(adminKey)
-      }
-    }
-    return client
-  } catch (err) {
-    console.error("[Convex] Failed to instantiate ConvexHttpClient:", err)
-    return null
-  }
-}
 
 async function ensureFileExists(): Promise<void> {
   try {
@@ -160,10 +126,11 @@ export function getItemKey(target: {
 }
 
 export async function getUserMyList(userId: string, userToken?: string): Promise<MyListItem[]> {
-  const convex = getConvexClient(userToken)
-  if (convex) {
+  void userToken // Authentication is enforced by the calling server route.
+  const postgres = getPostgresStore()
+  if (postgres) {
     try {
-      const records = await convex.query(getUserListRef, { userId })
+      const records = await postgres.read(getUserListRef, { userId })
       if (Array.isArray(records)) {
         return records.map((r) => ({
           id: r.itemId || r._id,
@@ -180,7 +147,8 @@ export async function getUserMyList(userId: string, userToken?: string): Promise
         }))
       }
     } catch (err) {
-      console.error("[Convex Query Error] Failed to query user list:", err)
+      console.error("[Postgres Query Error] Failed to query user list:", err)
+      throw err
     }
   }
 
@@ -217,10 +185,11 @@ export async function addToMyList(
     )
   }
 
-  const convex = getConvexClient(userToken)
-  if (convex) {
+  void userToken // Authentication is enforced by the calling server route.
+  const postgres = getPostgresStore()
+  if (postgres) {
     try {
-      await convex.mutation(addItemRef, {
+      await postgres.write(addItemRef, {
         userId,
         itemId: newItem.id,
         tmdbId: newItem.tmdbId,
@@ -234,7 +203,8 @@ export async function addToMyList(
       })
       return newItem
     } catch (err) {
-      console.error("[Convex Mutation Error] Failed to add item:", err)
+      console.error("[Postgres Mutation Error] Failed to add item:", err)
+      throw err
     }
   }
 
@@ -272,16 +242,17 @@ export async function removeFromMyList(
     )
   }
 
-  const convex = getConvexClient(userToken)
-  if (convex) {
+  void userToken // Authentication is enforced by the calling server route.
+  const postgres = getPostgresStore()
+  if (postgres) {
     try {
-      await convex.mutation(removeItemRef, {
+      return await postgres.write(removeItemRef, {
         userId,
         itemId: key || target.jellyfinId || (target.tmdbId ? String(target.tmdbId) : ""),
       })
-      return true
     } catch (err) {
-      console.error("[Convex Mutation Error] Failed to remove item:", err)
+      console.error("[Postgres Mutation Error] Failed to remove item:", err)
+      throw err
     }
   }
 
@@ -309,15 +280,17 @@ export async function isItemInMyList(
   const key = getItemKey(target)
   if (!key) return false
 
-  const convex = getConvexClient(userToken)
-  if (convex) {
+  void userToken // Authentication is enforced by the calling server route.
+  const postgres = getPostgresStore()
+  if (postgres) {
     try {
-      const result = await convex.query(isInListRef, { userId, itemId: key })
+      const result = await postgres.read(isInListRef, { userId, itemId: key })
       if (typeof result === "boolean") {
         return result
       }
     } catch (err) {
-      console.error("[Convex Query Error] Failed to check item in list:", err)
+      console.error("[Postgres Query Error] Failed to check item in list:", err)
+      throw err
     }
   }
 

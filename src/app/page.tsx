@@ -1,4 +1,5 @@
 import Image from "next/image"
+import { connection } from "next/server"
 import { HeroBillboard, BillboardItem } from "@/components/HeroBillboard"
 import { MovieRow } from "@/components/MovieRow"
 import { SpotlightBanner, SpotlightItem } from "@/components/SpotlightBanner"
@@ -26,9 +27,10 @@ interface JellyfinSeries extends JellyfinApiItem {
   Type: "Series"
 }
 
-// ISR bounds the per-request cost of the homepage's heavy server-side build
-// (trending, Jellyfin items, TVMaze lookups, hero logos) to at most once an
-// hour; the hero rotation (timeSeed) advances with each regeneration.
+// Integration credentials are supplied at runtime in Docker. Render the shell
+// on request so builds never freeze an empty homepage without those credentials.
+// Integration helpers retain their own caches; hero rotation (timeSeed)
+// advances hourly.
 // Continue Watching and the personalized discovery rows (Top Picks, micro-
 // genres, Because You Watched) are client-fetched per session via
 // <PersonalizedFeed />, keeping this shell shareable across users.
@@ -66,6 +68,8 @@ function getThirtyDaysAgo(): string {
 }
 
 export default async function HomePage() {
+  await connection()
+
   let heroItems: BillboardItem[] = []
   let spotlightItem1: SpotlightItem | null = null
   let spotlightItem2: SpotlightItem | null = null
@@ -130,7 +134,7 @@ export default async function HomePage() {
 
     // 4. Personalized rows (Top Picks, micro-genres, Because You Watched,
     //    contextual triggers) are client-fetched per session via
-    //    <PersonalizedFeed /> → /api/discovery/home, keeping this ISR shell
+    //    <PersonalizedFeed /> → /api/discovery/home, keeping this shell
     //    shareable across users (see Discovery Engine in AGENTS.md).
 
     // 5. Build hero items (Rotated using timeSeed for dynamic homepage hero presentation)

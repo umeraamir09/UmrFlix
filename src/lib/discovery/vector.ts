@@ -97,7 +97,7 @@ export const DECADE_LABELS = [
 ] as const
 const DECADE_SIGMA_YEARS = 4
 
-/** FNV-1a 32-bit hash — stable across processes so Convex-cached vectors match. */
+/** FNV-1a 32-bit hash — stable across processes so Postgres-cached vectors match. */
 function fnv1a(input: string): number {
   let hash = 0x811c9dc5
   for (let i = 0; i < input.length; i++) {

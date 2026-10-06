@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server"
+import { getPool } from "@/lib/db/pool"
+import { env } from "@/lib/env"
+import { tmdbApiFetch } from "@/lib/tmdb-api"
 
-import { radarrBreaker, sonarrBreaker, jellyfinBreaker, tmdbBreaker, convexBreaker, getAggregateOpen } from "@/lib/circuit-breaker"
+import { radarrBreaker, sonarrBreaker, jellyfinBreaker, tmdbBreaker, postgresBreaker, getAggregateOpen } from "@/lib/circuit-breaker"
 
 async function probeService(
   url: string,
@@ -25,17 +28,21 @@ async function probeService(
   }
 }
 
+async function probeDatabase(): Promise<void> {
+  if (!env("DATABASE_URL")) return
+  try {
+    await getPool().query("SELECT 1")
+    postgresBreaker.recordSuccess()
+  } catch {
+    postgresBreaker.recordFailure()
+  }
+}
+
 export async function GET() {
   const radarrUrl = process.env.RADARR_URL
   const sonarrUrl = process.env.SONARR_URL
   const jellyfinUrl = process.env.JELLYFIN_URL
-  const tmdbProxyUrl = process.env.TMDB_PROXY_URL
-  const tmdbProxySecret = process.env.TMDB_PROXY_SECRET
-  const convexUrl =
-    process.env.CONVEX_SELF_HOSTED_URL ||
-    process.env.NEXT_PUBLIC_CONVEX_SELF_HOSTED_URL ||
-    process.env.CONVEX_URL ||
-    process.env.NEXT_PUBLIC_CONVEX_URL
+  const tmdbApiKey = env("TMDB_API_KEY")
 
   await Promise.allSettled([
     probeService(radarrUrl ? `${radarrUrl}/api/v3/system/status` : "", radarrBreaker, 3000, {
@@ -47,15 +54,14 @@ export async function GET() {
     // /System/Info/Public is Jellyfin's unauthenticated liveness endpoint —
     // probing the origin root can 30x-redirect to /web/ and false-flag the server.
     probeService(jellyfinUrl ? `${jellyfinUrl.replace(/\/$/, "")}/System/Info/Public` : "", jellyfinBreaker),
-    tmdbProxyUrl && tmdbProxySecret
-      ? probeService(
-          new URL("/3/configuration", tmdbProxyUrl).toString(),
-          tmdbBreaker,
-          4000,
-          { "X-Proxy-Secret": tmdbProxySecret }
-        )
+    tmdbApiKey
+      ? tmdbApiFetch("/3/configuration", { timeoutMs: 4000, retries: 0, skipCache: true })
+          .then((res) => {
+            if (!res.ok) tmdbBreaker.recordFailure()
+          })
+          .catch(() => { /* Transport failures are recorded by tmdbApiFetch. */ })
       : Promise.resolve(),
-    probeService(convexUrl ?? "", convexBreaker),
+    probeDatabase(),
   ])
 
   // Per-user Jellyfin breakers live in the registry (not the shared global).
@@ -73,7 +79,7 @@ export async function GET() {
       name: "Jellyfin (per-user)",
     },
     tmdb: tmdbBreaker.getState(),
-    convex: convexBreaker.getState(),
+    postgres: postgresBreaker.getState(),
   }
 
   const isDegraded =

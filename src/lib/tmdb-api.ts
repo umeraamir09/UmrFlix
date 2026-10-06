@@ -1,7 +1,7 @@
 import { env } from "./env"
 import { CircuitBreaker, tmdbBreaker, SingleFlight } from "./circuit-breaker"
 
-export interface TmdbProxyFetchOptions extends RequestInit {
+export interface TmdbApiFetchOptions extends RequestInit {
   timeoutMs?: number
   retries?: number
   breaker?: CircuitBreaker
@@ -58,37 +58,44 @@ function createResponseFromEntry(entry: CachedResponseEntry, cacheHeader: "HIT" 
   })
 }
 
-export async function tmdbProxyFetch(path: string, options?: TmdbProxyFetchOptions): Promise<Response> {
+export async function tmdbApiFetch(path: string, options?: TmdbApiFetchOptions): Promise<Response> {
   const isGet = !options?.method || options.method.toUpperCase() === "GET"
   const skipCache = options?.skipCache ?? false
-  const proxyUrl = env("TMDB_PROXY_URL")
-  const secret = env("TMDB_PROXY_SECRET")
+  const apiKey = env("TMDB_API_KEY").trim()
   const timeoutMs = options?.timeoutMs ?? 6_000
   const retries = Math.max(0, options?.retries ?? 2)
   const breaker = options?.breaker ?? tmdbBreaker
 
-  if (!proxyUrl) {
-    throw new Error("TMDB_PROXY_URL is not set")
-  }
-  if (!secret) {
-    throw new Error("TMDB_PROXY_SECRET is not set")
+  if (!apiKey) {
+    throw new Error("TMDB_API_KEY is not set")
   }
 
-  const baseUrl = new URL(proxyUrl)
+  const baseUrl = new URL("https://api.themoviedb.org")
   const url = new URL(path, baseUrl)
   if (url.origin !== baseUrl.origin) {
-    throw new Error("Refusing to proxy to a different origin")
+    throw new Error("Refusing to request to a different origin")
   }
   const pathPart = path.split("?", 1)[0]
   const rawSegments = pathPart.split("/")
   if (rawSegments.some((seg) => seg === "." || seg === ".." || seg.includes("\\") || seg.includes("%"))) {
-    throw new Error("Refusing to proxy a path with traversal segments")
+    throw new Error("Refusing to request a path with traversal segments")
   }
   if (!url.pathname.startsWith("/3/")) {
-    throw new Error("Refusing to proxy outside the /3/ namespace")
+    throw new Error("Refusing to request outside the /3/ namespace")
   }
 
-  const cacheKey = url.toString()
+  // Authentication always comes from server configuration, never caller input.
+  url.searchParams.delete("api_key")
+  const headers = new Headers(options?.headers)
+  headers.delete("Authorization")
+  headers.delete("X-Proxy-Secret")
+  if (apiKey.split(".").length === 3) {
+    headers.set("Authorization", `Bearer ${apiKey}`)
+  } else {
+    url.searchParams.set("api_key", apiKey)
+  }
+
+  const cacheKey = `${apiKey}:${url.toString()}`
 
   // 1. Check in-memory cache for GET requests
   if (isGet && !skipCache) {
@@ -108,15 +115,12 @@ export async function tmdbProxyFetch(path: string, options?: TmdbProxyFetchOptio
       }
     }
 
-    const headers = new Headers(options?.headers)
-    headers.set("X-Proxy-Secret", secret)
-
     let attempt = 0
     let lastError: unknown
 
     while (attempt <= retries) {
       if (!breaker.canExecute()) {
-        throw new Error("TMDB proxy is unavailable (circuit open)")
+        throw new Error("TMDB API is unavailable (circuit open)")
       }
 
       const controller = new AbortController()

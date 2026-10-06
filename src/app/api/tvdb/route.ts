@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { getTmdbToTvdbMapping, setTmdbToTvdbMapping } from "@/lib/cache"
-import { tmdbProxyFetch } from "@/lib/tmdb-proxy"
+import { tmdbApiFetch } from "@/lib/tmdb-api"
 
 export async function GET(request: NextRequest) {
   const tmdbId = request.nextUrl.searchParams.get("tmdbId")
@@ -19,7 +19,7 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const res = await tmdbProxyFetch(`/3/tv/${id}/external_ids`, { timeoutMs: 5_000 })
+    const res = await tmdbApiFetch(`/3/tv/${id}/external_ids`, { timeoutMs: 5_000 })
     if (!res.ok) {
       return NextResponse.json({ tmdbId: id, tvdbId: null, error: "TMDB lookup failed" }, { status: 502 })
     }

@@ -26,8 +26,8 @@ import {
  * User profile model (Discovery Engine, Module 1).
  *
  * Builds dual-decay 64-D user vectors (7-day short-term, 90-day long-term)
- * from the Convex event log, blends them with the activity-aware α, persists
- * the result back to Convex, and exposes the metadata the row-synthesis and
+ * from the Postgres event log, blends them with the activity-aware α, persists
+ * the result back to Postgres, and exposes the metadata the row-synthesis and
  * ranking layers need (watched ids, seeds, peak hour, top keywords).
  */
 
@@ -139,7 +139,7 @@ function detailToItemProfile(detail: TmdbDetailForFeatures, mediaType: "movie" |
   }
 }
 
-/** Resolve the full feature profile for an item, cached in Convex cacheStore. */
+/** Resolve the full feature profile for an item, cached in Postgres cacheStore. */
 export async function resolveItemProfile(
   tmdbId: number,
   mediaType: "movie" | "tv"
@@ -352,7 +352,7 @@ async function buildUserProfile(userId: string, profileId: string): Promise<User
 
 /**
  * Get (or rebuild) the user's discovery profile. Rebuilds at most every
- * PROFILE_MEMORY_TTL; falls back to the Convex-persisted vectors when the
+ * PROFILE_MEMORY_TTL; falls back to the Postgres-persisted vectors when the
  * event log cannot be read.
  */
 export async function getUserDiscoveryProfile(

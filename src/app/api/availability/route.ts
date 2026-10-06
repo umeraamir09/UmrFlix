@@ -10,7 +10,7 @@ import {
   setTmdbToTvdbMapping,
   fetchTmdbToTvdbMappingL2,
 } from "@/lib/cache"
-import { tmdbProxyFetch } from "@/lib/tmdb-proxy"
+import { tmdbApiFetch } from "@/lib/tmdb-api"
 
 import { getAllRequests, type RequestItem } from "@/lib/requests-store"
 
@@ -75,7 +75,7 @@ async function resolveTvdbId(tmdbId: number): Promise<number | null> {
   if (cachedL2 !== null) return cachedL2
 
   try {
-    const res = await tmdbProxyFetch(`/3/tv/${tmdbId}/external_ids`, { timeoutMs: FETCH_TIMEOUT })
+    const res = await tmdbApiFetch(`/3/tv/${tmdbId}/external_ids`, { timeoutMs: FETCH_TIMEOUT })
     if (!res.ok) return null
     const data = await res.json()
     const tvdbId: number | null = data.tvdb_id ?? null

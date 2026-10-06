@@ -12,8 +12,7 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
-    "public/jassub/**",
-    "convex/_generated/**"
+    "public/jassub/**"
   ]),
 ]);
 

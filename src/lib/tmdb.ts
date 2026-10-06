@@ -1,4 +1,4 @@
-import { tmdbProxyFetch } from "./tmdb-proxy"
+import { tmdbApiFetch } from "./tmdb-api"
 import { tmdbBreaker } from "./circuit-breaker"
 
 export async function tmdbFetch<T>(path: string, params?: Record<string, string>): Promise<T> {
@@ -9,13 +9,13 @@ export async function tmdbFetch<T>(path: string, params?: Record<string, string>
       search.set(k, v)
     }
   }
-  const res = await tmdbProxyFetch(`/3${path}?${search.toString()}`, {
+  const res = await tmdbApiFetch(`/3${path}?${search.toString()}`, {
     breaker: tmdbBreaker,
     timeoutMs: 6_000,
     retries: 1,
   })
   if (!res.ok) {
-    throw new Error(`TMDB proxy responded with ${res.status}`)
+    throw new Error(`TMDB API responded with ${res.status}`)
   }
   return (await res.json()) as T
 }

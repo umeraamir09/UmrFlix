@@ -275,7 +275,7 @@ async function buildAvailableRowItems(genre: GenreDef): Promise<RowItem[]> {
   const movieItems = rawItems.filter((item) => item.media_type !== "tv")
 
   // Resolve TVDB ids in small batches to avoid firing up to 60 concurrent
-  // TMDB /external_ids requests (each miss can also hit the L2 Convex store).
+  // TMDB /external_ids requests (each miss can also hit the L2 Postgres store).
   const tvdbCache = await resolveTvdbIdsInBatches(tvItems.map((item) => item.id))
 
   const annotated: { item: RowItem; status: AvailabilityStatus }[] = []

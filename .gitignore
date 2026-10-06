@@ -51,3 +51,6 @@ next-env.d.ts
 
 # local only docs
 docs/FeatureSpecific
+
+# local docker configs
+config/

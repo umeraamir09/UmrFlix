@@ -1,49 +1,16 @@
 import fs from "fs/promises"
 import path from "path"
-import { ConvexHttpClient } from "convex/browser"
-import type { FunctionReference } from "convex/server"
+import { getPostgresStore } from "@/lib/db/store"
+import type { StoreOperation } from "@/lib/db/store"
 
-type QueryRef<Args extends Record<string, unknown>, Ret> = FunctionReference<"query", "public", Args, Ret>
-type MutationRef<Args extends Record<string, unknown>, Ret> = FunctionReference<"mutation", "public", Args, Ret>
+type QueryRef<Args extends Record<string, unknown>, Ret> = StoreOperation<Args, Ret>
+type MutationRef<Args extends Record<string, unknown>, Ret> = StoreOperation<Args, Ret>
 
 const getUserAvatarRef = "userProfiles:getUserAvatar" as unknown as QueryRef<{ userId: string }, string | null>
 const setUserAvatarRef = "userProfiles:setUserAvatar" as unknown as MutationRef<{ userId: string; avatarUrl: string }, string>
 
 const DATA_DIR = path.join(process.cwd(), "data")
 const FILE_PATH = path.join(DATA_DIR, "avatars.json")
-
-function getConvexClient(userToken?: string): ConvexHttpClient | null {
-  const url =
-    process.env.CONVEX_SELF_HOSTED_URL ||
-    process.env.NEXT_PUBLIC_CONVEX_SELF_HOSTED_URL ||
-    process.env.CONVEX_URL ||
-    process.env.NEXT_PUBLIC_CONVEX_URL
-  const adminKey = process.env.CONVEX_SELF_HOSTED_ADMIN_KEY
-
-  if (!url) return null
-
-  try {
-    const client = new ConvexHttpClient(url, {
-      skipConvexDeploymentUrlCheck: true,
-    })
-
-    if (userToken) {
-      client.setAuth(userToken)
-    } else if (adminKey) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const rawClient = client as any
-      if (typeof rawClient.setAdminAuth === "function") {
-        rawClient.setAdminAuth(adminKey)
-      } else {
-        client.setAuth(adminKey)
-      }
-    }
-    return client
-  } catch (err) {
-    console.error("[Convex] Failed to instantiate ConvexHttpClient:", err)
-    return null
-  }
-}
 
 async function ensureFileExists(): Promise<void> {
   try {
@@ -77,23 +44,9 @@ async function writeStorage(data: Record<string, string>): Promise<void> {
 }
 
 export async function getUserAvatar(userId: string, userToken?: string): Promise<string | null> {
-  const convex = getConvexClient(userToken)
-  if (convex) {
-    try {
-      let timerId: NodeJS.Timeout | undefined
-      const timeout = new Promise<null>((resolve) => {
-        timerId = setTimeout(() => resolve(null), 1500)
-      })
-      const avatarUrl = await Promise.race([
-        convex.query(getUserAvatarRef, { userId }),
-        timeout,
-      ])
-      if (timerId) clearTimeout(timerId)
-      if (avatarUrl) return avatarUrl
-    } catch (err) {
-      console.error("[Convex Query Error] Failed to query user avatar:", err)
-    }
-  }
+  void userToken // Authentication is enforced by the calling server route.
+  const postgres = getPostgresStore()
+  if (postgres) return postgres.read(getUserAvatarRef, { userId })
 
   const db = await readStorage()
   return db[userId] || null
@@ -104,13 +57,11 @@ export async function setUserAvatar(
   avatarUrl: string,
   userToken?: string
 ): Promise<void> {
-  const convex = getConvexClient(userToken)
-  if (convex) {
-    try {
-      await convex.mutation(setUserAvatarRef, { userId, avatarUrl })
-    } catch (err) {
-      console.error("[Convex Mutation Error] Failed to set user avatar:", err)
-    }
+  void userToken // Authentication is enforced by the calling server route.
+  const postgres = getPostgresStore()
+  if (postgres) {
+    await postgres.write(setUserAvatarRef, { userId, avatarUrl })
+    return
   }
 
   const db = await readStorage()

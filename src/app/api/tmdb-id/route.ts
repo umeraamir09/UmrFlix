@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { getSession } from "@/lib/auth"
-import { tmdbProxyFetch } from "@/lib/tmdb-proxy"
+import { tmdbApiFetch } from "@/lib/tmdb-api"
 import { checkRateLimit } from "@/lib/rate-limit"
 
 const reverseCache = new Map<string, { tmdbId: number; type: string; timestamp: number }>()
@@ -49,7 +49,7 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const res = await tmdbProxyFetch(`/3/find/${externalId}?external_source=${source}`, { timeoutMs: 5_000 })
+    const res = await tmdbApiFetch(`/3/find/${externalId}?external_source=${source}`, { timeoutMs: 5_000 })
     if (!res.ok) {
       return NextResponse.json({ error: "Lookup failed" }, { status: 502 })
     }
