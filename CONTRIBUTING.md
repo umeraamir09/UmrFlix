@@ -7,11 +7,7 @@ Welcome to UmrFlix. Contributions that fix bugs, improve the experience, strengt
 - **Project overview and setup:** [README.md](README.md)
 - **Bug reports:** [Bug report form](.github/ISSUE_TEMPLATE/bug_report.yml)
 - **Feature ideas:** [Feature request form](.github/ISSUE_TEMPLATE/feature_request.yml)
-- **Pull requests:** [Pull request template](.github/PULL_REQUEST_TEMPLATE.md)
-- **Development conventions:** [AGENTS.md](AGENTS.md)
-- **Project roadmap:** [specs/roadmap.md](specs/roadmap.md)
 - **Community expectations:** [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)
-- **License:** [LICENSE](LICENSE)
 
 ## How to contribute
 
@@ -20,7 +16,6 @@ Choose the path that best fits your change:
 1. **Report a bug** — Use the [bug report form](.github/ISSUE_TEMPLATE/bug_report.yml). Include the shortest reliable reproduction steps, what you expected, what happened, and relevant environment details. Redact credentials, private server addresses, and personal information from logs or screenshots.
 2. **Suggest a feature** — Use the [feature request form](.github/ISSUE_TEMPLATE/feature_request.yml) to describe the user problem and the outcome you have in mind. Alternatives, examples, and screenshots are optional context.
 3. **Improve documentation or code** — Open a pull request with a focused change. For substantial or user-visible work, consider opening an issue first to discuss the scope, but the repository does not document an issue-first or assignment requirement. Blank issues are enabled if an existing form does not fit.
-4. **Raise a community-conduct concern** — Follow the contact instructions in the [Code of Conduct](CODE_OF_CONDUCT.md).
 
 ## Set up your checkout
 
