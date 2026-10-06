@@ -1,12 +1,16 @@
-# UmrFlix
-
 <div align="center">
 
-<img src="public/umrflix-logo.svg" width='500' />
+<img src="public/umrflix-logo.svg" width='300' />
 
 </div>
 
-UmrFlix is a self-hosted web app for discovering movies and TV, browsing a Jellyfin library, requesting titles through Radarr or Sonarr, and watching through Jellyfin. It brings those services together in a single Next.js interface.
+UmrFlix is a self-hosted web app for discovering movies and TV, browsing a Jellyfin library, requesting titles through Radarr or Sonarr, and watching through Jellyfin. It brings those services together in a single Next.js interface. Turn your jellyfin deployment into a streaming service like website.
+
+<div align="center">
+
+<img src="public/preview.png" width="1000"/>
+
+</div>
 
 ## Features
 
@@ -22,11 +26,11 @@ The app connects to services you configure; it does not include TMDB, Jellyfin, 
 
 | Service | Role in UmrFlix |
 | --- | --- |
-| [TMDB](https://www.themoviedb.org/) | Catalog and discovery data, requested through a configured proxy. |
+| [TMDB](https://www.themoviedb.org/) | Catalog and discovery data, requested directly from the TMDB API. |
 | [Jellyfin](https://jellyfin.org/) | Sign-in, library information, and media playback. |
 | [Radarr](https://radarr.video/) | Movie requests and queue information. |
 | [Sonarr](https://sonarr.tv/) | Series requests and queue information. |
-| Convex (optional) | Self-hosted persistence for supported app data; see the [deployment guide](docs/DEPLOY_VPS.md). |
+| PostgreSQL | Self-hosted app persistence using the Postgres service in `docker-compose.yml`; see the [deployment guide](docs/DEPLOY.md). |
 
 ## Technology
 
@@ -42,7 +46,7 @@ The app connects to services you configure; it does not include TMDB, Jellyfin, 
 
 - Node.js 20 or newer
 - npm
-- The external services and credentials for the features you plan to use. TMDB-backed catalog requests use a Cloudflare Worker proxy; Jellyfin is used for sign-in and playback, and Radarr/Sonarr are needed for their respective request integrations.
+- The external services and credentials for the features you plan to use. TMDB-backed catalog requests need a TMDB API key; Jellyfin is used for sign-in and playback, and Radarr/Sonarr are needed for their respective request integrations.
 
 ### Install and start
 
@@ -50,18 +54,22 @@ The app connects to services you configure; it does not include TMDB, Jellyfin, 
 git clone https://github.com/umeraamir09/UmrFlix.git
 cd UmrFlix
 npm ci
-cp .env.example .env.local
+cp .env.example .env
 ```
 
-Edit `.env.local` and provide the values for the services you use. Keep credentials in this local file or your deployment's secret store—never commit real API keys, passwords, tokens, or `.env.local`.
+Edit `.env` and provide the values for the services you use. Keep credentials in this local file or your deployment's secret store—never commit real API keys, passwords, tokens, or `.env.local`.
 
-Start the development server:
+Start Postgres and initialize the fresh schema, then start the development server:
 
 ```bash
+docker compose up -d --wait postgres
+npm run db:migrate
 npm run dev
 ```
 
-Then open [http://localhost:3000](http://localhost:3000). The server can start without every integration configured, but pages and actions that depend on a service need that service to be reachable and configured.
+Then open [http://localhost:3000](http://localhost:3000). Postgres persists lists, avatars, requests, notifications, sessions, party snapshots, caches, and discovery signals. Without `DATABASE_URL`, file/memory development fallbacks remain available; with it configured, durable writes fail if the database is unavailable.
+
+The server can start without every integration configured, but pages and actions that depend on a service need that service to be reachable and configured.
 
 ## Configuration
 
@@ -69,13 +77,14 @@ Then open [http://localhost:3000](http://localhost:3000). The server can start w
 
 | Variable(s) | Purpose |
 | --- | --- |
-| `TMDB_PROXY_URL`, `TMDB_PROXY_SECRET` | Cloudflare Worker URL and shared secret for TMDB requests. The secret is sent in the `X-Proxy-Secret` header. |
+| `TMDB_API_KEY` | TMDB API key or API Read Access Token. Requests go directly to TMDB from the server; no Cloudflare Worker is required. |
 | `JELLYFIN_URL`, `JELLYFIN_USERNAME`, `JELLYFIN_PASSWORD` | Jellyfin server and credentials used by the app. |
 | `RADARR_URL`, `RADARR_API_KEY` | Radarr connection for movie requests and queue information. |
 | `SONARR_URL`, `SONARR_API_KEY` | Sonarr connection for series requests and queue information. |
 | `OMDB_API_KEY` | Optional IMDb ratings enrichment; TMDB ratings are used when it is unset. |
 | `QBITTORRENT_URL`, `QBITTORRENT_USERNAME`, `QBITTORRENT_PASSWORD` | Optional qBittorrent connection for the admin download view. |
-| `CONVEX_SELF_HOSTED_URL`, `CONVEX_SELF_HOSTED_ADMIN_KEY` | Optional self-hosted Convex connection. The deployment guide describes the file-based fallback and additional URL configuration. |
+| `DATABASE_URL` | Server-only Postgres connection URL. On the host use `127.0.0.1:5432`; inside `media_internal` use `postgres:5432`. |
+| `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB` | Initialize the Compose Postgres service. Match these credentials in `DATABASE_URL`; URL-encode special characters in the password. |
 | `WEBHOOK_SECRET` | Optional protection for `/api/webhooks`. When configured, webhook requests must include it in the `x-webhook-secret` header or `secret` query parameter. |
 | `NOTIF_DEBUG` | Set to `1` for verbose notification logs. These logs can include user and admin IDs; leave it off in production. |
 | `JELLYFIN_ENV_REAUTH`, `JELLYFIN_SERVER_ALLOWLIST` | Optional Jellyfin re-authentication control and comma-separated list of allowed custom server origins for login. |
@@ -83,7 +92,7 @@ Then open [http://localhost:3000](http://localhost:3000). The server can start w
 | `CSRF_INSECURE_CLIENTS_ALLOWED` | `0` enforces Origin/Referer checks on mutations; `1` permits insecure or non-browser clients. Keep the default unless you specifically need the alternate behavior. |
 | `TRUSTED_PROXY`, `CLIENT_IP_HEADER` | Proxy/client-IP handling. The template enables use of a validated rightmost `X-Forwarded-For` value; an optional custom header can be configured. |
 
-The sample file also contains a few optional or deployment-specific values. Review its comments and [the VPS deployment guide](docs/DEPLOY_VPS.md) before changing security or proxy settings. Do not treat every placeholder as a requirement for starting the development server.
+The sample file also contains a few optional or deployment-specific values. Review its comments and [the VPS deployment guide](docs/DEPLOY.md) before changing security or proxy settings. Do not treat every placeholder as a requirement for starting the development server.
 
 ## Project scripts
 
@@ -92,6 +101,8 @@ The sample file also contains a few optional or deployment-specific values. Revi
 | `npm run dev` | Start the local development server. |
 | `npm run build` | Create a production build. |
 | `npm run start` | Serve the production build. |
+| `npm run db:migrate` | Initialize/update the Postgres schema safely, including on existing Docker volumes. |
+| `npm run test:db` | Run Postgres integration tests in a disposable schema (requires `DATABASE_URL` and schema creation permission). |
 | `npm run lint` | Run ESLint. |
 | `npx tsc --noEmit` | Run the TypeScript check. |
 | `npm run test:party` | Run Watch Party synchronization tests. |
@@ -113,7 +124,7 @@ src/
 ├── app/          Next.js pages and API route handlers
 ├── components/   Shared interface, player, and UI components
 └── lib/          Service clients, authentication, discovery, playback, and app logic
-convex/           Convex schema and functions
+src/lib/db/       Postgres pool, document stores, schema, and retention jobs
 public/           Logos, icons, and player assets
 docs/             Deployment and product/design documentation
 e2e/              Playwright tests and visual baselines
