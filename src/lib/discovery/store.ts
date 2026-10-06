@@ -1,12 +1,12 @@
-import { ConvexHttpClient } from "convex/browser"
-import type { FunctionReference } from "convex/server"
+import { getPostgresStore } from "@/lib/db/store"
+import type { StoreOperation } from "@/lib/db/store"
 
 /**
  * Persistence layer for the discovery engine.
  *
- * Convex (self-hosted or cloud) is the primary store, reached through the
- * same ConvexHttpClient pattern as the other *-store modules. When Convex is
- * unreachable (dev machines without a deployment), events fall back to a
+ * Postgres is the primary store, reached through the shared server-side pool.
+ * Without DATABASE_URL, or if event ingestion is temporarily unavailable,
+ * events fall back to a
  * bounded in-memory buffer so the pipeline keeps working within the process.
  */
 
@@ -73,8 +73,8 @@ export type ItemProfile = {
   vector: number[]
 }
 
-type QueryRef<Args extends Record<string, unknown>, Ret> = FunctionReference<"query", "public", Args, Ret>
-type MutationRef<Args extends Record<string, unknown>, Ret> = FunctionReference<"mutation", "public", Args, Ret>
+type QueryRef<Args extends Record<string, unknown>, Ret> = StoreOperation<Args, Ret>
+type MutationRef<Args extends Record<string, unknown>, Ret> = StoreOperation<Args, Ret>
 
 const logEventRef = "discovery:logEvent" as unknown as MutationRef<DiscoveryEvent, string>
 const getRecentEventsRef = "discovery:getRecentEvents" as unknown as QueryRef<
@@ -139,42 +139,7 @@ const recordServeLogRef = "discovery:recordServeLog" as unknown as MutationRef<
   string
 >
 
-let cachedClient: ConvexHttpClient | null | undefined
-
-function getConvexClient(): ConvexHttpClient | null {
-  if (cachedClient !== undefined) return cachedClient
-  const url =
-    process.env.CONVEX_SELF_HOSTED_URL ||
-    process.env.NEXT_PUBLIC_CONVEX_SELF_HOSTED_URL ||
-    process.env.CONVEX_URL ||
-    process.env.NEXT_PUBLIC_CONVEX_URL
-  const adminKey = process.env.CONVEX_SELF_HOSTED_ADMIN_KEY
-
-  if (!url) {
-    cachedClient = null
-    return null
-  }
-
-  try {
-    const client = new ConvexHttpClient(url, { skipConvexDeploymentUrlCheck: true })
-    if (adminKey) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const rawClient = client as any
-      if (typeof rawClient.setAdminAuth === "function") {
-        rawClient.setAdminAuth(adminKey)
-      } else {
-        client.setAuth(adminKey)
-      }
-    }
-    cachedClient = client
-  } catch (err) {
-    console.error("[Discovery] Failed to instantiate ConvexHttpClient:", err)
-    cachedClient = null
-  }
-  return cachedClient
-}
-
-// ── In-memory fallback buffers (Convex offline / dev) ──
+// ── In-memory fallback buffers (Postgres offline / dev) ──
 
 const LOCAL_EVENT_BUFFER_KEY = "__umrflixDiscoveryEvents"
 const LOCAL_BUFFER_LIMIT = 2000
@@ -195,15 +160,15 @@ function pushLocalEvent(event: DiscoveryEvent) {
 
 // ── Events ──
 
-/** Fire-and-forget safe: logs to Convex, else the local buffer. Never throws. */
+/** Fire-and-forget safe: logs to Postgres, else the local buffer. Never throws. */
 export async function logDiscoveryEvent(event: DiscoveryEvent): Promise<void> {
-  const convex = getConvexClient()
-  if (convex) {
+  const postgres = getPostgresStore()
+  if (postgres) {
     try {
-      await convex.mutation(logEventRef, event)
+      await postgres.write(logEventRef, event)
       return
     } catch (err) {
-      console.error("[Discovery] Failed to log event to Convex, buffering locally:", err)
+      console.error("[Discovery] Failed to log event to Postgres, buffering locally:", err)
     }
   }
   pushLocalEvent(event)
@@ -216,10 +181,10 @@ export async function getRecentDiscoveryEvents(
   limit = 500
 ): Promise<DiscoveryEvent[]> {
   const events: DiscoveryEvent[] = []
-  const convex = getConvexClient()
-  if (convex) {
+  const postgres = getPostgresStore()
+  if (postgres) {
     try {
-      const rows = await convex.query(getRecentEventsRef, {
+      const rows = await postgres.read(getRecentEventsRef, {
         userId,
         profileId,
         sinceTimestamp,
@@ -231,7 +196,7 @@ export async function getRecentDiscoveryEvents(
     }
   }
 
-  // Merge any locally buffered events (dev / Convex outage window).
+  // Merge any locally buffered events (dev / Postgres outage window).
   for (const e of localBuffer()) {
     if (e.userId === userId && e.profileId === profileId && e.timestamp >= sinceTimestamp) {
       events.push(e)
@@ -249,10 +214,10 @@ export async function saveFeatureProfile(
   profileId: string,
   profile: { shortTermVector: number[]; longTermVector: number[]; lastActiveTimestamp: number }
 ): Promise<void> {
-  const convex = getConvexClient()
-  if (!convex) return
+  const postgres = getPostgresStore()
+  if (!postgres) return
   try {
-    await convex.mutation(saveFeatureProfileRef, {
+    await postgres.write(saveFeatureProfileRef, {
       userId,
       profileId,
       shortTermVectorJson: JSON.stringify(profile.shortTermVector),
@@ -268,10 +233,10 @@ export async function loadFeatureProfile(
   userId: string,
   profileId: string
 ): Promise<PersistedProfile | null> {
-  const convex = getConvexClient()
-  if (!convex) return null
+  const postgres = getPostgresStore()
+  if (!postgres) return null
   try {
-    const row = await convex.query(getFeatureProfileRef, { userId, profileId })
+    const row = await postgres.read(getFeatureProfileRef, { userId, profileId })
     if (!row) return null
     return {
       shortTermVector: JSON.parse(row.shortTermVectorJson) as number[],
@@ -291,10 +256,10 @@ export async function recordRowImpression(
   rowCategoryKey: string,
   opts: { clicked?: boolean; played?: boolean } = {}
 ): Promise<void> {
-  const convex = getConvexClient()
-  if (!convex) return
+  const postgres = getPostgresStore()
+  if (!postgres) return
   try {
-    await convex.mutation(recordRowImpressionRef, { rowCategoryKey, ...opts })
+    await postgres.write(recordRowImpressionRef, { rowCategoryKey, ...opts })
   } catch (err) {
     console.error("[Discovery] Failed to record row impression:", err)
   }
@@ -302,10 +267,10 @@ export async function recordRowImpression(
 
 export async function getRowStats(): Promise<Map<string, RowStats>> {
   const map = new Map<string, RowStats>()
-  const convex = getConvexClient()
-  if (!convex) return map
+  const postgres = getPostgresStore()
+  if (!postgres) return map
   try {
-    const rows = await convex.query(getRowStatsRef, {})
+    const rows = await postgres.read(getRowStatsRef, {})
     for (const row of rows ?? []) {
       map.set(row.rowCategoryKey, {
         rowCategoryKey: row.rowCategoryKey,
@@ -327,10 +292,10 @@ export async function recordRowFatigueImpression(
   profileId: string,
   rowCategoryKey: string
 ): Promise<void> {
-  const convex = getConvexClient()
-  if (!convex) return
+  const postgres = getPostgresStore()
+  if (!postgres) return
   try {
-    await convex.mutation(recordRowFatigueRef, { userId, profileId, rowCategoryKey })
+    await postgres.write(recordRowFatigueRef, { userId, profileId, rowCategoryKey })
   } catch (err) {
     console.error("[Discovery] Failed to record fatigue impression:", err)
   }
@@ -341,10 +306,10 @@ export async function resetRowFatigue(
   profileId: string,
   rowCategoryKey: string
 ): Promise<void> {
-  const convex = getConvexClient()
-  if (!convex) return
+  const postgres = getPostgresStore()
+  if (!postgres) return
   try {
-    await convex.mutation(resetRowFatigueRef, { userId, profileId, rowCategoryKey })
+    await postgres.write(resetRowFatigueRef, { userId, profileId, rowCategoryKey })
   } catch (err) {
     console.error("[Discovery] Failed to reset fatigue:", err)
   }
@@ -355,10 +320,10 @@ export async function getRowFatigueMap(
   profileId: string
 ): Promise<Map<string, RowFatigue>> {
   const map = new Map<string, RowFatigue>()
-  const convex = getConvexClient()
-  if (!convex) return map
+  const postgres = getPostgresStore()
+  if (!postgres) return map
   try {
-    const rows = await convex.query(getRowFatigueRef, { userId, profileId })
+    const rows = await postgres.read(getRowFatigueRef, { userId, profileId })
     for (const row of rows ?? []) {
       map.set(row.rowCategoryKey, row)
     }
@@ -397,10 +362,10 @@ export async function getCachedItemProfile(
   const mem = itemMemoryCache.get(memKey)
   if (mem && Date.now() - mem.timestamp < ITEM_MEMORY_TTL) return mem.profile
 
-  const convex = getConvexClient()
-  if (!convex) return null
+  const postgres = getPostgresStore()
+  if (!postgres) return null
   try {
-    const entry = await convex.query(getItemFeatureRef, { itemKey })
+    const entry = await postgres.read(getItemFeatureRef, { itemKey })
     if (!entry) return null
     const profile = JSON.parse(entry.dataJson) as ItemProfile
     pruneItemMemoryCache()
@@ -417,10 +382,10 @@ export async function setCachedItemProfile(profile: ItemProfile): Promise<void> 
   pruneItemMemoryCache()
   itemMemoryCache.set(memKey, { profile, timestamp: Date.now() })
 
-  const convex = getConvexClient()
-  if (!convex) return
+  const postgres = getPostgresStore()
+  if (!postgres) return
   try {
-    await convex.mutation(setItemFeatureRef, { itemKey, dataJson: JSON.stringify(profile) })
+    await postgres.write(setItemFeatureRef, { itemKey, dataJson: JSON.stringify(profile) })
   } catch {
     /* cache writes are best-effort */
   }
@@ -435,10 +400,10 @@ export async function getServeLog(
   profileId: string
 ): Promise<Map<string, ServeEntry>> {
   const map = new Map<string, ServeEntry>()
-  const convex = getConvexClient()
-  if (!convex) return map
+  const postgres = getPostgresStore()
+  if (!postgres) return map
   try {
-    const row = await convex.query(getServeLogRef, { userId, profileId })
+    const row = await postgres.read(getServeLogRef, { userId, profileId })
     if (row?.servesJson) {
       const parsed: Record<string, ServeEntry> = JSON.parse(row.servesJson)
       for (const [k, v] of Object.entries(parsed)) {
@@ -457,10 +422,10 @@ export async function recordServeLog(
   itemKeys: string[]
 ): Promise<void> {
   if (itemKeys.length === 0) return
-  const convex = getConvexClient()
-  if (!convex) return
+  const postgres = getPostgresStore()
+  if (!postgres) return
   try {
-    await convex.mutation(recordServeLogRef, { userId, profileId, itemKeys })
+    await postgres.write(recordServeLogRef, { userId, profileId, itemKeys })
   } catch (err) {
     console.error("[Discovery] Failed to record serve log:", err)
   }

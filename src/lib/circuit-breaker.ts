@@ -68,7 +68,7 @@ const globalForBreakers = globalThis as unknown as {
   sonarrBreaker?: CircuitBreaker
   jellyfinBreaker?: CircuitBreaker
   tmdbBreaker?: CircuitBreaker
-  convexBreaker?: CircuitBreaker
+  postgresBreaker?: CircuitBreaker
 }
 
 export const radarrBreaker =
@@ -87,9 +87,9 @@ export const tmdbBreaker =
   globalForBreakers.tmdbBreaker ??
   (globalForBreakers.tmdbBreaker = new CircuitBreaker({ name: "TMDB", failureThreshold: 4, resetTimeoutMs: 20_000 }))
 
-export const convexBreaker =
-  globalForBreakers.convexBreaker ??
-  (globalForBreakers.convexBreaker = new CircuitBreaker({ name: "Convex", failureThreshold: 5, resetTimeoutMs: 45_000 }))
+export const postgresBreaker =
+  globalForBreakers.postgresBreaker ??
+  (globalForBreakers.postgresBreaker = new CircuitBreaker({ name: "Postgres", failureThreshold: 5, resetTimeoutMs: 45_000 }))
 
 // ── Per-identity breaker registry ──
 // Lets service clients scope breakers by an identity key (e.g. `${serverUrl}:${userId}`)

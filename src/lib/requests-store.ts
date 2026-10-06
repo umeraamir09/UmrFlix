@@ -1,7 +1,7 @@
 import fs from "fs"
 import path from "path"
-import { ConvexHttpClient } from "convex/browser"
-import type { FunctionReference } from "convex/server"
+import { getPostgresStore } from "@/lib/db/store"
+import type { StoreOperation } from "@/lib/db/store"
 import * as radarr from "./radarr"
 import * as sonarr from "./sonarr"
 import { ensureSonarrSeries } from "./cache"
@@ -29,7 +29,6 @@ async function triggerTrackerTick(): Promise<void> {
 }
 
 export type RequestStatus = "pending" | "approved" | "denied"
-
 
 export type RequestItem = {
   id: string
@@ -59,7 +58,6 @@ export type RequestItem = {
   deniedBy?: string
 }
 
-
 export type NotificationType =
   | "approved"
   | "denied"
@@ -82,10 +80,10 @@ export type UserNotification = {
   mediaType?: "movie" | "tv"
 }
 
-type QueryRef<Args extends Record<string, unknown>, Ret> = FunctionReference<"query", "public", Args, Ret>
-type MutationRef<Args extends Record<string, unknown>, Ret> = FunctionReference<"mutation", "public", Args, Ret>
+type QueryRef<Args extends Record<string, unknown>, Ret> = StoreOperation<Args, Ret>
+type MutationRef<Args extends Record<string, unknown>, Ret> = StoreOperation<Args, Ret>
 
-// Convex Function References
+// Postgres Store operations
 const getAllRequestsRef = "requests:getAllRequests" as unknown as QueryRef<Record<string, never>, unknown[]>
 const getUserRequestsRef = "requests:getUserRequests" as unknown as QueryRef<{ userId: string }, unknown[]>
 const getRequestByIdRef = "requests:getRequestById" as unknown as QueryRef<{ requestId: string }, unknown | null>
@@ -97,38 +95,6 @@ const markNotificationReadRef = "requests:markNotificationRead" as unknown as Mu
 const markAllNotificationsReadRef = "requests:markAllNotificationsRead" as unknown as MutationRef<{ userId: string }, void>
 const markRequestNotifsReadRef = "requests:markRequestNotificationsRead" as unknown as MutationRef<{ requestId: string }, void>
 const updateNotificationRef = "requests:updateNotification" as unknown as MutationRef<Record<string, unknown>, void>
-
-function getConvexClient(): ConvexHttpClient | null {
-  const url =
-    process.env.CONVEX_SELF_HOSTED_URL ||
-    process.env.NEXT_PUBLIC_CONVEX_SELF_HOSTED_URL ||
-    process.env.CONVEX_URL ||
-    process.env.NEXT_PUBLIC_CONVEX_URL
-  const adminKey = process.env.CONVEX_SELF_HOSTED_ADMIN_KEY
-
-  if (!url) return null
-
-  try {
-    const client = new ConvexHttpClient(url, {
-      skipConvexDeploymentUrlCheck: true,
-    })
-    if (adminKey) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const rawClient = client as any
-      if (typeof rawClient.setAdminAuth === "function") {
-        rawClient.setAdminAuth(adminKey)
-      } else {
-        client.setAuth(adminKey)
-      }
-    }
-    return client
-  } catch (err) {
-    if (process.env.NODE_ENV === "development") {
-      console.warn("[Convex] Failed to instantiate ConvexHttpClient:", err)
-    }
-    return null
-  }
-}
 
 // ── Local File System Fallback Store ──
 
@@ -180,7 +146,7 @@ function saveStore(data: StoreData) {
 // ── Public Store Methods ──
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-function mapConvexRequest(doc: any): RequestItem {
+function mapPostgresRequest(doc: any): RequestItem {
   return {
     id: doc.requestId,
     tmdbId: doc.tmdbId,
@@ -198,6 +164,9 @@ function mapConvexRequest(doc: any): RequestItem {
     status: doc.status as RequestStatus,
     qualityProfileId: doc.qualityProfileId,
     rootFolderPath: doc.rootFolderPath,
+    minimumAvailability: doc.minimumAvailability,
+    seriesType: doc.seriesType,
+    tags: doc.tags,
     seasons: doc.seasonsJson ? JSON.parse(doc.seasonsJson) : undefined,
     denialReason: doc.denialReason,
     approvedAt: doc.approvedAt,
@@ -208,7 +177,7 @@ function mapConvexRequest(doc: any): RequestItem {
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-function mapConvexNotification(doc: any): UserNotification {
+function mapPostgresNotification(doc: any): UserNotification {
   return {
     id: doc.notifId,
     userId: doc.userId,
@@ -225,15 +194,16 @@ function mapConvexNotification(doc: any): UserNotification {
 }
 
 export async function getAllRequests(): Promise<RequestItem[]> {
-  const convex = getConvexClient()
-  if (convex) {
+  const postgres = getPostgresStore()
+  if (postgres) {
     try {
-      const docs = await convex.query(getAllRequestsRef, {})
-      return docs.map(mapConvexRequest).sort((a, b) => new Date(b.requestedAt).getTime() - new Date(a.requestedAt).getTime())
+      const docs = await postgres.read(getAllRequestsRef, {})
+      return docs.map(mapPostgresRequest).sort((a, b) => new Date(b.requestedAt).getTime() - new Date(a.requestedAt).getTime())
     } catch (err) {
       if (process.env.NODE_ENV === "development") {
-        console.warn("[Convex] getAllRequests query failed, falling back to local store:", err)
+        console.warn("[Postgres] getAllRequests query failed:", err)
       }
+      throw err
     }
   }
 
@@ -242,15 +212,16 @@ export async function getAllRequests(): Promise<RequestItem[]> {
 }
 
 export async function getUserRequests(userId: string): Promise<RequestItem[]> {
-  const convex = getConvexClient()
-  if (convex) {
+  const postgres = getPostgresStore()
+  if (postgres) {
     try {
-      const docs = await convex.query(getUserRequestsRef, { userId })
-      return docs.map(mapConvexRequest).sort((a, b) => new Date(b.requestedAt).getTime() - new Date(a.requestedAt).getTime())
+      const docs = await postgres.read(getUserRequestsRef, { userId })
+      return docs.map(mapPostgresRequest).sort((a, b) => new Date(b.requestedAt).getTime() - new Date(a.requestedAt).getTime())
     } catch (err) {
       if (process.env.NODE_ENV === "development") {
-        console.warn("[Convex] getUserRequests query failed, falling back to local store:", err)
+        console.warn("[Postgres] getUserRequests query failed:", err)
       }
+      throw err
     }
   }
 
@@ -259,13 +230,13 @@ export async function getUserRequests(userId: string): Promise<RequestItem[]> {
 }
 
 export async function getRequestById(id: string): Promise<RequestItem | null> {
-  const convex = getConvexClient()
-  if (convex) {
+  const postgres = getPostgresStore()
+  if (postgres) {
     try {
-      const doc = await convex.query(getRequestByIdRef, { requestId: id })
-      return doc ? mapConvexRequest(doc) : null
-    } catch {
-      /* fallback */
+      const doc = await postgres.read(getRequestByIdRef, { requestId: id })
+      return doc ? mapPostgresRequest(doc) : null
+    } catch (error) {
+      throw error
     }
   }
 
@@ -393,8 +364,8 @@ export async function createRequest(payload: {
     }
   }
 
-  const convex = getConvexClient()
-  notifLog("createRequest", `Persisting request via ${convex ? "Convex" : "local store"}`, {
+  const postgres = getPostgresStore()
+  notifLog("createRequest", `Persisting request via ${postgres ? "Postgres" : "local store"}`, {
     requestId: id,
     title: payload.title,
     status,
@@ -402,9 +373,9 @@ export async function createRequest(payload: {
     username: payload.requestedBy.username,
   })
 
-  if (convex) {
+  if (postgres) {
     try {
-      await convex.mutation(createRequestRef, {
+      await postgres.write(createRequestRef, {
         requestId: id,
         tmdbId: payload.tmdbId,
         tvdbId: payload.tvdbId,
@@ -418,11 +389,14 @@ export async function createRequest(payload: {
         status,
         qualityProfileId: payload.qualityProfileId,
         rootFolderPath: payload.rootFolderPath,
+        minimumAvailability: payload.minimumAvailability,
+        seriesType: payload.seriesType,
+        tags: payload.tags,
         seasonsJson: payload.seasons ? JSON.stringify(payload.seasons) : undefined,
       })
-      notifLog("createRequest", `Convex mutation OK — requestId=${id}`)
+      notifLog("createRequest", `Postgres mutation OK — requestId=${id}`)
     } catch (err) {
-      console.error("[Convex] createRequest mutation failed:", err)
+      console.error("[Postgres] createRequest mutation failed:", err)
       throw new Error("Failed to save request to database")
     }
   } else {
@@ -453,7 +427,6 @@ export async function createRequest(payload: {
 
   return newRequest
 }
-
 
 export async function approveRequest(id: string, adminUsername: string): Promise<RequestItem> {
   const req = await getRequestById(id)
@@ -518,7 +491,6 @@ export async function approveRequest(id: string, adminUsername: string): Promise
     }
   }
 
-
   const approvedAt = new Date().toISOString()
   req.status = "approved"
   req.approvedAt = approvedAt
@@ -537,8 +509,8 @@ export async function approveRequest(id: string, adminUsername: string): Promise
     createdAt: new Date().toISOString(),
   }
 
-  const convex = getConvexClient()
-  notifLog("approveRequest", `Persisting approval via ${convex ? "Convex" : "local store"}`, {
+  const postgres = getPostgresStore()
+  notifLog("approveRequest", `Persisting approval via ${postgres ? "Postgres" : "local store"}`, {
     requestId: id,
     title: req.title,
     notifId,
@@ -546,17 +518,17 @@ export async function approveRequest(id: string, adminUsername: string): Promise
     adminUsername,
   })
 
-  if (convex) {
+  if (postgres) {
     try {
-      await convex.mutation(updateRequestStatusRef, {
+      await postgres.write(updateRequestStatusRef, {
         requestId: id,
         status: "approved",
         approvedBy: adminUsername,
         approvedAt,
       })
-      notifLog("approveRequest", `Convex updateRequestStatus OK`, { requestId: id })
+      notifLog("approveRequest", `Postgres updateRequestStatus OK`, { requestId: id })
 
-      await convex.mutation(addNotificationRef, {
+      await postgres.write(addNotificationRef, {
         notifId,
         userId: req.requestedBy.userId,
         requestId: req.id,
@@ -564,9 +536,9 @@ export async function approveRequest(id: string, adminUsername: string): Promise
         message: notifPayload.message,
         type: "approved",
       })
-      notifLog("approveRequest", `Convex addNotification OK`, { notifId, targetUserId: req.requestedBy.userId })
+      notifLog("approveRequest", `Postgres addNotification OK`, { notifId, targetUserId: req.requestedBy.userId })
     } catch (err) {
-      console.error("[Convex] approveRequest mutation failed:", err)
+      console.error("[Postgres] approveRequest mutation failed:", err)
       throw new Error("Failed to update request status in database")
     }
   } else {
@@ -592,7 +564,6 @@ export async function approveRequest(id: string, adminUsername: string): Promise
 
   return req
 }
-
 
 export async function denyRequest(id: string, adminUsername: string, reason?: string): Promise<RequestItem> {
   const req = await getRequestById(id)
@@ -620,8 +591,8 @@ export async function denyRequest(id: string, adminUsername: string, reason?: st
     createdAt: new Date().toISOString(),
   }
 
-  const convex = getConvexClient()
-  notifLog("denyRequest", `Persisting denial via ${convex ? "Convex" : "local store"}`, {
+  const postgres = getPostgresStore()
+  notifLog("denyRequest", `Persisting denial via ${postgres ? "Postgres" : "local store"}`, {
     requestId: id,
     title: req.title,
     notifId,
@@ -630,18 +601,18 @@ export async function denyRequest(id: string, adminUsername: string, reason?: st
     denialReason,
   })
 
-  if (convex) {
+  if (postgres) {
     try {
-      await convex.mutation(updateRequestStatusRef, {
+      await postgres.write(updateRequestStatusRef, {
         requestId: id,
         status: "denied",
         deniedBy: adminUsername,
         deniedAt,
         denialReason,
       })
-      notifLog("denyRequest", `Convex updateRequestStatus OK`, { requestId: id })
+      notifLog("denyRequest", `Postgres updateRequestStatus OK`, { requestId: id })
 
-      await convex.mutation(addNotificationRef, {
+      await postgres.write(addNotificationRef, {
         notifId,
         userId: req.requestedBy.userId,
         requestId: req.id,
@@ -649,9 +620,9 @@ export async function denyRequest(id: string, adminUsername: string, reason?: st
         message,
         type: "denied",
       })
-      notifLog("denyRequest", `Convex addNotification OK`, { notifId, targetUserId: req.requestedBy.userId })
+      notifLog("denyRequest", `Postgres addNotification OK`, { notifId, targetUserId: req.requestedBy.userId })
     } catch (err) {
-      console.error("[Convex] denyRequest mutation failed:", err)
+      console.error("[Postgres] denyRequest mutation failed:", err)
       throw new Error("Failed to update request status in database")
     }
   } else {
@@ -677,23 +648,23 @@ export async function denyRequest(id: string, adminUsername: string, reason?: st
   return req
 }
 
-
 export async function getUserNotifications(userId: string): Promise<UserNotification[]> {
-  const convex = getConvexClient()
-  notifLog("getUserNotifications", `Fetching notifications via ${convex ? "Convex" : "local store"}`, { userId })
+  const postgres = getPostgresStore()
+  notifLog("getUserNotifications", `Fetching notifications via ${postgres ? "Postgres" : "local store"}`, { userId })
 
-  if (convex) {
+  if (postgres) {
     try {
-      const docs = await convex.query(getUserNotificationsRef, { userId })
-      const mapped = docs.map(mapConvexNotification).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
-      notifLog("getUserNotifications", `Convex returned ${mapped.length} notification(s)`, {
+      const docs = await postgres.read(getUserNotificationsRef, { userId })
+      const mapped = docs.map(mapPostgresNotification).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+      notifLog("getUserNotifications", `Postgres returned ${mapped.length} notification(s)`, {
         userId,
         unread: mapped.filter((n) => !n.read).length,
         types: [...new Set(mapped.map((n) => n.type))],
       })
       return mapped
     } catch (err) {
-      notifLog("getUserNotifications", `Convex query failed — falling back to local store`, { userId, error: String(err) })
+      notifLog("getUserNotifications", `Postgres query failed`, { userId, error: String(err) })
+      throw err
     }
   }
 
@@ -706,16 +677,17 @@ export async function getUserNotifications(userId: string): Promise<UserNotifica
 }
 
 export async function markNotificationRead(notificationId: string, userId: string): Promise<void> {
-  const convex = getConvexClient()
-  notifLog("markNotificationRead", `Marking notifId=${notificationId} as read via ${convex ? "Convex" : "local store"}`, { userId })
+  const postgres = getPostgresStore()
+  notifLog("markNotificationRead", `Marking notifId=${notificationId} as read via ${postgres ? "Postgres" : "local store"}`, { userId })
 
-  if (convex) {
+  if (postgres) {
     try {
-      await convex.mutation(markNotificationReadRef, { notifId: notificationId, userId })
-      notifLog("markNotificationRead", `Convex mutation OK`, { notifId: notificationId, userId })
+      await postgres.write(markNotificationReadRef, { notifId: notificationId, userId })
+      notifLog("markNotificationRead", `Postgres mutation OK`, { notifId: notificationId, userId })
       return
     } catch (err) {
-      notifLog("markNotificationRead", `Convex mutation failed — falling back to local store`, { notifId: notificationId, error: String(err) })
+      notifLog("markNotificationRead", `Postgres mutation failed`, { notifId: notificationId, error: String(err) })
+      throw err
     }
   }
 
@@ -731,16 +703,17 @@ export async function markNotificationRead(notificationId: string, userId: strin
 }
 
 export async function markAllNotificationsRead(userId: string): Promise<void> {
-  const convex = getConvexClient()
-  notifLog("markAllNotificationsRead", `Marking all as read via ${convex ? "Convex" : "local store"}`, { userId })
+  const postgres = getPostgresStore()
+  notifLog("markAllNotificationsRead", `Marking all as read via ${postgres ? "Postgres" : "local store"}`, { userId })
 
-  if (convex) {
+  if (postgres) {
     try {
-      await convex.mutation(markAllNotificationsReadRef, { userId })
-      notifLog("markAllNotificationsRead", `Convex mutation OK`, { userId })
+      await postgres.write(markAllNotificationsReadRef, { userId })
+      notifLog("markAllNotificationsRead", `Postgres mutation OK`, { userId })
       return
     } catch (err) {
-      notifLog("markAllNotificationsRead", `Convex mutation failed — falling back to local store`, { userId, error: String(err) })
+      notifLog("markAllNotificationsRead", `Postgres mutation failed`, { userId, error: String(err) })
+      throw err
     }
   }
 
@@ -759,11 +732,11 @@ export async function markAllNotificationsRead(userId: string): Promise<void> {
 }
 
 export async function addPartyInviteNotification(notifPayload: UserNotification): Promise<void> {
-  const convex = getConvexClient()
+  const postgres = getPostgresStore()
   let persisted = false
-  if (convex) {
+  if (postgres) {
     try {
-      await convex.mutation(addNotificationRef, {
+      await postgres.write(addNotificationRef, {
         notifId: notifPayload.id,
         userId: notifPayload.userId,
         requestId: notifPayload.requestId,
@@ -775,8 +748,9 @@ export async function addPartyInviteNotification(notifPayload: UserNotification)
       persisted = true
     } catch (err) {
       if (process.env.NODE_ENV === "development") {
-        console.warn("[Convex] addPartyInviteNotification failed, falling back to local store:", err)
+        console.warn("[Postgres] addPartyInviteNotification failed:", err)
       }
+      throw err
     }
   }
 
@@ -799,8 +773,8 @@ function genNotifId(): string {
 }
 
 async function persistNotification(notif: UserNotification): Promise<void> {
-  const convex = getConvexClient()
-  notifLog("persistNotification", `Persisting via ${convex ? "Convex" : "local store"}`, {
+  const postgres = getPostgresStore()
+  notifLog("persistNotification", `Persisting via ${postgres ? "Postgres" : "local store"}`, {
     notifId: notif.id,
     type: notif.type,
     userId: notif.userId,
@@ -808,9 +782,9 @@ async function persistNotification(notif: UserNotification): Promise<void> {
     title: notif.title,
   })
 
-  if (convex) {
+  if (postgres) {
     try {
-      await convex.mutation(addNotificationRef, {
+      await postgres.write(addNotificationRef, {
         notifId: notif.id,
         userId: notif.userId,
         requestId: notif.requestId,
@@ -821,10 +795,11 @@ async function persistNotification(notif: UserNotification): Promise<void> {
         jellyfinItemId: notif.jellyfinItemId,
         mediaType: notif.mediaType,
       })
-      notifLog("persistNotification", `Convex mutation OK`, { notifId: notif.id, type: notif.type })
+      notifLog("persistNotification", `Postgres mutation OK`, { notifId: notif.id, type: notif.type })
       return
     } catch (err) {
-      notifLog("persistNotification", `Convex mutation failed — falling back to local store`, { notifId: notif.id, error: String(err) })
+      notifLog("persistNotification", `Postgres mutation failed`, { notifId: notif.id, error: String(err) })
+      throw err
     }
   }
 
@@ -839,13 +814,13 @@ export async function updateNotificationMessage(
   userId: string,
   message: string
 ): Promise<void> {
-  const convex = getConvexClient()
-  if (convex) {
+  const postgres = getPostgresStore()
+  if (postgres) {
     try {
-      await convex.mutation(updateNotificationRef, { notifId: notificationId, userId, message })
+      await postgres.write(updateNotificationRef, { notifId: notificationId, userId, message })
       return
-    } catch {
-      /* fallback */
+    } catch (error) {
+      throw error
     }
   }
 
@@ -1058,17 +1033,17 @@ export async function enrichAvailableNotification(req: RequestItem, jellyfinItem
   const notif = userNotifs.find((n) => n.type === "available" && n.requestId === req.id)
   if (!notif || notif.jellyfinItemId || !jellyfinItemId) return
 
-  const convex = getConvexClient()
-  if (convex) {
+  const postgres = getPostgresStore()
+  if (postgres) {
     try {
-      await convex.mutation(updateNotificationRef, {
+      await postgres.write(updateNotificationRef, {
         notifId: notif.id,
         userId: notif.userId,
         jellyfinItemId,
       })
       return
-    } catch {
-      /* fall back to local store */
+    } catch (error) {
+      throw error
     }
   }
 
@@ -1083,13 +1058,13 @@ export async function enrichAvailableNotification(req: RequestItem, jellyfinItem
 // Marks the admin_request notifications for a request as read once an admin
 // has acted on it (approve/deny), so stale unread items don't accumulate.
 export async function markAdminRequestNotifsRead(requestId: string): Promise<void> {
-  const convex = getConvexClient()
-  if (convex) {
+  const postgres = getPostgresStore()
+  if (postgres) {
     try {
-      await convex.mutation(markRequestNotifsReadRef, { requestId })
+      await postgres.write(markRequestNotifsReadRef, { requestId })
       return
-    } catch {
-      /* fall back to local store */
+    } catch (error) {
+      throw error
     }
   }
 

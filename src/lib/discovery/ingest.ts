@@ -6,7 +6,7 @@ import { MS_PER_DAY } from "./vector"
 
 /**
  * Signal ingestion (Discovery Engine, Module 1.1): converts raw playback and
- * explicit actions into weighted discovery events stored in Convex.
+ * explicit actions into weighted discovery events stored in Postgres.
  *
  * All exported ingestion functions are fire-and-forget safe — they never
  * throw into the caller's request path.

@@ -47,7 +47,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Invalid avatarUrl provided." }, { status: 400 })
     }
 
-    // Save user avatar in Convex (with fallback local store)
+    // Save user avatar in Postgres (with fallback local store)
     await setUserAvatar(session.userId, avatarUrl)
 
     // Update encrypted session cookie

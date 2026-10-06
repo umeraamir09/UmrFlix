@@ -2,8 +2,13 @@ import { RadarrMovie } from "./radarr"
 import { SonarrSeries } from "./sonarr"
 import { JellyfinItem } from "./jellyfin"
 import { SingleFlight } from "./circuit-breaker"
-import { ConvexHttpClient } from "convex/browser"
-import { api } from "../../convex/_generated/api"
+import type { StoreOperation } from "@/lib/db/store"
+import { getPostgresStore } from "@/lib/db/store"
+
+const getCacheEntry = "cache:getCacheEntry" as StoreOperation<{ key: string }, { dataJson: string; updatedAt: number } | null>
+const setCacheEntry = "cache:setCacheEntry" as StoreOperation<{ key: string; dataJson: string }, string>
+const getTmdbToTvdb = "cache:getTmdbToTvdb" as StoreOperation<{ tmdbId: number }, number | null>
+const setTmdbToTvdb = "cache:setTmdbToTvdb" as StoreOperation<{ tmdbId: number; tvdbId: number }, string>
 
 type CacheEntry<T> = { data: T; timestamp: number }
 
@@ -19,37 +24,6 @@ function isFresh(entry: CacheEntry<unknown>): boolean {
   return Date.now() - entry.timestamp < TTL_MS
 }
 
-
-
-function getConvexClient(): ConvexHttpClient | null {
-  const url =
-    process.env.CONVEX_SELF_HOSTED_URL ||
-    process.env.NEXT_PUBLIC_CONVEX_SELF_HOSTED_URL ||
-    process.env.CONVEX_URL ||
-    process.env.NEXT_PUBLIC_CONVEX_URL
-  const adminKey = process.env.CONVEX_SELF_HOSTED_ADMIN_KEY
-
-  if (!url) return null
-
-  try {
-    const client = new ConvexHttpClient(url, {
-      skipConvexDeploymentUrlCheck: true,
-    })
-    if (adminKey) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const rawClient = client as any
-      if (typeof rawClient.setAdminAuth === "function") {
-        rawClient.setAdminAuth(adminKey)
-      } else {
-        client.setAuth(adminKey)
-      }
-    }
-    return client
-  } catch {
-    return null
-  }
-}
-
 // ── Radarr movies cache (L1 + L2 + L3) ──
 
 export function setRadarrMovies(movies: RadarrMovie[]) {
@@ -60,12 +34,12 @@ export function setRadarrMovies(movies: RadarrMovie[]) {
   radarrMoviesCache.data = map
   radarrMoviesCache.timestamp = Date.now()
 
-  // Save to Convex L2 in background
-  const convex = getConvexClient()
-  if (convex) {
+  // Save to Postgres L2 in background
+  const postgres = getPostgresStore()
+  if (postgres) {
     try {
       const dataJson = JSON.stringify(movies)
-      convex.mutation(api.cache.setCacheEntry, { key: "radarr_movies", dataJson }).catch(() => {})
+      postgres.write(setCacheEntry, { key: "radarr_movies", dataJson }).catch(() => {})
 
     } catch {
       /* ignore background L2 error */
@@ -81,11 +55,11 @@ export async function ensureRadarrMovies(fetchFn: () => Promise<RadarrMovie[]>):
   if (isFresh(radarrMoviesCache)) return radarrMoviesCache.data
 
   return SingleFlight.execute("ensureRadarrMovies", async () => {
-    // Try L2 Convex store first if fresh
-    const convex = getConvexClient()
-    if (convex) {
+    // Try L2 Postgres store first if fresh
+    const postgres = getPostgresStore()
+    if (postgres) {
       try {
-        const entry = await convex.query(api.cache.getCacheEntry, { key: "radarr_movies" })
+        const entry = await postgres.read(getCacheEntry, { key: "radarr_movies" })
 
         if (entry && Date.now() - entry.updatedAt < TTL_MS) {
           const movies: RadarrMovie[] = JSON.parse(entry.dataJson)
@@ -121,11 +95,11 @@ export function setSonarrSeries(series: SonarrSeries[]) {
   sonarrSeriesCache.data = map
   sonarrSeriesCache.timestamp = Date.now()
 
-  const convex = getConvexClient()
-  if (convex) {
+  const postgres = getPostgresStore()
+  if (postgres) {
     try {
       const dataJson = JSON.stringify(series)
-      convex.mutation(api.cache.setCacheEntry, { key: "sonarr_series", dataJson }).catch(() => {})
+      postgres.write(setCacheEntry, { key: "sonarr_series", dataJson }).catch(() => {})
     } catch {
       /* ignore background L2 error */
     }
@@ -140,10 +114,10 @@ export async function ensureSonarrSeries(fetchFn: () => Promise<SonarrSeries[]>)
   if (isFresh(sonarrSeriesCache)) return sonarrSeriesCache.data
 
   return SingleFlight.execute("ensureSonarrSeries", async () => {
-    const convex = getConvexClient()
-    if (convex) {
+    const postgres = getPostgresStore()
+    if (postgres) {
       try {
-        const entry = await convex.query(api.cache.getCacheEntry, { key: "sonarr_series" })
+        const entry = await postgres.read(getCacheEntry, { key: "sonarr_series" })
 
         if (entry && Date.now() - entry.updatedAt < TTL_MS) {
           const series: SonarrSeries[] = JSON.parse(entry.dataJson)
@@ -174,10 +148,10 @@ export function setTmdbToTvdbMapping(tmdbId: number, tvdbId: number) {
   tmdbToTvdbCache.data.set(tmdbId, tvdbId)
   tmdbToTvdbCache.timestamp = Date.now()
 
-  const convex = getConvexClient()
-  if (convex) {
+  const postgres = getPostgresStore()
+  if (postgres) {
     try {
-      convex.mutation(api.cache.setTmdbToTvdb, { tmdbId, tvdbId }).catch(() => {})
+      postgres.write(setTmdbToTvdb, { tmdbId, tvdbId }).catch(() => {})
     } catch {
       /* ignore background L2 error */
     }
@@ -195,10 +169,10 @@ export async function fetchTmdbToTvdbMappingL2(tmdbId: number): Promise<number |
     if (cachedL1 !== undefined) return cachedL1
   }
 
-  const convex = getConvexClient()
-  if (convex) {
+  const postgres = getPostgresStore()
+  if (postgres) {
     try {
-      const tvdbId = await convex.query(api.cache.getTmdbToTvdb, { tmdbId })
+      const tvdbId = await postgres.read(getTmdbToTvdb, { tmdbId })
       if (tvdbId !== null) {
         tmdbToTvdbCache.data.set(tmdbId, tvdbId)
         tmdbToTvdbCache.timestamp = Date.now()
@@ -212,7 +186,6 @@ export async function fetchTmdbToTvdbMappingL2(tmdbId: number): Promise<number |
   return null
 }
 
-
 // ── Jellyfin item index cache ──
 
 export function setJellyfinIndex(items: JellyfinItem[]) {
@@ -225,11 +198,11 @@ export function setJellyfinIndex(items: JellyfinItem[]) {
   jellyfinIndexCache.data = map
   jellyfinIndexCache.timestamp = Date.now()
 
-  const convex = getConvexClient()
-  if (convex) {
+  const postgres = getPostgresStore()
+  if (postgres) {
     try {
       const dataJson = JSON.stringify(Array.from(map.entries()))
-      convex.mutation(api.cache.setCacheEntry, { key: "jellyfin_index", dataJson }).catch(() => {})
+      postgres.write(setCacheEntry, { key: "jellyfin_index", dataJson }).catch(() => {})
     } catch {
       /* ignore background L2 error */
     }
@@ -244,11 +217,11 @@ export async function ensureJellyfinIndex(fetchFn: () => Promise<JellyfinItem[]>
   if (isFresh(jellyfinIndexCache)) return jellyfinIndexCache.data
 
   return SingleFlight.execute("ensureJellyfinIndex", async () => {
-    const convex = getConvexClient()
-    if (convex) {
+    const postgres = getPostgresStore()
+    if (postgres) {
 
       try {
-        const entry = await convex.query(api.cache.getCacheEntry, { key: "jellyfin_index" })
+        const entry = await postgres.read(getCacheEntry, { key: "jellyfin_index" })
 
         if (entry && Date.now() - entry.updatedAt < TTL_MS) {
           const entries: [string, string][] = JSON.parse(entry.dataJson)
@@ -279,17 +252,17 @@ export async function invalidateAll(): Promise<void> {
   tmdbToTvdbCache.timestamp = 0
   jellyfinIndexCache.timestamp = 0
 
-  // Clear L2 Convex cache store so subsequent queries fetch origin data
-  const convex = getConvexClient()
-  if (convex) {
+  // Clear L2 Postgres cache store so subsequent queries fetch origin data
+  const postgres = getPostgresStore()
+  if (postgres) {
     try {
       await Promise.all([
-        convex.mutation(api.cache.setCacheEntry, { key: "radarr_movies", dataJson: "[]" }),
-        convex.mutation(api.cache.setCacheEntry, { key: "sonarr_series", dataJson: "[]" }),
-        convex.mutation(api.cache.setCacheEntry, { key: "jellyfin_index", dataJson: "[]" }),
+        postgres.write(setCacheEntry, { key: "radarr_movies", dataJson: "[]" }),
+        postgres.write(setCacheEntry, { key: "sonarr_series", dataJson: "[]" }),
+        postgres.write(setCacheEntry, { key: "jellyfin_index", dataJson: "[]" }),
       ])
     } catch (err) {
-      console.error("Failed to clear L2 Convex cache in invalidateAll:", err)
+      console.error("Failed to clear L2 Postgres cache in invalidateAll:", err)
     }
   }
 
