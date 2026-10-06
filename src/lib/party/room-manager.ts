@@ -2,10 +2,10 @@ import { eventBus } from "../event-bus"
 import type { PartyCommand, PartyMember, PartyRoomSnapshot, PartyState } from "./protocol"
 import { MAX_COMMAND_TRANSPORT_MS, MAX_PARTY_POSITION_SEC } from "./protocol"
 import {
-  persistRoomToConvex,
-  deleteRoomFromConvex,
-  loadAllRoomsFromConvex,
-} from "./party-convex-store"
+  persistRoomToPostgres,
+  deleteRoomFromPostgres,
+  loadAllRoomsFromPostgres,
+} from "./party-postgres-store"
 
 export type PartyRoom = {
   id: string
@@ -39,15 +39,15 @@ class PartyRoomManager {
       const gcTimer = setInterval(() => this.reapStaleRooms(), 5 * 60 * 1000)
       // Don't keep a Node process alive just for GC (tests, scripts)
       gcTimer.unref?.()
-      // Hydrate from Convex database on server startup
-      void this.hydrateFromConvex()
+      // Hydrate from Postgres database on server startup
+      void this.hydrateFromPostgres()
     }
   }
 
-  private async hydrateFromConvex() {
+  private async hydrateFromPostgres() {
     if (this.isHydrated) return
     try {
-      const storedRooms = await loadAllRoomsFromConvex()
+      const storedRooms = await loadAllRoomsFromPostgres()
       for (const room of storedRooms) {
         if (!this.rooms.has(room.id)) {
           this.rooms.set(room.id, room)
@@ -55,16 +55,16 @@ class PartyRoomManager {
       }
       this.isHydrated = true
     } catch (err) {
-      console.error("[PartyRoomManager] Failed to hydrate from Convex:", err)
+      console.error("[PartyRoomManager] Failed to hydrate from Postgres:", err)
     }
   }
 
-  private syncToConvex(room: PartyRoom) {
-    void persistRoomToConvex(room)
+  private syncToPostgres(room: PartyRoom) {
+    void persistRoomToPostgres(room)
   }
 
-  private removeFromConvex(partyId: string) {
-    void deleteRoomFromConvex(partyId)
+  private removeFromPostgres(partyId: string) {
+    void deleteRoomFromPostgres(partyId)
   }
 
   private reapStaleRooms() {
@@ -79,7 +79,7 @@ class PartyRoomManager {
 
       if (room.members.size === 0 || now - newestActivity > MAX_INACTIVE_MS) {
         this.rooms.delete(roomId)
-        this.removeFromConvex(roomId)
+        this.removeFromPostgres(roomId)
         eventBus.emitEvent({
           type: "party:ended",
           payload: {
@@ -155,7 +155,7 @@ class PartyRoomManager {
     }
 
     this.rooms.set(partyId, room)
-    this.syncToConvex(room)
+    this.syncToPostgres(room)
 
     return this.getSnapshot(partyId, ownerId)!
   }
@@ -226,7 +226,7 @@ class PartyRoomManager {
 
     if (room.members.size === 0) {
       this.rooms.delete(room.id)
-      this.removeFromConvex(room.id)
+      this.removeFromPostgres(room.id)
       eventBus.emitEvent({
         type: "party:ended",
         payload: { partyId: room.id, audience: [] },
@@ -268,7 +268,7 @@ class PartyRoomManager {
       })
     }
 
-    this.syncToConvex(room)
+    this.syncToPostgres(room)
   }
 
   public getSnapshot(partyId: string, currentUserId: string): PartyRoomSnapshot | null {
@@ -336,7 +336,7 @@ class PartyRoomManager {
       },
     })
 
-    this.syncToConvex(room)
+    this.syncToPostgres(room)
     return this.getSnapshot(partyId, userId)
   }
 
@@ -349,7 +349,7 @@ class PartyRoomManager {
 
     if (room.members.size === 0) {
       this.rooms.delete(partyId)
-      this.removeFromConvex(partyId)
+      this.removeFromPostgres(partyId)
       return { roomEnded: true }
     }
 
@@ -395,7 +395,7 @@ class PartyRoomManager {
       })
     }
 
-    this.syncToConvex(room)
+    this.syncToPostgres(room)
     return { roomEnded: false, newOwnerId }
   }
 
@@ -431,7 +431,7 @@ class PartyRoomManager {
       },
     })
 
-    this.syncToConvex(room)
+    this.syncToPostgres(room)
     return true
   }
 
@@ -441,7 +441,7 @@ class PartyRoomManager {
 
     const audience = Array.from(room.members.keys())
     this.rooms.delete(partyId)
-    this.removeFromConvex(partyId)
+    this.removeFromPostgres(partyId)
 
     // party:ended is the single canonical event for room destruction
     eventBus.emitEvent({
@@ -528,7 +528,7 @@ class PartyRoomManager {
       },
     })
 
-    this.syncToConvex(room)
+    this.syncToPostgres(room)
     return newState
   }
 
@@ -571,7 +571,7 @@ class PartyRoomManager {
       },
     })
 
-    this.syncToConvex(room)
+    this.syncToPostgres(room)
     return newState
   }
 
@@ -638,7 +638,7 @@ class PartyRoomManager {
       })
     }
 
-    this.syncToConvex(room)
+    this.syncToPostgres(room)
     return room.state
   }
 
