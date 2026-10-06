@@ -1,0 +1,16 @@
+.git
+node_modules
+.next
+out
+build
+config
+data
+.env*
+!.env.example
+*.pem
+*.tsbuildinfo
+next-env.d.ts
+coverage
+e2e
+*.log
+.vercel

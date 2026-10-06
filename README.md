@@ -71,6 +71,30 @@ Then open [http://localhost:3000](http://localhost:3000). Postgres persists list
 
 The server can start without every integration configured, but pages and actions that depend on a service need that service to be reachable and configured.
 
+## Run with Docker Compose
+
+Copy `.env.example` to `.env`, fill in your service credentials and Postgres
+settings, then build and start the app:
+
+```bash
+docker compose up -d --build umrflix
+```
+
+The `umrflix` service uses the existing `media_internal` network and connects
+to Jellyfin, Radarr, Sonarr, and qBittorrent by service name. Start those services
+as needed (`docker compose up -d jellyfin radarr sonarr qbittorrent`). Postgres
+starts automatically; `umrflix-migrate` applies the schema before the app starts.
+Use HTTPS through your reverse proxy for production sign-in. See the
+[Docker deployment guide](docs/DEPLOY.md#docker-hosting) for proxy setup and updates.
+
+Docker settings in `.env`:
+
+| Variable | Purpose |
+| --- | --- |
+| `UMRFLIX_DATABASE_URL` | Optional container database URL; defaults to `POSTGRES_*` credentials at `postgres:5432`. Supply a URL-encoded password here when needed. |
+| `UMRFLIX_PORT` | Published host port, default `3000`. |
+| `UMRFLIX_BIND_IP` | Published host address, default `127.0.0.1`; use `0.0.0.0` for LAN access. |
+
 ## Configuration
 
 `.env.example` is the starting point for local configuration. These are the main integration and security settings; set only what applies to your deployment.

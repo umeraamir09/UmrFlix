@@ -7,6 +7,57 @@ networks:
   #   name: ${NPM_NETWORK_NAME}
 
 services:
+  # UmrFlix runs a single Node process for in-memory Watch Party membership.
+  umrflix:
+    image: umrflix:local
+    build:
+      context: .
+      target: runner
+    init: true
+    env_file:
+      - .env
+    environment:
+      NODE_ENV: production
+      HOSTNAME: 0.0.0.0
+      PORT: 3000
+      DATABASE_URL: ${UMRFLIX_DATABASE_URL:-postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}}
+      JELLYFIN_URL: http://jellyfin:8096
+      RADARR_URL: http://radarr:7878
+      SONARR_URL: http://sonarr:8989
+      QBITTORRENT_URL: http://qbittorrent:8080
+    depends_on:
+      postgres:
+        condition: service_healthy
+      umrflix-migrate:
+        condition: service_completed_successfully
+    ports:
+      - "${UMRFLIX_BIND_IP:-127.0.0.1}:${UMRFLIX_PORT:-3000}:3000"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/login').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      start_period: 30s
+      timeout: 5s
+      interval: 30s
+      retries: 3
+    networks:
+      - media_internal
+      # - npm_proxy
+
+  # One-shot, idempotent schema update for fresh AND existing databases.
+  umrflix-migrate:
+    image: umrflix-migrate:local
+    build:
+      context: .
+      target: migrate
+    environment:
+      DATABASE_URL: ${UMRFLIX_DATABASE_URL:-postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+    networks:
+      - media_internal
+
   # ---------------------------------------------------------------
   # QBITTORRENT - torrent client
   # ---------------------------------------------------------------
