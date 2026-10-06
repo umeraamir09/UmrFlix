@@ -1,203 +1,132 @@
-![Logo](https://i.ibb.co/sv5kzBjW/logo-header.png)
+# UmrFlix
 
-A Netflix-style media client that unifies **TMDB** catalog browsing, **Radarr** / **Sonarr** request management, and **Jellyfin** playback into one seamless interface.
+<div align="center">
 
-Browse millions of movies and TV shows, see what's already in your library, request new downloads, and stream instantly — all from a single Next.js app running on your own infrastructure.
+<img src="public/umrflix-logo.svg" width='500' />
 
-## Architecture
+</div>
 
-![Architecture](https://i.ibb.co/rGpVDYDP/custom-jellyfin-radarr-sonarr-client.png)
-
-- **TMDB** — powers all browsing and search (infinite catalog, not limited to what's downloaded)
-- **Radarr** — manages movie library and handles new requests + downloads
-- **Sonarr** — manages TV library and handles new requests + downloads
-- **Jellyfin** — streams the actual media files for playback
-- **UmrFlix** — the glue layer that cross-references everything and presents a unified Netflix-like UI
+UmrFlix is a self-hosted web app for discovering movies and TV, browsing a Jellyfin library, requesting titles through Radarr or Sonarr, and watching through Jellyfin. It brings those services together in a single Next.js interface.
 
 ## Features
 
-- **Trending & browse** — hero billboard, spotlight banners, genre/genreless rows powered by TMDB
-- **Search** — instant search across the full TMDB catalog with availability indicators
-- **Availability badges** — knows whether each title is downloaded, downloading, or missing by cross-referencing Radarr/Sonarr APIs via TMDB/TVDB IDs
-- **Request & download** — one-click requests flow through to Radarr/Sonarr automatic search
-- **Download progress** — polls queue status so you see real-time % progress instead of a dead "requested" state
-- **Streaming** — full Jellyfin-powered playback with HLS, ASS/SSA subtitle support, and audio track selection
-- **Continue watching** — resumes in-progress titles from where you left off
-- **Watch Party** — synchronized multi-viewer playback with zero DB overhead, in-memory room management, drift correction, pause-for-everyone buffering, and user invites
-- **Library** — browse everything you already own, unified across movies and TV
+- **Catalog discovery:** browse trending titles, search TMDB-backed movie and TV catalogs, and explore genre and recommendation rows.
+- **Library and availability:** browse Jellyfin media, see whether titles are available or still being requested, and continue watching where supported by the library.
+- **Requests and progress:** send movie and series requests to configured Radarr and Sonarr instances and view queue progress.
+- **Playback:** play Jellyfin media with HLS support, subtitle rendering for ASS/SSA, and audio-track selection.
+- **Personal features:** keep a list, see personalized discovery rows, and join synchronized Watch Party sessions.
 
-## Tech Stack
+The app connects to services you configure; it does not include TMDB, Jellyfin, Radarr, Sonarr, or media files.
 
-| Layer | Technology |
-|-------|-----------|
-| Framework | Next.js 16 (App Router) |
-| Language | TypeScript |
-| Styling | Tailwind CSS v4 |
-| UI Components | Custom (`class-variance-authority`, `tailwind-merge`) |
-| Icons | Lucide React |
-| Data Fetching | SWR |
-| Playback | hls.js, jassub (ASS/SSA subtitles) |
-| Catalog API | TMDB |
-| Media Servers | Radarr, Sonarr, Jellyfin |
+## How it fits together
 
-## Prerequisites
+| Service | Role in UmrFlix |
+| --- | --- |
+| [TMDB](https://www.themoviedb.org/) | Catalog and discovery data, requested through a configured proxy. |
+| [Jellyfin](https://jellyfin.org/) | Sign-in, library information, and media playback. |
+| [Radarr](https://radarr.video/) | Movie requests and queue information. |
+| [Sonarr](https://sonarr.tv/) | Series requests and queue information. |
+| Convex (optional) | Self-hosted persistence for supported app data; see the [deployment guide](docs/DEPLOY_VPS.md). |
 
-- **Node.js** >= 20
-- **npm** (or pnpm/bun/yarn)
-- A running instance of each backend service (Oracle VM or local):
-  - [Jellyfin](https://jellyfin.org) — media server
-  - [Radarr](https://radarr.video) — movie management
-  - [Sonarr](https://sonarr.tv) — TV series management
-- A deployed [Cloudflare Worker](https://workers.cloudflare.com) proxy for the TMDB API, configured via `TMDB_PROXY_URL` / `TMDB_PROXY_SECRET`
+## Technology
 
-## Getting Started
+- **Application:** Next.js 16 App Router, React 19, and TypeScript
+- **Styling and UI:** Tailwind CSS 4, custom components, and Lucide icons
+- **Data fetching:** SWR
+- **Playback:** `hls.js` and `jassub` for ASS/SSA subtitles
+- **Tests and tooling:** ESLint, TypeScript, Vitest, Node test runner, and Playwright
 
-### 1. Clone and install
+## Run locally
+
+### Prerequisites
+
+- Node.js 20 or newer
+- npm
+- The external services and credentials for the features you plan to use. TMDB-backed catalog requests use a Cloudflare Worker proxy; Jellyfin is used for sign-in and playback, and Radarr/Sonarr are needed for their respective request integrations.
+
+### Install and start
 
 ```bash
 git clone https://github.com/umeraamir09/UmrFlix.git
 cd UmrFlix
-npm install
-```
-
-### 2. Configure environment
-
-Copy `.env.example` to `.env.local` and fill in your credentials:
-
-```bash
+npm ci
 cp .env.example .env.local
 ```
 
-| Variable | Description |
-|----------|-------------|
-| `TMDB_PROXY_URL` | Your Cloudflare Worker proxy base URL for TMDB |
-| `TMDB_PROXY_SECRET` | Shared secret the proxy requires via `X-Proxy-Secret` header |
-| `RADARR_URL` / `RADARR_API_KEY` | Radarr instance URL and API key |
-| `SONARR_URL` / `SONARR_API_KEY` | Sonarr instance URL and API key |
-| `JELLYFIN_URL` / `JELLYFIN_USERNAME` / `JELLYFIN_PASSWORD` | Jellyfin connection details |
+Edit `.env.local` and provide the values for the services you use. Keep credentials in this local file or your deployment's secret store—never commit real API keys, passwords, tokens, or `.env.local`.
 
-#### Webhooks & notification settings
-
-- `WEBHOOK_SECRET` — optional shared secret for `/api/webhooks`. When set, webhook POSTs must send it via the `x-webhook-secret` header or `?secret=` query param; without it, webhook events still broadcast over SSE but notification persistence is skipped.
-- `NOTIF_DEBUG` — set to `1` to enable verbose notification pipeline logging (includes user/admin IDs — keep off in production).
-
-### 3. Run the dev server
+Start the development server:
 
 ```bash
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) to see the app.
+Then open [http://localhost:3000](http://localhost:3000). The server can start without every integration configured, but pages and actions that depend on a service need that service to be reachable and configured.
 
-## How It Works
+## Configuration
 
-**Browsing & search** hits the TMDB API through a Cloudflare Worker proxy — you see the full universe of movies and TV, not just what's already downloaded.
+`.env.example` is the starting point for local configuration. These are the main integration and security settings; set only what applies to your deployment.
 
-> **Security model:** `TMDB_PROXY_SECRET` is a single shared static secret sent to the Worker on every request. It keeps your TMDB API key off your server, but it is *not* per-user auth — anyone with the secret (or access to this app's `/api/tmdb/*` routes, which require a logged-in session) can reach the proxy. Treat the Worker as semi-public: keep its path allowlisting tight and consider rotating the secret if the Worker URL ever leaks.
+| Variable(s) | Purpose |
+| --- | --- |
+| `TMDB_PROXY_URL`, `TMDB_PROXY_SECRET` | Cloudflare Worker URL and shared secret for TMDB requests. The secret is sent in the `X-Proxy-Secret` header. |
+| `JELLYFIN_URL`, `JELLYFIN_USERNAME`, `JELLYFIN_PASSWORD` | Jellyfin server and credentials used by the app. |
+| `RADARR_URL`, `RADARR_API_KEY` | Radarr connection for movie requests and queue information. |
+| `SONARR_URL`, `SONARR_API_KEY` | Sonarr connection for series requests and queue information. |
+| `OMDB_API_KEY` | Optional IMDb ratings enrichment; TMDB ratings are used when it is unset. |
+| `QBITTORRENT_URL`, `QBITTORRENT_USERNAME`, `QBITTORRENT_PASSWORD` | Optional qBittorrent connection for the admin download view. |
+| `CONVEX_SELF_HOSTED_URL`, `CONVEX_SELF_HOSTED_ADMIN_KEY` | Optional self-hosted Convex connection. The deployment guide describes the file-based fallback and additional URL configuration. |
+| `WEBHOOK_SECRET` | Optional protection for `/api/webhooks`. When configured, webhook requests must include it in the `x-webhook-secret` header or `secret` query parameter. |
+| `NOTIF_DEBUG` | Set to `1` for verbose notification logs. These logs can include user and admin IDs; leave it off in production. |
+| `JELLYFIN_ENV_REAUTH`, `JELLYFIN_SERVER_ALLOWLIST` | Optional Jellyfin re-authentication control and comma-separated list of allowed custom server origins for login. |
+| `ALLOW_PUBLIC_IMAGES` | `0` requires a session for images; `1` permits unauthenticated Jellyfin poster artwork. |
+| `CSRF_INSECURE_CLIENTS_ALLOWED` | `0` enforces Origin/Referer checks on mutations; `1` permits insecure or non-browser clients. Keep the default unless you specifically need the alternate behavior. |
+| `TRUSTED_PROXY`, `CLIENT_IP_HEADER` | Proxy/client-IP handling. The template enables use of a validated rightmost `X-Forwarded-For` value; an optional custom header can be configured. |
 
-**Availability checking** cross-references every TMDB result against your Radarr/Sonarr collections by ID (never by title string). If a match is found, it reads `hasFile` status. For TV, TMDB IDs are mapped to TVDB IDs via TMDB's `external_ids` endpoint since Sonarr uses TVDB internally.
+The sample file also contains a few optional or deployment-specific values. Review its comments and [the VPS deployment guide](docs/DEPLOY_VPS.md) before changing security or proxy settings. Do not treat every placeholder as a requirement for starting the development server.
 
-**Requesting** a title posts to Radarr (`POST /api/v3/movie`) or Sonarr (`POST /api/v3/series`) with the media ID and your configured quality profile / root folder. The backend immediately triggers an automatic search.
+## Project scripts
 
-**Download progress** is shown by polling `GET /api/v3/queue` on both apps, so you see live percentage rather than a static "requested" label.
+| Command | Purpose |
+| --- | --- |
+| `npm run dev` | Start the local development server. |
+| `npm run build` | Create a production build. |
+| `npm run start` | Serve the production build. |
+| `npm run lint` | Run ESLint. |
+| `npx tsc --noEmit` | Run the TypeScript check. |
+| `npm run test:party` | Run Watch Party synchronization tests. |
+| `npm run test:discovery` | Run discovery tests. |
+| `npm run test:lib` | Run library and player logic tests. |
+| `npm run test:components` | Run Vitest component tests. |
+| `npm run test:e2e` | Run the Playwright end-to-end suite. |
+| `npm run test:e2e:ui` | Open the Playwright UI runner. |
+| `npm run test:visual` | Run the visual Playwright test. |
+| `npm run penpot:verify -- --target <target>` | Verify a mapped target against the Penpot design when that setup is available. |
+| `npm run penpot:sync` | Run the Penpot sync script. |
 
-**Playback** streams directly from Jellyfin's HLS endpoints. Subtitles are rendered client-side via jassub for ASS/SSA format, with VTT as a fallback.
+End-to-end and visual checks may need a running, configured app and the related authentication or design setup. See [CONTRIBUTING.md](CONTRIBUTING.md) for the project’s recommended checks and notes on environment-dependent tests.
 
-## Project Structure
+## Repository layout
 
-```
+```text
 src/
-├── app/
-│   ├── api/            # Next.js route handlers (proxies to TMDB/Radarr/Sonarr/Jellyfin)
-│   ├── library/        # "My Library" page (already-downloaded content)
-│   ├── movie/          # Movie detail pages
-│   ├── tv/             # TV series detail pages
-│   ├── search/         # Search results page
-│   ├── page.tsx        # Home page (trending, billboard, rows)
-│   └── layout.tsx      # Root layout with Navbar + Footer
-├── components/
-│   ├── player/         # Video player (hls.js + jassub integration)
-│   ├── ui/             # Primitive UI components
-│   ├── HeroBillboard.tsx
-│   ├── MovieCard.tsx / MovieRow.tsx
-│   ├── SearchBar.tsx / SearchResults.tsx
-│   ├── RequestButton.tsx / RequestModal.tsx
-│   ├── AvailabilityBadge.tsx
-│   ├── ContinueWatchingSection.tsx
-│   └── ...
-└── lib/
-    ├── tmdb.ts         # TMDB API client
-    ├── radarr.ts       # Radarr API client
-    ├── sonarr.ts       # Sonarr API client
-    ├── jellyfin.ts     # Jellyfin auth + API client
-    ├── stream.ts       # Streaming / playback helpers
-    ├── cache.ts        # Server-side caching for Radarr/Sonarr collections
-    ├── use-availability.ts  # SWR hook for availability status
-    ├── vtt.ts          # Subtitle parsing
-    └── env.ts          # Validated environment variables
+├── app/          Next.js pages and API route handlers
+├── components/   Shared interface, player, and UI components
+└── lib/          Service clients, authentication, discovery, playback, and app logic
+convex/           Convex schema and functions
+public/           Logos, icons, and player assets
+docs/             Deployment and product/design documentation
+e2e/              Playwright tests and visual baselines
+scripts/           Penpot verification and sync scripts
 ```
 
-## Testing & Visual Verification
+## Deployment and contributor docs
 
-UmrFlix includes a production-grade testing and visual verification suite with live server execution and Penpot design comparison:
+- [VPS deployment guide](docs/DEPLOY_VPS.md) — PM2, Nginx Proxy Manager, and optional self-hosted Convex notes.
+- [Personalization design document](docs/PERSONALIZATION.md)
+- [Contributing guide](CONTRIBUTING.md) — local setup, checks, conventions, and pull-request guidance.
+- [Code of Conduct](CODE_OF_CONDUCT.md) — project code of conduct
 
-### 1. Playwright E2E Tests (Live Server)
-```bash
-# Run all E2E test suites against live server
-npm run test:e2e
+## License
 
-# Run specific suite
-npm run test:e2e -- e2e/auth.spec.ts
-npm run test:e2e -- e2e/home.spec.ts
-npm run test:e2e -- e2e/catalog.spec.ts
-npm run test:e2e -- e2e/details.spec.ts
-npm run test:e2e -- e2e/search.spec.ts
-npm run test:e2e -- e2e/player.spec.ts
-npm run test:e2e -- e2e/touch-responsive.spec.ts
-
-# Interactive UI test runner
-npm run test:e2e:ui
-```
-
-### 2. Interactive Penpot Visual Verification CLI
-Used by LLMs and engineers to inspect UI work against the reference Penpot design file and capture pixel-diff artifacts:
-```bash
-# Verify a single target
-npm run penpot:verify -- --target login
-
-# Verify all mapped targets
-npm run penpot:verify -- --all
-
-# Update visual baselines
-npm run penpot:verify -- --all --update-baselines
-npm run penpot:sync
-```
-
-### 3. Unit, Component, and Party Tests
-```bash
-npm run test:lib          # Pure-logic library tests (node:test)
-npm run test:party        # Watch party synchronization tests
-npm run test:components   # Player & UI component tests (Vitest + JSDOM)
-```
-
-## Contributing
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) for local setup, project checks, and pull-request guidance. The proposed community expectations are in [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md); that document is a draft pending maintainer review.
-
-## Deployment
-
-### Build
-
-```bash
-npm run build
-```
-
-### Start production server
-
-```bash
-npm run start
-```
-
-All API keys stay server-side in route handlers — they are never exposed to the client. The app can be deployed to any Node.js host (Vercel, Railway, your Oracle VM, etc.).
-
-Jellyfin, Radarr, and Sonarr must be network-reachable from wherever the Next.js app runs.
+UmrFlix is distributed under the [MIT License](LICENSE).
