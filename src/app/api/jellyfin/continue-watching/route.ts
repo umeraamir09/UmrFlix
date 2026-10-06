@@ -8,7 +8,7 @@ import {
   JellyfinAuthError,
 } from "@/lib/jellyfin"
 import type { JellyfinResumeItem } from "@/lib/jellyfin"
-import { tmdbProxyFetch } from "@/lib/tmdb-proxy"
+import { tmdbApiFetch } from "@/lib/tmdb-api"
 
 export const dynamic = "force-dynamic"
 
@@ -50,7 +50,7 @@ async function resolveTmdbIdFromTvdb(tvdbId: number): Promise<number | null> {
     return cached.tmdbId
   }
   try {
-    const res = await tmdbProxyFetch(`/3/find/${tvdbId}?external_source=tvdb_id`, { timeoutMs: 3_000 })
+    const res = await tmdbApiFetch(`/3/find/${tvdbId}?external_source=tvdb_id`, { timeoutMs: 3_000 })
     if (!res.ok) return null
     const data = await res.json()
     const tvResults = data.tv_results ?? []
@@ -69,7 +69,7 @@ async function resolveTmdbIdFromImdb(imdbId: string): Promise<number | null> {
     return cached.tmdbId
   }
   try {
-    const res = await tmdbProxyFetch(`/3/find/${imdbId}?external_source=imdb_id`, { timeoutMs: 3_000 })
+    const res = await tmdbApiFetch(`/3/find/${imdbId}?external_source=imdb_id`, { timeoutMs: 3_000 })
     if (!res.ok) return null
     const data = await res.json()
     const tvResults = data.tv_results ?? []
@@ -90,7 +90,7 @@ async function searchTmdbByTitle(type: "movie" | "tv", title: string): Promise<n
   }
   try {
     const endpoint = type === "tv" ? "/3/search/tv" : "/3/search/movie"
-    const res = await tmdbProxyFetch(`${endpoint}?query=${encodeURIComponent(title)}`, { timeoutMs: 3_000 })
+    const res = await tmdbApiFetch(`${endpoint}?query=${encodeURIComponent(title)}`, { timeoutMs: 3_000 })
     if (!res.ok) return null
     const data = await res.json()
     const results = data.results ?? []
@@ -110,7 +110,7 @@ async function fetchTmdbMetadata(type: "movie" | "tv", tmdbId: number): Promise<
   }
 
   try {
-    const res = await tmdbProxyFetch(
+    const res = await tmdbApiFetch(
       `/3/${type}/${tmdbId}?append_to_response=images&include_image_language=en`,
       { timeoutMs: 3_500 }
     )

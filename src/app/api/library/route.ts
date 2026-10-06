@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { authenticate, getAllItems, JellyfinItem, JellyfinAuthError } from "@/lib/jellyfin"
 import { setJellyfinIndex } from "@/lib/cache"
-import { tmdbProxyFetch } from "@/lib/tmdb-proxy"
+import { tmdbApiFetch } from "@/lib/tmdb-api"
 import { getSession } from "@/lib/auth"
 
 import { checkRateLimit } from "@/lib/rate-limit"
@@ -67,7 +67,7 @@ async function fetchTmdbMetadata(type: "movie" | "tv", tmdbId: number): Promise<
   }
 
   try {
-    const res = await tmdbProxyFetch(
+    const res = await tmdbApiFetch(
       `/3/${type}/${tmdbId}?append_to_response=images&include_image_language=en`,
       { timeoutMs: 3_500 }
     )
@@ -105,7 +105,7 @@ async function resolveTmdbIdFromTvdb(tvdbId: number): Promise<number | null> {
     return cached.tmdbId
   }
   try {
-    const res = await tmdbProxyFetch(`/3/find/${tvdbId}?external_source=tvdb_id`, { timeoutMs: 3_000 })
+    const res = await tmdbApiFetch(`/3/find/${tvdbId}?external_source=tvdb_id`, { timeoutMs: 3_000 })
     if (!res.ok) return null
     const data = await res.json()
     const tvResults = data.tv_results ?? []

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { getSession } from "@/lib/auth"
-import { tmdbProxyFetch } from "@/lib/tmdb-proxy"
+import { tmdbApiFetch } from "@/lib/tmdb-api"
 import { checkRateLimit } from "@/lib/rate-limit"
 import { enrichMediaItemsWithPosters, fetchEnglishHorizontalPoster } from "@/lib/horizontal-posters"
 
@@ -52,15 +52,15 @@ export async function GET(
       }
     }
 
-    const res = await tmdbProxyFetch(`${path}?${search.toString()}`)
+    const res = await tmdbApiFetch(`${path}?${search.toString()}`)
 
     const bodyText = await res.text()
-    let data: unknown = { error: "Proxy returned a non-JSON response" }
+    let data: unknown = { error: "TMDB returned a non-JSON response" }
     if (bodyText) {
       try {
         data = JSON.parse(bodyText)
       } catch {
-        data = { error: "Proxy returned a non-JSON response" }
+        data = { error: "TMDB returned a non-JSON response" }
       }
     }
 
